@@ -36,8 +36,8 @@ exports.handler = async function(event, context) {
 
   const clientId = process.env.META_APP_ID || "712341431446535";
   const clientSecret = process.env.META_APP_SECRET || "";
-  const host = event.headers.host || "localhost";
-  const redirectUri = process.env.META_REDIRECT_URI || `https://${host}/.netlify/functions/meta-callback`;
+  const host = event.headers.host || "serene-toffee-fe3244.netlify.app";
+  const redirectUri = process.env.META_REDIRECT_URI || `https://${host}/api/meta/callback`;
 
   try {
     let tokenData = { access_token: `mock_token_${Date.now()}` };
