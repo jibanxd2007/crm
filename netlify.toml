@@ -1,0 +1,71 @@
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Route /api/zernio/* to appropriate Netlify Serverless Functions
+[[redirects]]
+  from = "/api/zernio/status"
+  to = "/.netlify/functions/zernio-status"
+  status = 200
+
+[[redirects]]
+  from = "/api/zernio/connect/facebook"
+  to = "/.netlify/functions/zernio-connect?channel=facebook"
+  status = 200
+
+[[redirects]]
+  from = "/api/zernio/connect/ads"
+  to = "/.netlify/functions/zernio-connect?channel=ads"
+  status = 200
+
+[[redirects]]
+  from = "/api/zernio/connect/instagram"
+  to = "/.netlify/functions/zernio-connect?channel=instagram"
+  status = 200
+
+[[redirects]]
+  from = "/api/zernio/simulate-lead"
+  to = "/.netlify/functions/zernio-simulate"
+  status = 200
+
+[[redirects]]
+  from = "/api/webhooks/zernio"
+  to = "/.netlify/functions/meta-webhook"
+  status = 200
+
+[[redirects]]
+  from = "/api/webhooks/meta"
+  to = "/.netlify/functions/meta-webhook"
+  status = 200
+
+[[redirects]]
+  from = "/api/leads/*"
+  to = "/.netlify/functions/leads"
+  status = 200
+
+[[redirects]]
+  from = "/api/conversations/*"
+  to = "/.netlify/functions/messages"
+  status = 200
+
+[[redirects]]
+  from = "/api/reports"
+  to = "/.netlify/functions/reports"
+  status = 200
+
+# Catch-all SPA Routing
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"

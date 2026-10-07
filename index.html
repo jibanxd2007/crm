@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MetaCRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <div id="app-layout">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <span class="nav-text">MetaCRM</span>
+      </div>
+      <div class="nav-section" id="sidebar-nav">
+        <!-- Injected via JS -->
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <main id="main-area">
+      <div class="topbar">
+        <h1 class="topbar-title" id="page-title">Dashboard</h1>
+        <div class="topbar-actions" id="topbar-actions">
+          <!-- Injected via JS -->
+        </div>
+      </div>
+      <div class="content-wrapper" id="main-content">
+        <!-- Dynamic Content -->
+      </div>
+    </main>
+  </div>
+
+  <!-- Slide-over Drawer -->
+  <div id="drawer-overlay"></div>
+  <div id="drawer">
+    <div class="drawer-header">
+      <div class="font-semibold" id="drawer-title">Details</div>
+      <button class="btn btn-ghost btn-sm" id="close-drawer">✕</button>
+    </div>
+    <div class="drawer-content" id="drawer-content">
+      <!-- Injected via JS -->
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div id="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <div id="modal-title">Modal</div>
+        <button class="btn btn-ghost btn-sm" id="close-modal">✕</button>
+      </div>
+      <div class="modal-body" id="modal-body">
+        <!-- Injected -->
+      </div>
+      <div class="modal-footer" id="modal-footer">
+        <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="modal-confirm">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="js/data.js"></script>
+  <script src="js/crm-service.js"></script>
+  <script src="js/meta-service.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+$c = [System.IO.File]::ReadAllText("C:\Users\jiban\.gemini\antigravity\scratch\meta-crm-dashboard\dom_automation.html", [System.Text.Encoding]::UTF8)
+Write-Host "Contains Automations:" ($c -match "CRM &amp; Meta Lead Automations")
+Write-Host "Contains WhatsApp Welcome:" ($c -match "Instant WhatsApp Welcome on Meta Lead")
+Write-Host "Contains Round-Robin Assignment:" ($c -match "Round-Robin Assignment by Page")
+Write-Host "Contains SLA Alert:" ($c -match "SLA Alert")
