@@ -26,10 +26,10 @@ class SupabaseService {
       if (saved) return JSON.parse(saved);
     } catch (e) {}
 
-    // Check window/environment defaults
+    // Live Supabase Production Project Defaults
     return {
-      url: (typeof window !== "undefined" && window.NEXT_PUBLIC_SUPABASE_URL) || "",
-      anonKey: (typeof window !== "undefined" && window.NEXT_PUBLIC_SUPABASE_ANON_KEY) || ""
+      url: (typeof window !== "undefined" && window.NEXT_PUBLIC_SUPABASE_URL) || "https://hsudmspwseonzfdaldxj.supabase.co",
+      anonKey: (typeof window !== "undefined" && (window.NEXT_PUBLIC_SUPABASE_ANON_KEY || window.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)) || "sb_publishable_S95sOi3C8gIS9u96HYSLSA_VAW-QYlF"
     };
   }
 
@@ -58,99 +58,52 @@ class SupabaseService {
       } catch (err) {
         console.warn("[Supabase] Failed to initialize client. Running in Demo Mode.", err);
         this.isLive = false;
-        this.client = null;
       }
     } else {
       this.isLive = false;
-      this.client = null;
     }
   }
 
-  /**
-   * Supabase Realtime Subscription (Requirement 9)
-   * Listens for incoming Meta leads from the webhook and pushes to staff screens without refresh
-   */
   initRealtimeSubscriptions() {
     if (!this.client) return;
 
     try {
-      if (this.realtimeChannel) {
-        this.client.removeChannel(this.realtimeChannel);
-      }
-
+      // Subscribe to inbound leads table updates via WebSocket
       this.realtimeChannel = this.client
-        .channel("meta-crm-live-leads")
-        .on(
-          "postgres_changes",
-          { event: "INSERT", schema: "public", table: "leads" },
-          (payload) => {
-            console.log("[Realtime] Incoming lead captured:", payload.new);
-            if (typeof window !== "undefined") {
-              const event = new CustomEvent("crm:realtime_lead_received", { detail: payload.new });
-              window.dispatchEvent(event);
-            }
+        .channel('public:leads')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, payload => {
+          console.log('[Supabase Realtime] Inbound lead received:', payload.new);
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent('crm:remote_lead_received', { detail: payload.new }));
           }
-        )
-        .on(
-          "postgres_changes",
-          { event: "UPDATE", schema: "public", table: "leads" },
-          (payload) => {
-            console.log("[Realtime] Lead updated remotely:", payload.new);
-            if (typeof window !== "undefined") {
-              const event = new CustomEvent("crm:realtime_lead_updated", { detail: payload.new });
-              window.dispatchEvent(event);
-            }
-          }
-        )
-        .subscribe((status) => {
-          console.log("[Realtime] Subscription status:", status);
-        });
+        })
+        .subscribe();
     } catch (e) {
-      console.warn("[Realtime] Could not subscribe to Realtime channel:", e);
+      console.warn("[Supabase Realtime] Subscription error:", e);
     }
   }
 
-  // --- Real Supabase Authentication (Requirement 4) ---
-  async loginWithPassword(email, password) {
-    if (!this.isLive || !this.client) {
-      return { success: false, mode: "demo", message: "Supabase not configured. Using local demo switcher." };
+  // --- Auth helpers ---
+  async login(email, password) {
+    if (!this.isLive) {
+      return { data: null, error: new Error("Supabase is not configured.") };
     }
-
-    try {
-      const { data, error } = await this.client.auth.signInWithPassword({ email, password });
-      if (error) return { success: false, error: error.message };
-
-      // Fetch user profile from public.users table to verify role
-      const { data: profile } = await this.client
-        .from("users")
-        .select("*")
-        .eq("id", data.user.id)
-        .maybeSingle();
-
-      return {
-        success: true,
-        user: { ...data.user, ...profile },
-        session: data.session
-      };
-    } catch (err) {
-      return { success: false, error: err.message };
-    }
+    return await this.client.auth.signInWithPassword({ email, password });
   }
 
   async logout() {
-    if (this.isLive && this.client) {
-      await this.client.auth.signOut();
-    }
+    if (!this.isLive) return;
+    return await this.client.auth.signOut();
   }
 
   async getSession() {
-    if (!this.isLive || !this.client) return null;
+    if (!this.isLive) return null;
     const { data } = await this.client.auth.getSession();
     return data.session;
   }
 }
 
-// Global service instance
+// Global Singleton
 if (typeof window !== "undefined") {
   window.supabaseService = new SupabaseService();
 }
