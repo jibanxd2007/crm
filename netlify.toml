@@ -5,7 +5,28 @@
 [build.environment]
   NODE_VERSION = "20"
 
-# Route /api/zernio/* to appropriate Netlify Serverless Functions
+# --- Meta OAuth Endpoints ---
+[[redirects]]
+  from = "/api/meta/oauth"
+  to = "/.netlify/functions/meta-oauth"
+  status = 200
+
+[[redirects]]
+  from = "/api/meta/callback"
+  to = "/.netlify/functions/meta-callback"
+  status = 200
+
+[[redirects]]
+  from = "/api/auth/meta/url"
+  to = "/.netlify/functions/meta-oauth"
+  status = 200
+
+[[redirects]]
+  from = "/api/auth/meta/callback"
+  to = "/.netlify/functions/meta-callback"
+  status = 200
+
+# --- Zernio Meta Gateway Endpoints ---
 [[redirects]]
   from = "/api/zernio/status"
   to = "/.netlify/functions/zernio-status"
@@ -31,6 +52,7 @@
   to = "/.netlify/functions/zernio-simulate"
   status = 200
 
+# --- Webhook Receivers ---
 [[redirects]]
   from = "/api/webhooks/zernio"
   to = "/.netlify/functions/meta-webhook"
@@ -41,9 +63,20 @@
   to = "/.netlify/functions/meta-webhook"
   status = 200
 
+# --- Core CRM REST APIs ---
+[[redirects]]
+  from = "/api/leads"
+  to = "/.netlify/functions/leads"
+  status = 200
+
 [[redirects]]
   from = "/api/leads/*"
   to = "/.netlify/functions/leads"
+  status = 200
+
+[[redirects]]
+  from = "/api/conversations"
+  to = "/.netlify/functions/messages"
   status = 200
 
 [[redirects]]
@@ -52,16 +85,42 @@
   status = 200
 
 [[redirects]]
+  from = "/api/messages"
+  to = "/.netlify/functions/messages"
+  status = 200
+
+[[redirects]]
+  from = "/api/messages/*"
+  to = "/.netlify/functions/messages"
+  status = 200
+
+[[redirects]]
+  from = "/api/pages"
+  to = "/.netlify/functions/pages"
+  status = 200
+
+[[redirects]]
+  from = "/api/campaigns"
+  to = "/.netlify/functions/campaigns"
+  status = 200
+
+[[redirects]]
+  from = "/api/staff"
+  to = "/.netlify/functions/staff"
+  status = 200
+
+[[redirects]]
   from = "/api/reports"
   to = "/.netlify/functions/reports"
   status = 200
 
-# Catch-all SPA Routing
+# --- Single Page Application (SPA) Catch-all ---
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
 
+# --- Production Security Headers ---
 [[headers]]
   for = "/*"
   [headers.values]
