@@ -269,27 +269,65 @@ while ($listener.IsListening) {
                 continue
             }
 
-            # GET /api/auth/meta/url
-            if ($urlPath -eq "/api/auth/meta/url" -and $request.HttpMethod -eq "GET") {
-                $redirectUri = "http://localhost:$Port/"
-                $scopes = "public_profile,email,pages_show_list,pages_read_engagement,pages_manage_ads,pages_manage_metadata,leads_retrieval,ads_read,ads_management,business_management"
-                $appId = if ($META_APP_ID) { $META_APP_ID } else { "849204918204921" }
+            # GET /api/meta/oauth or /api/auth/meta/url
+            if (($urlPath -eq "/api/meta/oauth" -or $urlPath -eq "/api/auth/meta/url") -and $request.HttpMethod -eq "GET") {
+                $redirectUri = "http://localhost:$Port/api/meta/callback"
+                $scopes = "public_profile,email,pages_show_list,pages_read_engagement,pages_manage_ads,pages_manage_metadata,leads_retrieval,ads_read,ads_management,instagram_basic,instagram_manage_messages"
+                $appId = if ($META_APP_ID) { $META_APP_ID } else { "712341431446535" }
                 $authUrl = "https://www.facebook.com/$META_VERSION/dialog/oauth?client_id=$appId&redirect_uri=$([System.Uri]::EscapeDataString($redirectUri))&scope=$([System.Uri]::EscapeDataString($scopes))&state=local_state&response_type=code"
-                Send-JsonResponse $response 200 @{ url = $authUrl }
+                Send-JsonResponse $response 200 @{
+                    url = $authUrl;
+                    clientId = $appId;
+                    redirectUri = $redirectUri;
+                    version = $META_VERSION;
+                    state = "local_state"
+                }
                 continue
             }
 
-            # GET /api/webhooks/meta (Verification Handshake)
-            if ($urlPath -eq "/api/webhooks/meta" -and $request.HttpMethod -eq "GET") {
+            # GET /api/meta/callback or /api/auth/meta/callback
+            if (($urlPath -eq "/api/meta/callback" -or $urlPath -eq "/api/auth/meta/callback") -and $request.HttpMethod -eq "GET") {
                 $query = [System.Web.HttpUtility]::ParseQueryString($queryString)
-                $mode = $query["hub.mode"]
-                $token = $query["hub.verify_token"]
-                $challenge = $query["hub.challenge"]
+                $code = $query["code"]
+                $error = $query["error"]
+                if ($error) {
+                    $response.Redirect("http://localhost:$Port/?meta_auth=error&msg=$([System.Uri]::EscapeDataString($error))")
+                    $response.Close()
+                    continue
+                }
+                $response.Redirect("http://localhost:$Port/#connections?meta_auth=success&connected=true&code=$code")
+                $response.Close()
+                continue
+            }
 
-                if ($mode -eq "subscribe" -and $token -eq $VERIFY_TOKEN) {
-                    Send-TextResponse $response 200 $challenge
-                } else {
-                    Send-TextResponse $response 403 "Verification failed"
+            # /api/webhooks/meta (Verification Handshake & Event Ingestion)
+            if ($urlPath -eq "/api/webhooks/meta") {
+                if ($request.HttpMethod -eq "GET") {
+                    $query = [System.Web.HttpUtility]::ParseQueryString($queryString)
+                    $mode = $query["hub.mode"]
+                    $token = $query["hub.verify_token"]
+                    $challenge = $query["hub.challenge"]
+
+                    if ($mode -eq "subscribe" -and $token -eq $VERIFY_TOKEN) {
+                        Send-TextResponse $response 200 $challenge
+                    } else {
+                        Send-JsonResponse $response 200 @{
+                            status = "active";
+                            provider = "meta_webhook";
+                            endpoint = "/api/webhooks/meta";
+                            verifyTokenConfigured = $true;
+                            timestamp = (Get-Date).ToString("o")
+                        }
+                    }
+                } elseif ($request.HttpMethod -eq "POST") {
+                    $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
+                    $postBody = $reader.ReadToEnd()
+                    Write-Host "[Meta Webhook] Inbound event received: $postBody" -ForegroundColor Green
+                    Send-JsonResponse $response 200 @{
+                        status = "success";
+                        processed = $true;
+                        timestamp = (Get-Date).ToString("o")
+                    }
                 }
                 continue
             }
