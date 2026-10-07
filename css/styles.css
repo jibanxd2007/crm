@@ -335,6 +335,8 @@ tr.clickable-row:hover { background: #F8FAFC; }
 .badge-indigo { background: #EEF2FF; color: var(--accent); }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #94A3B8; display: inline-block; }
 .status-dot.green { background: var(--success); }
+.status-dot.yellow { background: var(--warning); }
+.status-dot.red { background: var(--danger); }
 
 /* ─── Tabs ───────────────────────────────────────────────── */
 .tabs {
@@ -687,7 +689,7 @@ tr.clickable-row:hover { background: #F8FAFC; }
 }
 
 /* ─── Connections ────────────────────────────────────────── */
-.connection-card { max-width: 600px; }
+.connection-card { max-width: 860px; }
 .connection-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .connection-brand { display: flex; align-items: center; gap: 14px; }
 .connection-title { font-size: 15px; font-weight: 600; margin-bottom: 3px; }

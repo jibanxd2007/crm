@@ -94,3 +94,11 @@ if (Test-Path $zipPath) {
 }
 Compress-Archive -Path "$srcDir\*" -DestinationPath $zipPath -Force
 Write-Host "Wrote meta-crm-dashboard-production.zip successfully"
+
+$netlifyZip = "$artifactDir\meta-crm-netlify-deploy.zip"
+if (Test-Path $netlifyZip) {
+  Remove-Item $netlifyZip -Force
+}
+Compress-Archive -Path "$srcDir\*" -DestinationPath $netlifyZip -Force
+Write-Host "Wrote meta-crm-netlify-deploy.zip successfully"
+

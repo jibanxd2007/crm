@@ -152,8 +152,65 @@ Assert-Test "PHASE 15" "6-Page Executive Reporting & Analytics" $hasPageStats
 $hasNoTokenLeaks = -not $appContent.Contains("EAAB") -and -not $appContent.Contains("app_secret")
 Assert-Test "PHASE 17" "No Secret Token Leakage in Frontend Source" $hasNoTokenLeaks
 
-$hasGitClean = (git status --porcelain).Length -eq 0 -or $true
-Assert-Test "PHASE 20" "Git Repository Committed & Clean" $true
+# ------------------------------------------------------------------------------
+# PHASE 21: SUPABASE MULTI-USER SCHEMA & RLS MIGRATIONS
+# ------------------------------------------------------------------------------
+$migPath = ".\supabase\migrations\20261008_multi_user_meta_crm.sql"
+$hasMigration = Test-Path $migPath
+if ($hasMigration) {
+  $migContent = Get-Content $migPath -Raw
+  $hasMetaConnTable = $migContent.Contains("CREATE TABLE IF NOT EXISTS public.meta_connections")
+  $hasFbPagesTable = $migContent.Contains("CREATE TABLE IF NOT EXISTS public.facebook_pages")
+  $hasPageMembersTable = $migContent.Contains("CREATE TABLE IF NOT EXISTS public.page_members")
+  $hasRls = $migContent.Contains("ENABLE ROW LEVEL SECURITY")
+  $hasRealtime = $migContent.Contains("supabase_realtime ADD TABLE")
+
+  Assert-Test "PHASE 21" "Supabase Migration: meta_connections & facebook_pages DDL" ($hasMetaConnTable -and $hasFbPagesTable)
+  Assert-Test "PHASE 21" "Supabase Migration: Multi-User page_members & RLS Isolation" ($hasPageMembersTable -and $hasRls)
+  Assert-Test "PHASE 21" "Supabase Migration: Realtime Publications Configured" $hasRealtime
+} else {
+  Assert-Test "PHASE 21" "Supabase Migration File Exists" $false
+}
+
+# ------------------------------------------------------------------------------
+# PHASE 22: SERVER-SIDE META ARCHITECTURE (lib/meta)
+# ------------------------------------------------------------------------------
+$libMetaFiles = @(
+  "lib\meta\permissions.ts",
+  "lib\meta\client.ts",
+  "lib\meta\oauth.ts",
+  "lib\meta\pages.ts",
+  "lib\meta\leads.ts",
+  "lib\meta\messaging.ts",
+  "lib\meta\webhooks.ts",
+  "lib\meta\index.ts"
+)
+$allMetaLibExist = $true
+foreach ($f in $libMetaFiles) {
+  if (-not (Test-Path $f)) { $allMetaLibExist = $false }
+}
+Assert-Test "PHASE 22" "Server-Side Meta Service Layer (lib/meta/ 8 modules)" $allMetaLibExist
+
+$metaOauthContent = if (Test-Path "lib\meta\oauth.ts") { Get-Content "lib\meta\oauth.ts" -Raw } else { "" }
+$hasExchangeTokens = $metaOauthContent.Contains("exchangeCodeForToken") -and $metaOauthContent.Contains("getLongLivedUserToken")
+Assert-Test "PHASE 22" "Meta OAuth Token Exchange & Long-Lived Token Refresh" $hasExchangeTokens
+
+# ------------------------------------------------------------------------------
+# PHASE 23: SUPABASE SSR & CLIENT HELPERS (utils/supabase)
+# ------------------------------------------------------------------------------
+$hasSsrServer = Test-Path "utils\supabase\server.ts"
+$hasSsrClient = Test-Path "utils\supabase\client.ts"
+$hasSsrMiddleware = Test-Path "utils\supabase\middleware.ts"
+$hasPageTsx = Test-Path "page.tsx"
+Assert-Test "PHASE 23" "Supabase SSR Helpers & Middleware (utils/supabase)" ($hasSsrServer -and $hasSsrClient -and $hasSsrMiddleware -and $hasPageTsx)
+
+# ------------------------------------------------------------------------------
+# PHASE 24: NETLIFY SERVERLESS META FUNCTIONS
+# ------------------------------------------------------------------------------
+$hasMetaOAuthFunc = Test-Path "netlify\functions\meta-oauth.js"
+$hasMetaCallbackFunc = Test-Path "netlify\functions\meta-callback.js"
+$hasMetaWebhookFunc = Test-Path "netlify\functions\meta-webhook.js"
+Assert-Test "PHASE 24" "Netlify Meta Endpoints (OAuth, Callback, Webhook)" ($hasMetaOAuthFunc -and $hasMetaCallbackFunc -and $hasMetaWebhookFunc)
 
 Write-Host "===========================================================" -ForegroundColor Cyan
 $passed = ($script:results | Where-Object { $_.Status -eq "PASSED" }).Count

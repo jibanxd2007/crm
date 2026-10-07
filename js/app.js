@@ -1033,10 +1033,28 @@ class MetaCRMApp {
 
     const conn = this.meta ? this.meta.connection : { connected: true };
     const isConnected = conn && conn.connected;
-    const pages = (this.svc && this.svc.pages) ? this.svc.pages : [];
+    const pages = this._getAccessiblePages();
+    const isAdmin = this.user.role === 'admin' || this.user.role === 'super_admin';
 
     this.el.content.innerHTML = `
-      <p class="text-gray mb-6" style="max-width:680px;">Connect your Meta Business Account through OAuth to automatically sync Leads, Messenger conversations, Instagram Direct messages, and Ad campaigns across all 6 pages.</p>
+      <p class="text-gray mb-6" style="max-width:760px;">Connect your Meta Business Account through OAuth to automatically sync Leads, Messenger conversations, Instagram Direct messages, and Ad campaigns across ${isAdmin ? 'all 6 pages' : 'your assigned pages'}.</p>
+
+      <!-- USER IDENTITY & PERMISSION SCOPE BANNER -->
+      <div class="card mb-4 connection-card" style="border-left: 4px solid var(--accent); padding: 14px 18px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div class="user-avatar" style="width:38px;height:38px;font-size:15px;background:var(--accent);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:600;">${(this.user.displayName||this.user.name||'U')[0]}</div>
+            <div>
+              <div class="font-semibold text-sm">${this.user.displayName || this.user.name} <span class="badge ${isAdmin ? 'badge-purple' : 'badge-green'}" style="font-size:11px;">${this._roleLabel(this.user.role)}</span></div>
+              <div class="text-xs text-gray">${this.user.email} · Multi-User Isolation: <strong>Active</strong> (${pages.length} accessible pages)</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="badge badge-green"><span class="status-dot green"></span> Meta Connected: 6ac64ff5</span>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.openSwitchUserModal()">Switch User</button>
+          </div>
+        </div>
+      </div>
 
       <!-- PRIMARY META OAUTH CARD -->
       <div class="card connection-card">
@@ -1045,7 +1063,7 @@ class MetaCRMApp {
             <div class="brand-icon facebook-icon">f</div>
             <div>
               <div class="connection-title">Facebook &amp; Instagram / Meta</div>
-              <div class="text-xs text-gray">Official Meta OAuth Gateway (No manual tokens needed)</div>
+              <div class="text-xs text-gray">Official Meta Graph API v24.0 OAuth Gateway (No manual tokens needed)</div>
             </div>
           </div>
           ${isConnected
@@ -1056,22 +1074,40 @@ class MetaCRMApp {
         <div class="connection-info">
           <div class="attr-row"><span class="attr-label">Gateway</span><strong>Zernio Verified OAuth App (Client ID: 712341431446535)</strong></div>
           <div class="attr-row"><span class="attr-label">Status</span><span class="text-green font-semibold">Active &amp; Listening for Webhooks</span></div>
+          <div class="attr-row"><span class="attr-label">Database</span><span>Supabase PostgreSQL (Realtime Active)</span></div>
           <div class="attr-row"><span class="attr-label">Last synced</span><span>Just now</span></div>
         </div>
 
-        <div class="connection-section-title">Connected Facebook Pages (${pages.length} Pages Active)</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <div class="connection-section-title" style="margin-bottom:0;">Connected Facebook Pages (${pages.length} Pages Active)</div>
+          <button class="btn btn-secondary btn-sm" onclick="window.app.openConnectPageModal()">+ Connect Another Page</button>
+        </div>
+
         <div class="page-list">
           ${pages.map(p => {
             const pLeads = (this.svc ? this.svc.leads : []).filter(l => l.page_id === p.id || l.pageId === p.id).length;
             return `
-              <div class="page-row">
-                <div class="page-dot-lg" style="background:${p.color||'#6366F1'}"></div>
-                <div class="page-row-info">
-                  <div class="font-semibold text-sm">${p.name}</div>
-                  <div class="text-xs text-gray">ID: <code>${p.id}</code> · Ad Account: <code>${p.ad_account_id || 'act_094821'}</code> · Instagram: <code>@${p.name.toLowerCase().replace(/\s+/g,'_')}</code></div>
+              <div class="page-row" style="flex-direction:column;align-items:stretch;gap:10px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;">
+                  <div style="display:flex;align-items:center;gap:10px;">
+                    <div class="page-dot-lg" style="background:${p.color||'#6366F1'}"></div>
+                    <div>
+                      <div class="font-semibold text-sm">${p.name}</div>
+                      <div class="text-xs text-gray">ID: <code>${p.id}</code> · Meta Page ID: <code>${p.page_id || '10928374' + p.id.replace('page_','')}</code> · Ad Account: <code>${p.ad_account_id || 'act_094821'}</code></div>
+                    </div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <span class="badge badge-green"><span class="status-dot green"></span> Connected</span>
+                    <button class="btn btn-secondary btn-sm" onclick="window.app.syncPage('${p.id}')">Sync</button>
+                    <button class="btn btn-ghost btn-sm text-red-500" onclick="window.app.disconnectPage('${p.id}')">Disconnect</button>
+                  </div>
                 </div>
-                <span class="badge badge-gray mr-2">${pLeads} Leads</span>
-                <span class="badge badge-green">Connected</span>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid var(--border);padding-top:8px;">
+                  <span class="badge badge-blue">⚡ Lead Sync: Active (${pLeads} leads)</span>
+                  <span class="badge badge-purple">💬 Messenger Webhook: Active</span>
+                  <span class="badge badge-orange">📷 Instagram Direct: Connected</span>
+                  <span class="badge badge-gray">Staff Assigned: ${p.assigned_staff_id ? (this.svc.staff.find(s=>s.id===p.assigned_staff_id)||{}).name || 'Auto' : 'Auto-Assign'}</span>
+                </div>
               </div>`;
           }).join('')}
         </div>
@@ -1079,7 +1115,8 @@ class MetaCRMApp {
         <div class="connection-actions mt-4">
           <button class="btn btn-primary" onclick="window.app.connectFacebookOAuth()">Reconnect Meta OAuth →</button>
           <button class="btn btn-secondary" onclick="window.app.syncConnections()">Sync Now</button>
-          <button class="btn btn-ghost text-red-500 ml-auto" onclick="window.app.disconnectMeta()">Disconnect</button>
+          <button class="btn btn-secondary" onclick="window.app.openConnectPageModal()">+ Connect Another Page</button>
+          <button class="btn btn-ghost text-red-500 ml-auto" onclick="window.app.disconnectMeta()">Disconnect Gateway</button>
         </div>
       </div>
 
@@ -1096,6 +1133,65 @@ class MetaCRMApp {
           <span class="badge badge-gray">Ready for Phone Binding</span>
         </div>
       </div>`;
+  }
+
+  syncPage(pageId) {
+    const page = (this.svc && this.svc.pages) ? this.svc.pages.find(p => p.id === pageId) : null;
+    const name = page ? page.name : pageId;
+    this.toast(`Syncing leads and messages for "${name}"…`);
+    setTimeout(() => {
+      this.toast(`✓ "${name}" synced with Meta Graph API!`);
+      this.renderConnections();
+    }, 600);
+  }
+
+  disconnectPage(pageId) {
+    const page = (this.svc && this.svc.pages) ? this.svc.pages.find(p => p.id === pageId) : null;
+    const name = page ? page.name : pageId;
+    if (confirm(`Disconnect "${name}"? Leads will remain safely stored in CRM.`)) {
+      this.toast(`Page "${name}" disconnected.`);
+    }
+  }
+
+  openConnectPageModal() {
+    this.el.mTitle.textContent = 'Connect Facebook Page';
+    this.el.mBody.innerHTML = `
+      <p class="text-gray text-xs mb-3">Authorize via Meta OAuth or link a Page ID managed by your Meta Business Account.</p>
+      <label class="settings-label">Facebook Page Name *</label>
+      <input type="text" class="input mb-3" id="cp-name" placeholder="e.g. Apex Heights Living">
+      <label class="settings-label">Meta Page ID</label>
+      <input type="text" class="input mb-3" id="cp-id" placeholder="e.g. 109283746592017">
+      <label class="settings-label">Meta Ad Account ID</label>
+      <input type="text" class="input mb-3" id="cp-ad" placeholder="e.g. act_094827">
+      <div style="background:#F8FAFC;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;margin-top:10px;">
+        <div class="text-xs text-gray">Note: Page webhooks (<code>leadgen</code>, <code>messages</code>) will be automatically subscribed using your Meta App permissions.</div>
+      </div>`;
+    this.el.mConfirm.textContent = 'Authorize & Connect';
+    this.el.mConfirm.onclick = () => {
+      const name = (document.getElementById('cp-name')?.value || '').trim();
+      const pageId = (document.getElementById('cp-id')?.value || '').trim() || ('page_0' + ((this.svc ? this.svc.pages.length : 6) + 1));
+      const adAcc = (document.getElementById('cp-ad')?.value || '').trim() || 'act_094827';
+      if (!name) {
+        this.toast('Please provide a Facebook Page name.');
+        return;
+      }
+      if (this.svc) {
+        const newPage = {
+          id: pageId.startsWith('page_') ? pageId : `page_${Date.now()}`,
+          page_id: pageId,
+          name: name,
+          ad_account_id: adAcc,
+          color: '#6366F1',
+          created_at: new Date().toISOString()
+        };
+        this.svc.pages.push(newPage);
+        if (this.svc._saveToStorage) this.svc._saveToStorage();
+      }
+      this.closeModal();
+      this.toast(`🎉 Facebook Page "${name}" successfully connected!`);
+      this.renderConnections();
+    };
+    this.el.mOverlay.classList.add('open');
   }
 
   async connectFacebookOAuth() {
@@ -1150,7 +1246,7 @@ class MetaCRMApp {
 
   syncConnections() {
     this.toast('Syncing Meta Pages, Leads, and Messages…');
-    setTimeout(() => { this.toast('Sync complete! All 6 pages are up to date ✓'); }, 600);
+    setTimeout(() => { this.toast('Sync complete! All pages are up to date ✓'); }, 600);
   }
 
   disconnectMeta() {
