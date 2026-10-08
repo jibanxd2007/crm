@@ -82,6 +82,9 @@ if ($META_TOKEN) {
 Write-Host " Press Ctrl+C in this console to stop the server." -ForegroundColor Gray
 Write-Host "==========================================================" -ForegroundColor Cyan
 
+$global:MockNotifications = @()
+$global:MockLeadsSpeed = @{}
+
 while ($listener.IsListening) {
     try {
         $context = $listener.GetContext()
@@ -229,6 +232,10 @@ while ($listener.IsListening) {
                 $bodyStr = $reader.ReadToEnd()
                 $leadInput = if ($bodyStr) { $bodyStr | ConvertFrom-Json } else { @{} }
 
+                $val = if ($leadInput.value) { [double]$leadInput.value } else { 0.0 }
+                $isHot = $val -ge 50000
+                $targetStaff = if ($leadInput.assignedTo) { $leadInput.assignedTo } else { "user_a" }
+
                 $simulatedLead = @{
                     id = "lead_zn_" + (Get-Random -Minimum 100000 -Maximum 999999);
                     name = if ($leadInput.name) { $leadInput.name } else { "Simulated Prospect " + (Get-Random -Minimum 10 -Maximum 99) };
@@ -241,6 +248,10 @@ while ($listener.IsListening) {
                     adName = if ($leadInput.adName) { $leadInput.adName } else { "Lead Ad Creative" };
                     status = "new";
                     source = "Facebook Ads (via Zernio)";
+                    value = $val;
+                    isHotLead = $isHot;
+                    slaTargetMinutes = 5;
+                    firstResponseAt = $null;
                     attribution = @{
                         page = "Connected Page";
                         campaign = "Lead Gen Campaign";
@@ -251,8 +262,37 @@ while ($listener.IsListening) {
                     createdAt = (Get-Date).ToString("o")
                 }
 
-                Write-Host "[Zernio Simulation] Lead created: $($simulatedLead.name) for $($simulatedLead.pageId)" -ForegroundColor Green
-                Send-JsonResponse $response 200 @{ status = "success"; lead = $simulatedLead }
+                # Phase A: Targeted Notifications Delivery
+                # 1. Staff notification for new lead
+                $notifStaff = @{
+                    id = "notif_" + (Get-Random -Minimum 10000 -Maximum 99999);
+                    userId = $targetStaff;
+                    leadId = $simulatedLead.id;
+                    type = "new_lead";
+                    title = "New Lead Inbound";
+                    message = "$($simulatedLead.name) arrived via Facebook Lead Ad";
+                    read = $false;
+                    createdAt = (Get-Date).ToString("o")
+                }
+                $global:MockNotifications += $notifStaff
+
+                # 2. Admins-only notification for hot lead (lead value >= 50000)
+                if ($isHot) {
+                    $notifAdmin = @{
+                        id = "notif_" + (Get-Random -Minimum 10000 -Maximum 99999);
+                        userId = "admin";
+                        leadId = $simulatedLead.id;
+                        type = "hot_lead";
+                        title = "[HOT] Lead Alert";
+                        message = "High-value lead: $($simulatedLead.name) (INR $val)";
+                        read = $false;
+                        createdAt = (Get-Date).ToString("o")
+                    }
+                    $global:MockNotifications += $notifAdmin
+                }
+
+                Write-Host "[Zernio Simulation] Lead created: $($simulatedLead.name) for $($simulatedLead.pageId) (Hot: $isHot)" -ForegroundColor Green
+                Send-JsonResponse $response 200 @{ status = "success"; lead = $simulatedLead; notificationsCreated = $true }
                 continue
             }
 
@@ -273,6 +313,58 @@ while ($listener.IsListening) {
             $authH = $request.Headers["Authorization"]
             $uidH = $request.Headers["x-user-id"]
             $reqUser = if ($uidH) { $uidH.ToLower() } elseif ($authH -and $authH.StartsWith("Bearer ")) { $authH.Substring(7).Trim().ToLower() } else { $null }
+
+            # Phase A: /api/leads/first-response (Write-Once DB-Layer Enforcement Simulation)
+            if ($urlPath -eq "/api/leads/first-response" -and $request.HttpMethod -eq "POST") {
+                if (-not $reqUser) {
+                    Send-JsonResponse $response 401 @{ error = "Unauthorized: Authentication required" }
+                    continue
+                }
+                $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
+                $bStr = $reader.ReadToEnd()
+                $bJson = if ($bStr) { $bStr | ConvertFrom-Json } else { @{} }
+                $leadId = if ($bJson.leadId) { $bJson.leadId } else { "lead_sample" }
+                $action = if ($bJson.action) { $bJson.action } else { "call" }
+                $nowIso = (Get-Date).ToString("o")
+
+                # Write-once enforcement: Only set when null, otherwise preserve original value!
+                if (-not $global:MockLeadsSpeed.ContainsKey($leadId)) {
+                    $global:MockLeadsSpeed[$leadId] = @{
+                        leadId = $leadId;
+                        firstResponseAt = $nowIso;
+                        firstResponseAction = $action;
+                        respondedBy = $reqUser;
+                        writeAttempts = 1;
+                        wasUpdated = $true
+                    }
+                } else {
+                    $global:MockLeadsSpeed[$leadId].writeAttempts += 1
+                    $global:MockLeadsSpeed[$leadId].wasUpdated = $false
+                }
+
+                Send-JsonResponse $response 200 @{
+                    status = "success";
+                    record = $global:MockLeadsSpeed[$leadId]
+                }
+                continue
+            }
+
+            # Phase A: /api/notifications (Strict User-Scoped Notifications & RLS)
+            if ($urlPath -eq "/api/notifications") {
+                if (-not $reqUser) {
+                    Send-JsonResponse $response 401 @{ error = "Unauthorized: Authentication required" }
+                    continue
+                }
+                # Scoped strictly by authenticated user (no cross-user leaking, user_id = auth.uid())
+                $userNotifs = @($global:MockNotifications | Where-Object { $_.userId -eq $reqUser })
+                Send-JsonResponse $response 200 @{
+                    status = "success";
+                    user = $reqUser;
+                    notifications = $userNotifs;
+                    unreadCount = @($userNotifs | Where-Object { -not $_.read }).Count
+                }
+                continue
+            }
 
             # /api/leads (Strict RBAC Authorization)
             if ($urlPath -eq "/api/leads" -or $urlPath.StartsWith("/api/leads/")) {

@@ -40,6 +40,25 @@
         <div class="topbar-actions" id="topbar-actions">
           <!-- Injected via JS -->
         </div>
+        <!-- Phase A: Notifications Bell & Popover -->
+        <div class="notif-bell-container" id="notif-bell-container">
+          <button class="notif-bell-btn" id="notif-bell-btn" aria-label="Notifications" title="Notifications">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+            <span class="notif-badge" id="notif-unread-badge" style="display: none;">0</span>
+          </button>
+          <div class="notif-popover" id="notif-popover">
+            <div class="notif-popover-header">
+              <span class="font-semibold text-sm">Notifications</span>
+              <button class="link-small btn btn-ghost btn-sm" id="notif-mark-all-btn">Mark all read</button>
+            </div>
+            <div class="notif-list" id="notif-list">
+              <!-- Injected via JS -->
+            </div>
+          </div>
+        </div>
       </div>
       <div class="content-wrapper" id="main-content">
         <!-- Dynamic Content -->

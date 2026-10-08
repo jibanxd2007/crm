@@ -703,10 +703,187 @@ class CRMService {
     // Trigger automations
     this.triggerAutomation("stage_changed", { leadId, previousStatus: prevStatus, newStatus });
 
+    // Phase A: Record first_response_at when status moves from New
+    if (newStatus !== "New") {
+      this.recordFirstResponse(leadId, "stage_" + newStatus.toLowerCase());
+    }
+
     this.saveAll();
     this.logAudit("LEAD_STATUS_UPDATED", `${lead.name} (${leadId})`, "SUCCESS", `Updated status to ${newStatus}`);
     this.notifyChange("lead_updated", { leadId, lead, newStatus });
     return { success: true, lead };
+  }
+
+  // ==========================================================================
+  // PHASE A — SPEED-TO-LEAD & SLA TRACKING ENGINE
+  // ==========================================================================
+  recordFirstResponse(leadId, action = "contact") {
+    const lead = this.leads.find(l => l.id === leadId);
+    if (!lead) return null;
+
+    // Strict write-once: only record if not previously set
+    if (lead.first_response_at) {
+      return lead.first_response_at;
+    }
+
+    const nowIso = new Date().toISOString();
+    lead.first_response_at = nowIso;
+    lead.first_response_action = action;
+    lead.last_contacted_at = nowIso;
+
+    // Response time calculation
+    const createdTime = new Date(lead.created_at || lead.createdAt || nowIso).getTime();
+    const responseTimeMs = Math.max(0, new Date(nowIso).getTime() - createdTime);
+    lead.response_time_ms = responseTimeMs;
+
+    // SLA compliance evaluation (target default 5 mins)
+    const targetMins = lead.sla_target_minutes || 5;
+    lead.is_sla_compliant = responseTimeMs <= (targetMins * 60 * 1000);
+
+    // Audit and Lead activity
+    lead.activities = lead.activities || [];
+    lead.activities.unshift({
+      id: "act_" + Date.now(),
+      type: "FIRST_RESPONSE",
+      description: `First response logged via ${action} (${Math.round(responseTimeMs / 1000)}s after lead generation). SLA: ${lead.is_sla_compliant ? 'Compliant' : 'Breached'}.`,
+      user: this.currentUser ? (this.currentUser.displayName || this.currentUser.name) : "Staff",
+      timestamp: nowIso
+    });
+
+    this.saveAll();
+    this.logAudit("FIRST_RESPONSE_RECORDED", lead.name, "SUCCESS", `Action: ${action}, Time: ${Math.round(responseTimeMs / 1000)}s, Compliant: ${lead.is_sla_compliant}`);
+    this.notifyChange("lead_response_recorded", { leadId, lead, responseTimeMs, isCompliant: lead.is_sla_compliant });
+    return lead.first_response_at;
+  }
+
+  getLeadSlaStatus(lead) {
+    if (!lead) return { state: "unknown", text: "—", isCompliant: false, label: "Unknown" };
+    const targetMins = lead.sla_target_minutes || 5;
+    const targetMs = targetMins * 60 * 1000;
+    const createdMs = new Date(lead.created_at || lead.createdAt || Date.now()).getTime();
+
+    if (lead.first_response_at) {
+      const respMs = new Date(lead.first_response_at).getTime() - createdMs;
+      const durationSec = Math.max(0, Math.round(respMs / 1000));
+      const timeText = durationSec < 60 ? `${durationSec}s` : `${Math.floor(durationSec / 60)}m ${durationSec % 60}s`;
+
+      if (respMs <= targetMs) {
+        return {
+          state: "compliant",
+          text: `✓ ${timeText}`,
+          durationMs: respMs,
+          isCompliant: true,
+          label: "Within SLA"
+        };
+      } else {
+        return {
+          state: "non_compliant_late",
+          text: `Late (${timeText})`,
+          durationMs: respMs,
+          isCompliant: false,
+          label: "Responded Late"
+        };
+      }
+    } else {
+      // Unanswered
+      const elapsedMs = Date.now() - createdMs;
+      const elapsedSec = Math.max(0, Math.round(elapsedMs / 1000));
+      const elapsedText = elapsedSec < 60 ? `${elapsedSec}s` : `${Math.floor(elapsedSec / 60)}m`;
+
+      if (elapsedMs > targetMs) {
+        return {
+          state: "live_breach",
+          text: `Breached (${elapsedText})`,
+          durationMs: elapsedMs,
+          isCompliant: false,
+          label: "SLA Breached"
+        };
+      } else {
+        return {
+          state: "pending",
+          text: `${elapsedText} / ${targetMins}m`,
+          durationMs: elapsedMs,
+          isCompliant: true,
+          label: "Pending Response"
+        };
+      }
+    }
+  }
+
+  getSpeedToLeadMetrics(leadsList = null) {
+    const list = leadsList || this.getFilteredLeads();
+    const total = list.length;
+    const responded = list.filter(l => !!l.first_response_at);
+
+    const compliant = responded.filter(l => {
+      const c = new Date(l.created_at || l.createdAt).getTime();
+      const r = new Date(l.first_response_at).getTime();
+      return (r - c) <= (l.sla_target_minutes || 5) * 60 * 1000;
+    });
+
+    const late = responded.filter(l => {
+      const c = new Date(l.created_at || l.createdAt).getTime();
+      const r = new Date(l.first_response_at).getTime();
+      return (r - c) > (l.sla_target_minutes || 5) * 60 * 1000;
+    });
+
+    const liveBreaches = list.filter(l => {
+      if (l.first_response_at) return false;
+      const c = new Date(l.created_at || l.createdAt).getTime();
+      return (Date.now() - c) > (l.sla_target_minutes || 5) * 60 * 1000;
+    });
+
+    // Calculate median response time from responded leads
+    let medianSeconds = 0;
+    if (responded.length > 0) {
+      const durations = responded.map(l => {
+        const c = new Date(l.created_at || l.createdAt).getTime();
+        const r = new Date(l.first_response_at).getTime();
+        return Math.max(0, Math.round((r - c) / 1000));
+      }).sort((a, b) => a - b);
+      const mid = Math.floor(durations.length / 2);
+      medianSeconds = durations.length % 2 !== 0 ? durations[mid] : Math.round((durations[mid - 1] + durations[mid]) / 2);
+    }
+
+    const medianText = medianSeconds === 0 
+      ? "—"
+      : (medianSeconds < 60 ? `${medianSeconds}s` : `${Math.floor(medianSeconds / 60)}m ${medianSeconds % 60}s`);
+
+    // Late-but-answered counts as non-compliant!
+    const complianceRate = responded.length > 0
+      ? ((compliant.length / responded.length) * 100).toFixed(1) + "%"
+      : "100.0%";
+
+    return {
+      totalLeads: total,
+      respondedCount: responded.length,
+      compliantCount: compliant.length,
+      lateCount: late.length,
+      liveBreachCount: liveBreaches.length,
+      complianceRate,
+      medianSeconds,
+      medianText
+    };
+  }
+
+  getStaffSpeedLeaderboard() {
+    return this.staff
+      .filter(s => s.role === "staff")
+      .map(staff => {
+        const staffLeads = this.leads.filter(l => l.assigned_staff_id === staff.id);
+        const metrics = this.getSpeedToLeadMetrics(staffLeads);
+        return {
+          staff,
+          assignedCount: staffLeads.length,
+          respondedCount: metrics.respondedCount,
+          compliantCount: metrics.compliantCount,
+          lateCount: metrics.lateCount,
+          liveBreachCount: metrics.liveBreachCount,
+          complianceRate: metrics.complianceRate,
+          medianText: metrics.medianText
+        };
+      })
+      .sort((a, b) => parseFloat(b.complianceRate) - parseFloat(a.complianceRate));
   }
 
   assignLead(leadId, newStaffId) {
@@ -2178,15 +2355,19 @@ class CRMService {
   }
 
   createNotification(notifData) {
+    const targetUserId = notifData.userId || notifData.user_id || notifData.recipientId;
     const notif = {
-      id: "notif_" + Date.now(),
+      id: "notif_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+      user_id: targetUserId,
+      lead_id: notifData.leadId || notifData.lead_id || null,
       title: notifData.title || "Notification",
       message: notifData.message || "",
-      type: notifData.type || "system",
+      type: notifData.type || "system", // 'new_lead' | 'hot_lead' | 'sla_breach' | 'system'
       read: false,
+      read_at: null,
+      created_at: new Date().toISOString(),
       timestamp: "Just now",
-      targetUrl: notifData.targetUrl || "#",
-      recipientId: notifData.recipientId || "all"
+      payload: notifData.payload || {}
     };
     this.notifications.unshift(notif);
     this.saveAll();
@@ -2197,23 +2378,30 @@ class CRMService {
   getNotifications(userId = null) {
     const uid = userId || (this.currentUser ? this.currentUser.id : null);
     if (!uid) return [];
-    return this.notifications.filter(n => n.recipientId === "all" || n.recipientId === uid);
+    // Strict isolation: User A sees only User A's notifications; Admin sees only Admin's notifications
+    return this.notifications.filter(n => (n.user_id === uid || n.recipientId === uid));
+  }
+
+  getUnreadNotificationsCount(userId = null) {
+    return this.getNotifications(userId).filter(n => !n.read && !n.read_at).length;
   }
 
   markNotificationRead(notifId) {
     const notif = this.notifications.find(n => n.id === notifId);
     if (notif) {
       notif.read = true;
+      notif.read_at = new Date().toISOString();
       this.saveAll();
-      this.notifyChange("notification_read");
+      this.notifyChange("notification_read", { notifId });
     }
   }
 
   markAllNotificationsRead() {
     const uid = this.currentUser ? this.currentUser.id : null;
     this.notifications.forEach(n => {
-      if (n.recipientId === "all" || n.recipientId === uid) {
+      if (n.user_id === uid || n.recipientId === uid) {
         n.read = true;
+        n.read_at = new Date().toISOString();
       }
     });
     this.saveAll();

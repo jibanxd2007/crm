@@ -39,6 +39,35 @@ function verifyMetaSignature(req, appSecret) {
   }
 }
 
+/**
+ * Phase A Speed-to-Lead Email Notification Stub
+ * Note: Third-party email transport (Resend/Sendgrid) is not currently installed.
+ * Preference flag defaults to false. This stub logs the payload when enabled.
+ */
+async function sendLeadEmailNotificationStub(user, lead) {
+  if (!user || !user.email) return false;
+  console.log(`[Email Stub] Notification dispatched to ${user.email} for Lead: ${lead.full_name} (${lead.phone || 'No phone'})`);
+  return true;
+}
+
+/**
+ * Optional Per-User Slack Webhook Notifier
+ */
+async function sendSlackNotification(webhookUrl, payload) {
+  if (!webhookUrl) return false;
+  try {
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    return res.ok;
+  } catch (err) {
+    console.error('[Slack Webhook Error]', err);
+    return false;
+  }
+}
+
 export default async function handler(req, res) {
   const startTime = Date.now();
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -198,6 +227,19 @@ export default async function handler(req, res) {
                 assignedStaffName = chosen.name;
               }
 
+              // Phase A: Evaluate Lead Value & Hot-Lead Threshold (Default ₹50,000)
+              let leadValue = 0;
+              if (rawFieldData && Array.isArray(rawFieldData)) {
+                for (const field of rawFieldData) {
+                  const valStr = String(field.values ? field.values[0] : field.value || '');
+                  const numVal = parseFloat(valStr.replace(/[^0-9.]/g, ''));
+                  if (!isNaN(numVal) && numVal > leadValue) {
+                    leadValue = numVal;
+                  }
+                }
+              }
+              const isHotLead = leadValue >= 50000;
+
               // Insert Lead Record into CRM database
               const leadRecord = {
                 organization_id: defaultOrgId,
@@ -214,6 +256,9 @@ export default async function handler(req, res) {
                 field_data: rawFieldData,
                 assigned_to: assignedStaffId,
                 status: 'new',
+                lead_value: leadValue,
+                sla_target_minutes: 5,
+                is_hot_lead: isHotLead,
                 created_at: new Date().toISOString()
               };
 
@@ -226,18 +271,79 @@ export default async function handler(req, res) {
               if (!insertErr && insertedLead) {
                 processedCount++;
 
+                // Phase A Delivery: Insert Targeted Notification Rows
+                // 1. Target assigned staff for new_lead
+                if (assignedStaffId) {
+                  await supabase.from('notifications').insert({
+                    user_id: assignedStaffId,
+                    lead_id: insertedLead.id,
+                    type: 'new_lead',
+                    title: 'New Lead Inbound',
+                    message: `${leadName} submitted instant form on ${pageName || 'Page'}.`,
+                    payload: { lead_id: insertedLead.id, name: leadName, phone: leadPhone, is_hot: isHotLead, value: leadValue }
+                  });
+
+                  // Fetch assigned staff preferences
+                  const { data: staffUser } = await supabase
+                    .from('users')
+                    .select('id, email, notification_preferences')
+                    .eq('id', assignedStaffId)
+                    .single();
+
+                  if (staffUser?.notification_preferences?.slack_webhook_url) {
+                    await sendSlackNotification(staffUser.notification_preferences.slack_webhook_url, {
+                      text: `🚨 *New Lead Alert*: ${leadName} (${leadPhone || 'No phone'}) on ${pageName || 'Facebook Page'}. SLA: 5 mins.`
+                    });
+                  }
+                  if (staffUser?.notification_preferences?.email) {
+                    await sendLeadEmailNotificationStub(staffUser, insertedLead);
+                  }
+                }
+
+                // 2. Target admins only for hot_lead (value >= threshold)
+                if (isHotLead) {
+                  const { data: adminList } = await supabase
+                    .from('users')
+                    .select('id, email, notification_preferences')
+                    .eq('role', 'admin');
+
+                  if (adminList && adminList.length > 0) {
+                    for (const admin of adminList) {
+                      await supabase.from('notifications').insert({
+                        user_id: admin.id,
+                        lead_id: insertedLead.id,
+                        type: 'hot_lead',
+                        title: '🔥 Hot Lead Alert',
+                        message: `High-value lead: ${leadName} (₹${leadValue.toLocaleString('en-IN')}) on ${pageName || 'Page'}. Urgent response needed!`,
+                        payload: { lead_id: insertedLead.id, name: leadName, phone: leadPhone, value: leadValue }
+                      });
+
+                      if (admin.notification_preferences?.slack_webhook_url) {
+                        await sendSlackNotification(admin.notification_preferences.slack_webhook_url, {
+                          text: `🔥 *HOT LEAD ALERT*: ${leadName} (₹${leadValue.toLocaleString('en-IN')}) requires urgent response!`
+                        });
+                      }
+                      if (admin.notification_preferences?.email) {
+                        await sendLeadEmailNotificationStub(admin, insertedLead);
+                      }
+                    }
+                  }
+                }
+
                 // Log Lead Activity
                 await supabase.from('crm_activities').insert({
                   organization_id: defaultOrgId,
                   lead_id: insertedLead.id,
                   activity_type: 'lead_created',
                   title: 'Inbound Lead Captured',
-                  description: `Lead submitted via Meta Instant Form on ${pageName || 'Page'}.`,
+                  description: `Lead submitted via Meta Instant Form on ${pageName || 'Page'}. ${isHotLead ? '(Flagged as Hot Lead)' : ''}`,
                   metadata: {
                     meta_lead_id: leadgenId,
                     form_id: formId,
                     ad_id: adId,
-                    assigned_to_name: assignedStaffName
+                    assigned_to_name: assignedStaffName,
+                    is_hot_lead: isHotLead,
+                    lead_value: leadValue
                   }
                 });
               }

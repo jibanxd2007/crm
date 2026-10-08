@@ -53,6 +53,11 @@ class MetaCRMApp {
       mCancel: document.getElementById('modal-cancel'),
       mConfirm: document.getElementById('modal-confirm'),
       toasts: document.getElementById('toast-container'),
+      notifBtn: document.getElementById('notif-bell-btn'),
+      notifPopover: document.getElementById('notif-popover'),
+      notifBadge: document.getElementById('notif-unread-badge'),
+      notifList: document.getElementById('notif-list'),
+      notifMarkAll: document.getElementById('notif-mark-all-btn'),
     };
 
     this._bindGlobalEvents();
@@ -76,6 +81,7 @@ class MetaCRMApp {
 
   _init() {
     this.renderSidebar();
+    this.renderNotifications();
     this._route();
     window.addEventListener('hashchange', () => this._route());
   }
@@ -98,6 +104,37 @@ class MetaCRMApp {
       this.el.closeSidebarBtn.addEventListener('click', () => this.toggleMobileSidebar(false));
     }
 
+    // Phase A: Notifications Bell & Popover Controls
+    if (this.el.notifBtn) {
+      this.el.notifBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.toggleNotifications();
+      });
+    }
+    if (this.el.notifMarkAll) {
+      this.el.notifMarkAll.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (this.svc) {
+          this.svc.markAllNotificationsRead();
+          this.renderNotifications();
+        }
+      });
+    }
+    document.addEventListener('click', (e) => {
+      if (this.el.notifPopover && !this.el.notifPopover.contains(e.target) && e.target !== this.el.notifBtn && !this.el.notifBtn?.contains(e.target)) {
+        this.el.notifPopover.classList.remove('open');
+      }
+    });
+
+    // Real-time notification handler
+    window.addEventListener('crm:notification_received', (e) => {
+      const notif = e.detail?.notification;
+      if (notif) {
+        this.toast(`${notif.title}: ${notif.message}`, notif.type === 'hot_lead' ? 'warning' : 'info');
+      }
+      this.renderNotifications();
+    });
+
     // Keyboard Shortcuts (Ctrl+K for search, Escape for modal/drawer)
     window.addEventListener('keydown', e => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -106,15 +143,72 @@ class MetaCRMApp {
         if (input) { input.focus(); }
         else { this.navigate('leads'); setTimeout(() => { const i = document.getElementById('lead-search-input'); if (i) i.focus(); }, 150); }
       }
-      if (e.key === 'Escape') { this.closeDrawer(); this.closeModal(); this.toggleMobileSidebar(false); }
+      if (e.key === 'Escape') { this.closeDrawer(); this.closeModal(); this.toggleMobileSidebar(false); if (this.el.notifPopover) this.el.notifPopover.classList.remove('open'); }
     });
 
     // Listen to real-time CRM updates
     window.addEventListener('crm:state_changed', () => {
       this.user = this.svc.getCurrentUser();
       this.renderSidebar();
+      this.renderNotifications();
       this._renderPage();
     });
+  }
+
+  toggleNotifications() {
+    if (!this.el.notifPopover) return;
+    this.el.notifPopover.classList.toggle('open');
+    if (this.el.notifPopover.classList.contains('open')) {
+      this.renderNotifications();
+    }
+  }
+
+  renderNotifications() {
+    if (!this.svc) return;
+    const notifs = this.svc.getNotifications();
+    const unreadCount = this.svc.getUnreadNotificationsCount();
+
+    if (this.el.notifBadge) {
+      if (unreadCount > 0) {
+        this.el.notifBadge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+        this.el.notifBadge.style.display = 'flex';
+      } else {
+        this.el.notifBadge.style.display = 'none';
+      }
+    }
+
+    if (!this.el.notifList) return;
+    if (notifs.length === 0) {
+      this.el.notifList.innerHTML = `<div class="notif-empty">No notifications yet. You'll be alerted when new leads arrive.</div>`;
+      return;
+    }
+
+    this.el.notifList.innerHTML = notifs.map(n => {
+      const isUnread = !n.read && !n.read_at;
+      const isHot = n.type === 'hot_lead';
+      const icon = isHot ? '🔥' : n.type === 'sla_breach' ? '⚠️' : '👤';
+      return `
+        <div class="notif-item ${isUnread ? 'unread' : ''} ${isHot ? 'hot-lead' : ''}" onclick="window.app.onNotificationClick('${n.id}', '${n.lead_id || ''}')">
+          <div class="notif-icon-wrap">${icon}</div>
+          <div class="notif-item-body">
+            <div class="notif-title">${n.title}</div>
+            <div class="notif-msg">${n.message}</div>
+            <div class="notif-time">${n.timestamp || 'Just now'}</div>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  onNotificationClick(notifId, leadId) {
+    if (this.svc) {
+      this.svc.markNotificationRead(notifId);
+      this.renderNotifications();
+    }
+    if (this.el.notifPopover) this.el.notifPopover.classList.remove('open');
+    if (leadId) {
+      this.navigate('leads');
+      setTimeout(() => this.openLeadDrawer(leadId), 150);
+    }
   }
 
   _route() {
@@ -352,6 +446,22 @@ class MetaCRMApp {
           <div class="kpi-value" style="color:var(--warning)">${unreadMessagesCount}</div>
           <div class="kpi-trend">In Messenger &amp; IG</div>
         </div>
+        <!-- Phase A: Speed-to-Lead KPIs -->
+        <div class="kpi-card">
+          <div class="kpi-title">MEDIAN RESPONSE TIME</div>
+          <div class="kpi-value" style="color:var(--accent)">${this.svc ? this.svc.getSpeedToLeadMetrics(leads).medianText : '—'}</div>
+          <div class="kpi-trend">Target: &lt; 5 mins</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-title">SLA COMPLIANCE</div>
+          <div class="kpi-value" style="color:var(--success)">${this.svc ? this.svc.getSpeedToLeadMetrics(leads).complianceRate : '100%'}</div>
+          <div class="kpi-trend">Within 5m SLA</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-title">ACTIVE BREACHES</div>
+          <div class="kpi-value" style="color:${(this.svc && this.svc.getSpeedToLeadMetrics(leads).liveBreachCount > 0) ? 'var(--danger)' : 'var(--text-secondary)'}">${this.svc ? this.svc.getSpeedToLeadMetrics(leads).liveBreachCount : 0}</div>
+          <div class="kpi-trend">Unanswered &gt; 5m</div>
+        </div>
         ${isAdmin ? `
         <div class="kpi-card">
           <div class="kpi-title">AD SPEND</div>
@@ -556,6 +666,7 @@ class MetaCRMApp {
               <th>Source &amp; Page</th>
               <th>Campaign</th>
               <th>Status</th>
+              <th>SLA &amp; Speed</th>
               <th>Assigned To</th>
               <th>Last Activity</th>
               <th>Follow-up</th>
@@ -567,10 +678,15 @@ class MetaCRMApp {
               const lastAct = l.last_contacted_at || l.lastContactedAt ? this._timeAgo(l.last_contacted_at || l.lastContactedAt) : 'Never';
               const followUp = l.follow_up_date || l.followUpDate ? new Date(l.follow_up_date || l.followUpDate).toLocaleDateString('en-IN', {day:'numeric',month:'short'}) : '—';
               const pageName = this._pageName(l.page_id || l.pageId);
+              const sla = this.svc ? this.svc.getLeadSlaStatus(l) : { state: 'pending', text: '5m', label: 'Pending' };
+              const isHot = l.is_hot_lead || (l.value && l.value >= 50000) || (l.lead_value && l.lead_value >= 50000);
               return `
-                <tr class="clickable-row" onclick="window.app.openLeadDrawer('${l.id}')">
+                <tr class="clickable-row ${isHot ? 'hot-lead-card' : ''}" onclick="window.app.openLeadDrawer('${l.id}')">
                   <td onclick="event.stopPropagation()"><input type="checkbox" class="lead-select-box" value="${l.id}"></td>
-                  <td><strong>${l.name}</strong></td>
+                  <td>
+                    <strong>${l.name}</strong>
+                    ${isHot ? `<span class="badge badge-hot" style="margin-left:4px;font-size:10px;">🔥 Hot</span>` : ''}
+                  </td>
                   <td class="text-xs">
                     <div>${l.phone || '—'}</div>
                     <div class="text-gray">${l.email || ''}</div>
@@ -581,6 +697,7 @@ class MetaCRMApp {
                   </td>
                   <td class="text-xs text-gray">${l.campaign_name || l.campaign_id || l.campaignId || '—'}</td>
                   <td>${this._badge(l.status)}</td>
+                  <td><span class="sla-badge ${sla.state}" title="${sla.label}">${sla.text}</span></td>
                   <td class="text-xs">${this._staffName(l.assigned_staff_id || l.assignedStaffId)}</td>
                   <td class="text-xs text-gray">${lastAct}</td>
                   <td class="text-xs ${l.followUpDate && new Date(l.followUpDate) < new Date() ? 'text-red font-semibold' : ''}">${followUp}</td>
@@ -646,6 +763,8 @@ class MetaCRMApp {
     const stages = ['New Lead', 'Contacted', 'Qualified', 'Follow-up', 'Won', 'Lost'];
     const staff = this.svc ? (this.svc.staff || []) : [];
     const notes = (lead.notes || []).slice().reverse();
+    const sla = this.svc ? this.svc.getLeadSlaStatus(lead) : { state: 'pending', text: '5m', label: 'Pending' };
+    const isHot = lead.is_hot_lead || (lead.lead_value && lead.lead_value >= 50000);
 
     this.el.dTitle.textContent = 'Lead Details & Attribution';
     this.el.dContent.innerHTML = `
@@ -653,17 +772,44 @@ class MetaCRMApp {
       <div class="drawer-lead-header">
         <div class="lead-avatar">${lead.name.charAt(0).toUpperCase()}</div>
         <div class="lead-header-info">
-          <div class="lead-header-name">${lead.name}</div>
+          <div class="lead-header-name">
+            ${lead.name}
+            ${isHot ? `<span class="badge badge-hot" style="margin-left:4px;font-size:11px;">🔥 Hot</span>` : ''}
+          </div>
           <div class="text-sm text-gray">${lead.phone || 'No phone'} ${lead.email ? '• ' + lead.email : ''}</div>
           <div style="margin-top:4px;">${this._badge(lead.status)}</div>
         </div>
       </div>
 
-      <!-- ONE-CLICK COMMUNICATION BAR -->
+      <!-- ONE-CLICK COMMUNICATION BAR (Hooks first_response_at) -->
       <div class="lead-actions-bar">
-        <a href="tel:${lead.phone}" class="btn btn-primary btn-sm">📞 Call</a>
-        <a href="https://wa.me/${(lead.phone||'').replace(/\D/g,'')}" target="_blank" class="btn btn-secondary btn-sm whatsapp-btn">💬 WhatsApp</a>
-        <a href="mailto:${lead.email}" class="btn btn-secondary btn-sm">✉ Email</a>
+        <a href="tel:${lead.phone}" onclick="window.crmService.recordFirstResponse('${lead.id}', 'call')" class="btn btn-primary btn-sm">📞 Call</a>
+        <a href="https://wa.me/${(lead.phone||'').replace(/\D/g,'')}" target="_blank" onclick="window.crmService.recordFirstResponse('${lead.id}', 'whatsapp')" class="btn btn-secondary btn-sm whatsapp-btn">💬 WhatsApp</a>
+        <a href="mailto:${lead.email}" onclick="window.crmService.recordFirstResponse('${lead.id}', 'email')" class="btn btn-secondary btn-sm">✉ Email</a>
+      </div>
+
+      <!-- SPEED-TO-LEAD & SLA TRACKING (Phase A) -->
+      <div class="drawer-section">
+        <div class="drawer-section-title">Speed-to-Lead &amp; SLA Tracking</div>
+        <div style="background:#F8FAFC;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;font-size:12px;">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+            <span class="text-gray">SLA Target:</span>
+            <strong>${lead.sla_target_minutes || 5} Minutes</strong>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
+            <span class="text-gray">Response Status:</span>
+            <span class="sla-badge ${sla.state}">${sla.label} (${sla.text})</span>
+          </div>
+          ${lead.first_response_at ? `
+          <div style="display:flex;justify-content:space-between;">
+            <span class="text-gray">First Responded:</span>
+            <span>${new Date(lead.first_response_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})} via ${lead.first_response_action || 'contact'}</span>
+          </div>` : `
+          <div style="display:flex;justify-content:space-between;">
+            <span class="text-gray">Pending Time:</span>
+            <span class="${sla.state === 'live_breach' ? 'text-red font-semibold' : ''}">${sla.text}</span>
+          </div>`}
+        </div>
       </div>
 
       <!-- STAGE SELECTOR PILLS -->
@@ -822,8 +968,12 @@ class MetaCRMApp {
 
   quickCall(leadId) {
     const lead = this.svc ? this.svc.leads.find(l => l.id === leadId) : null;
-    if (lead && lead.phone) window.open(`tel:${lead.phone}`);
-    else this.toast('No phone number recorded');
+    if (lead && lead.phone) {
+      if (this.svc) this.svc.recordFirstResponse(leadId, 'call');
+      window.open(`tel:${lead.phone}`);
+    } else {
+      this.toast('No phone number recorded');
+    }
   }
 
   // ──────────────────────────────────────────────────────────
@@ -1444,6 +1594,44 @@ class MetaCRMApp {
             }).join('') : '<tr><td colspan="6" class="empty-cell" style="text-align:center;padding:24px;color:var(--text-muted);">No staff members found</td></tr>'}
           </tbody>
         </table>
+      </div>
+
+      <!-- PHASE A: STAFF SPEED-TO-LEAD & SLA LEADERBOARD -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Speed-to-Lead Response Time Leaderboard</div>
+          <span class="text-xs text-gray">Target: 5 Min SLA · Late-answered counts as non-compliant</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Staff Member</th>
+              <th>Assigned Leads</th>
+              <th>Responded</th>
+              <th>Within SLA</th>
+              <th>Responded Late</th>
+              <th>Live Breaches</th>
+              <th>Compliance Rate</th>
+              <th>Median Response</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${(() => {
+              const leaderboard = this.svc ? this.svc.getStaffSpeedLeaderboard() : [];
+              return leaderboard.length > 0 ? leaderboard.map(row => `
+                <tr>
+                  <td><strong>${row.staff.name}</strong></td>
+                  <td class="font-semibold">${row.assignedCount}</td>
+                  <td>${row.respondedCount}</td>
+                  <td><span class="badge badge-green">${row.compliantCount}</span></td>
+                  <td><span class="badge badge-orange">${row.lateCount}</span></td>
+                  <td><span class="badge ${row.liveBreachCount > 0 ? 'badge-red' : 'badge-gray'}">${row.liveBreachCount}</span></td>
+                  <td><strong>${row.complianceRate}</strong></td>
+                  <td class="font-mono text-xs">${row.medianText}</td>
+                </tr>`).join('') : '<tr><td colspan="8" class="empty-cell" style="text-align:center;padding:24px;color:var(--text-muted);">No staff response records available yet.</td></tr>';
+            })()}
+          </tbody>
+        </table>
       </div>`;
   }
 
@@ -1567,20 +1755,30 @@ class MetaCRMApp {
           </div>
           <div id="stab-notifications" style="display:none">
             <div class="card" style="max-width:520px">
-              <div class="card-title mb-4">Notification Alerts</div>
-              ${[
-                ['New Meta lead form submitted', true],
-                ['Lead assigned to me', true],
-                ['Follow-up due alert', true],
-                ['New Messenger / Instagram message', true],
-              ].map(([label, checked]) => `
-                <div class="setting-toggle">
-                  <span>${label}</span>
-                  <label class="toggle">
-                    <input type="checkbox" ${checked?'checked':''}><span class="toggle-slider"></span>
-                  </label>
-                </div>`).join('')}
-              <button class="btn btn-primary mt-4" onclick="window.app.toast('Notification rules saved!')">Save Rules</button>
+              <div class="card-title mb-4">Notification Alerts &amp; Speed-to-Lead</div>
+              <div class="setting-toggle">
+                <span>In-App Toast &amp; Bell Notifications</span>
+                <label class="toggle">
+                  <input type="checkbox" id="pref-in-app" ${(this.user?.notification_preferences?.in_app !== false) ? 'checked' : ''}><span class="toggle-slider"></span>
+                </label>
+              </div>
+              <div class="setting-toggle">
+                <span>Email Notifications (Stub / Provider Standby)</span>
+                <label class="toggle">
+                  <input type="checkbox" id="pref-email" ${(this.user?.notification_preferences?.email === true) ? 'checked' : ''}><span class="toggle-slider"></span>
+                </label>
+              </div>
+              <div class="mt-4 mb-3">
+                <label class="settings-label">Slack Incoming Webhook URL (Optional)</label>
+                <input type="url" class="input" id="pref-slack" placeholder="https://hooks.slack.com/services/..." value="${this.user?.notification_preferences?.slack_webhook_url || ''}">
+                <div class="text-xs text-gray mt-1">Sends real-time lead alerts directly to your team Slack channel.</div>
+              </div>
+              <div class="mb-4">
+                <label class="settings-label">Hot-Lead Threshold (₹ Value)</label>
+                <input type="number" class="input" id="pref-hot-threshold" value="${this.user?.notification_preferences?.hot_lead_threshold || 50000}">
+                <div class="text-xs text-gray mt-1">Leads with value greater than this amount will trigger instant Hot-Lead admin alerts.</div>
+              </div>
+              <button class="btn btn-primary mt-2" onclick="window.app.saveNotificationPreferences()">Save Notification Rules</button>
             </div>
           </div>
           <div id="stab-advanced" style="display:none">
@@ -1593,6 +1791,26 @@ class MetaCRMApp {
           </div>
         </div>
       </div>`;
+  }
+
+  saveNotificationPreferences() {
+    const inApp = document.getElementById('pref-in-app')?.checked ?? true;
+    const email = document.getElementById('pref-email')?.checked ?? false;
+    const slack = document.getElementById('pref-slack')?.value || null;
+    const hotThreshold = parseFloat(document.getElementById('pref-hot-threshold')?.value) || 50000;
+
+    if (this.user) {
+      this.user.notification_preferences = {
+        in_app: inApp,
+        email,
+        slack_webhook_url: slack,
+        hot_lead_threshold: hotThreshold
+      };
+      if (this.svc) {
+        this.svc.saveAll();
+      }
+    }
+    this.toast('Notification preferences saved successfully! ✓');
   }
 
   _setTab(el, tabId) {

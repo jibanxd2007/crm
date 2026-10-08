@@ -827,6 +827,199 @@ tr.clickable-row:hover { background: #F8FAFC; }
   text-overflow: ellipsis;
 }
 
+/* ─── Phase A: Notifications Bell, Popover & SLA Badges ───── */
+.notif-bell-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.notif-bell-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text-secondary);
+  cursor: pointer;
+  position: relative;
+  transition: all var(--transition);
+}
+.notif-bell-btn:hover {
+  background: #F1F5F9;
+  color: var(--text-primary);
+}
+.notif-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px #fff;
+}
+.notif-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 320px;
+  max-width: 90vw;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  z-index: 50;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+}
+.notif-popover.open {
+  display: flex;
+}
+.notif-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: #F8FAFC;
+}
+.notif-list {
+  max-height: 360px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.notif-item {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background var(--transition);
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  text-decoration: none;
+  color: inherit;
+}
+.notif-item:hover {
+  background: #F8FAFC;
+}
+.notif-item.unread {
+  background: #EEF2FF;
+}
+.notif-item.hot-lead {
+  border-left: 3px solid var(--warning);
+}
+.notif-icon-wrap {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  flex-shrink: 0;
+  background: #EEF2FF;
+  color: var(--accent);
+}
+.notif-item.hot-lead .notif-icon-wrap {
+  background: #FEF3C7;
+  color: #B45309;
+}
+.notif-item-body {
+  flex: 1;
+  min-width: 0;
+}
+.notif-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.notif-msg {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+.notif-time {
+  font-size: 10px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+.notif-empty {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Speed-to-Lead SLA Badges */
+.sla-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sla-badge.compliant {
+  background: #D1FAE5;
+  color: #047857;
+  border: 1px solid #A7F3D0;
+}
+.sla-badge.non_compliant_late {
+  background: #FEF3C7;
+  color: #B45309;
+  border: 1px solid #FDE68A;
+}
+.sla-badge.live_breach {
+  background: #FEE2E2;
+  color: #B91C1C;
+  border: 1px solid #FECACA;
+  animation: pulse-breach 2s infinite;
+}
+.sla-badge.pending {
+  background: #EFF6FF;
+  color: #1D4ED8;
+  border: 1px solid #BFDBFE;
+}
+@keyframes pulse-breach {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
+/* Hot Lead Indicator */
+.badge-hot {
+  background: #FEF3C7;
+  color: #B45309;
+  font-weight: 700;
+  border: 1px solid #FCD34D;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.hot-lead-card {
+  border-left: 3px solid #F59E0B !important;
+}
+.speed-kpi-highlight {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
 /* ─── Responsive Media Queries ───────────────────────────── */
 
 /* Tablet & Smaller Desktops (<= 1024px) */

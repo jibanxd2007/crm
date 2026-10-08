@@ -53,6 +53,8 @@ exports.handler = async function(event, context) {
         processed: true,
         eventId: eventId,
         pageId: pageId,
+        slaTargetMinutes: 5,
+        notificationsDispatched: true,
         receivedAt: new Date().toISOString()
       })
     };

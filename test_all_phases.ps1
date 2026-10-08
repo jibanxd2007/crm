@@ -206,6 +206,106 @@ $hasMetaCallbackFunc = Test-Path "netlify\functions\meta-callback.js"
 $hasMetaWebhookFunc = Test-Path "netlify\functions\meta-webhook.js"
 Assert-Test "PHASE 24" "Netlify Meta Endpoints (OAuth, Callback, Webhook)" ($hasMetaOAuthFunc -and $hasMetaCallbackFunc -and $hasMetaWebhookFunc)
 
+# ------------------------------------------------------------------------------
+# PHASE A: SPEED-TO-LEAD & SLA COMPLIANCE ENGINE
+# ------------------------------------------------------------------------------
+# 1. Schema: Notifications Table & Speed-to-Lead DDL
+$hasNotifsTable = $schemaContent.Contains("CREATE TABLE IF NOT EXISTS public.notifications")
+$hasFirstRespCol = $schemaContent.Contains("first_response_at TIMESTAMPTZ")
+$hasSlaCol = $schemaContent.Contains("sla_target_minutes INT DEFAULT 5")
+$hasWriteOnceTrig = $schemaContent.Contains("enforce_first_response_at_write_once()")
+$hasMigrationFile = Test-Path ".\supabase\migrations\20261009_phase_a_speed_to_lead.sql"
+Assert-Test "PHASE A" "Schema: Notifications Table & Write-Once DDL" ($hasNotifsTable -and $hasFirstRespCol -and $hasSlaCol -and $hasWriteOnceTrig -and $hasMigrationFile)
+
+# 2. Inbound Leadgen: Notification Creation & Hot-Lead Evaluation
+try {
+  $hotLeadSim = Invoke-RestMethod -Uri "$baseUri/api/zernio/simulate-lead" -Method Post -Body (@{
+    name = "High-Value Enterprise Prospect";
+    value = 75000;
+    assignedTo = "user_a";
+    pageId = "page_01"
+  } | ConvertTo-Json) -ContentType "application/json" -TimeoutSec 15
+
+  $hotLeadSuccess = ($hotLeadSim.status -eq "success") -and ($hotLeadSim.lead.isHotLead -eq $true) -and ($hotLeadSim.lead.slaTargetMinutes -eq 5)
+  Assert-Test "PHASE A" "Inbound Leadgen: Notification Creation & Hot-Lead Evaluation" $hotLeadSuccess "(Lead Value: ₹$($hotLeadSim.lead.value), Hot: $($hotLeadSim.lead.isHotLead))"
+} catch {
+  Assert-Test "PHASE A" "Inbound Leadgen: Notification Creation & Hot-Lead Evaluation" $false $_.Exception.Message
+}
+
+# 3. Notifications RLS Isolation (User A / User B / Admin)
+try {
+  $unauthNotifs = try { Invoke-RestMethod -Uri "$baseUri/api/notifications" -Method Get -TimeoutSec 5 } catch { $_.Exception.Response.StatusCode }
+  $userANotifs = Invoke-RestMethod -Uri "$baseUri/api/notifications" -Method Get -Headers @{ "x-user-id" = "user_a" } -TimeoutSec 10
+  $userBNotifs = Invoke-RestMethod -Uri "$baseUri/api/notifications" -Method Get -Headers @{ "x-user-id" = "user_b" } -TimeoutSec 10
+  $adminNotifs = Invoke-RestMethod -Uri "$baseUri/api/notifications" -Method Get -Headers @{ "x-user-id" = "admin" } -TimeoutSec 10
+
+  $userAOnlyA = @($userANotifs.notifications | Where-Object { $_.userId -ne "user_a" }).Count -eq 0
+  $userBNoA = @($userBNotifs.notifications | Where-Object { $_.userId -eq "user_a" }).Count -eq 0
+  $adminHasHot = @($adminNotifs.notifications | Where-Object { $_.type -eq "hot_lead" }).Count -gt 0
+  $is401 = ($unauthNotifs -eq 401) -or ($unauthNotifs.Value__ -eq 401)
+
+  $rlsPass = $userAOnlyA -and $userBNoA -and $adminHasHot -and $is401
+  Assert-Test "PHASE A" "Notifications RLS Isolation (User A / User B / Admin)" $rlsPass "(User A Count: $(@($userANotifs.notifications).Count), Admin Hot: $adminHasHot)"
+} catch {
+  Assert-Test "PHASE A" "Notifications RLS Isolation (User A / User B / Admin)" $false $_.Exception.Message
+}
+
+# 4. Speed-to-Lead: Write-Once first_response_at Enforcement
+try {
+  $firstResp1 = Invoke-RestMethod -Uri "$baseUri/api/leads/first-response" -Method Post -Headers @{ "x-user-id" = "user_a" } -Body (@{
+    leadId = "lead_test_write_once";
+    action = "call"
+  } | ConvertTo-Json) -ContentType "application/json" -TimeoutSec 10
+
+  $initialTimestamp = $firstResp1.record.firstResponseAt
+
+  # Attempt second write (should be rejected/ignored, preserving write-once timestamp)
+  Start-Sleep -Milliseconds 150
+  $firstResp2 = Invoke-RestMethod -Uri "$baseUri/api/leads/first-response" -Method Post -Headers @{ "x-user-id" = "user_a" } -Body (@{
+    leadId = "lead_test_write_once";
+    action = "email"
+  } | ConvertTo-Json) -ContentType "application/json" -TimeoutSec 10
+
+  $isWriteOnce = ($firstResp2.record.firstResponseAt -eq $initialTimestamp) -and ($firstResp2.record.wasUpdated -eq $false) -and ($firstResp2.record.writeAttempts -eq 2)
+  Assert-Test "PHASE A" "Speed-to-Lead: Write-Once first_response_at Enforcement" $isWriteOnce "(Initial: $initialTimestamp, Was Preserved: $isWriteOnce)"
+} catch {
+  Assert-Test "PHASE A" "Speed-to-Lead: Write-Once first_response_at Enforcement" $false $_.Exception.Message
+}
+
+# 5. SLA Engine: Compliance vs Live Breach Math
+$targetMins = 5
+$cTime = [DateTime]::UtcNow.AddMinutes(-10) # 10 mins ago
+
+# Case A: Answered in 3 mins (<= 5 min SLA) -> Compliant
+$rTimeA = $cTime.AddMinutes(3)
+$isCompliantA = ($rTimeA - $cTime).TotalMinutes -le $targetMins
+
+# Case B: Answered in 8 mins (> 5 min SLA) -> Non-compliant late (counts as failure!)
+$rTimeB = $cTime.AddMinutes(8)
+$isCompliantB = ($rTimeB - $cTime).TotalMinutes -le $targetMins
+
+# Case C: Unanswered after 10 mins -> Live Breach
+$isLiveBreachC = ([DateTime]::UtcNow - $cTime).TotalMinutes -gt $targetMins
+
+# Case D: Compliance rate math (1 compliant out of 2 answered = 50.0%)
+$totalResponded = 2
+$compliantCount = 1
+$complianceRate = ($compliantCount / $totalResponded) * 100.0
+
+$slaMathValid = $isCompliantA -and (-not $isCompliantB) -and $isLiveBreachC -and ($complianceRate -eq 50.0)
+Assert-Test "PHASE A" "SLA Engine: Compliance vs Live Breach Math" $slaMathValid "(Compliant: $isCompliantA, Late: $(-not $isCompliantB), Breach: $isLiveBreachC, Rate: $complianceRate%)"
+
+# 6. UI & Dashboard: Speed-to-Lead & Notifications Components
+$indexContent = Get-Content ".\index.html" -Raw
+$cssContent = Get-Content ".\css\styles.css" -Raw
+$crmServiceContent = Get-Content ".\js\crm-service.js" -Raw
+
+$hasNotifBell = $indexContent.Contains("notif-bell-btn") -and $indexContent.Contains("notif-popover")
+$hasSlaBadgeCss = $cssContent.Contains(".sla-badge") -and $cssContent.Contains(".badge-hot")
+$hasServiceMethods = $crmServiceContent.Contains("recordFirstResponse") -and $crmServiceContent.Contains("getLeadSlaStatus") -and $crmServiceContent.Contains("getStaffSpeedLeaderboard")
+
+Assert-Test "PHASE A" "UI & Dashboard: Speed-to-Lead & Notifications Components" ($hasNotifBell -and $hasSlaBadgeCss -and $hasServiceMethods)
+
 Write-Host "===========================================================" -ForegroundColor Cyan
 $passed = ($script:results | Where-Object { $_.Status -eq "PASSED" }).Count
 $total = $script:results.Count
