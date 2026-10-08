@@ -114,6 +114,20 @@
   to = "/.netlify/functions/reports"
   status = 200
 
+# --- Phase B: Ad Spend Sync & Insights Endpoints ---
+[[redirects]]
+  from = "/api/meta/insights"
+  to = "/.netlify/functions/ad-spend-sync"
+  status = 200
+
+[[redirects]]
+  from = "/api/meta/ad-spend-sync"
+  to = "/.netlify/functions/ad-spend-sync"
+  status = 200
+
+[functions."ad-spend-sync"]
+  schedule = "@hourly"
+
 # --- Single Page Application (SPA) Catch-all ---
 [[redirects]]
   from = "/*"

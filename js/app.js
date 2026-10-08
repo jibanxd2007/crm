@@ -462,17 +462,22 @@ class MetaCRMApp {
           <div class="kpi-value" style="color:${(this.svc && this.svc.getSpeedToLeadMetrics(leads).liveBreachCount > 0) ? 'var(--danger)' : 'var(--text-secondary)'}">${this.svc ? this.svc.getSpeedToLeadMetrics(leads).liveBreachCount : 0}</div>
           <div class="kpi-trend">Unanswered &gt; 5m</div>
         </div>
-        ${isAdmin ? `
+        <!-- Phase B: Ad Spend, CPL, CPA Financial KPIs -->
         <div class="kpi-card">
           <div class="kpi-title">AD SPEND</div>
-          <div class="kpi-value">₹${this._formatNum(totalSpend || 0)}</div>
-          <div class="kpi-trend">${campaigns.length} Active Campaigns</div>
+          <div class="kpi-value">₹${this._formatNum(this.svc ? this.svc.getRoiMetrics().totalSpend : 0)}</div>
+          <div class="kpi-trend">${isAdmin ? (campaigns.length + ' Active Campaigns') : 'Assigned Pages'}</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-title">COST PER LEAD</div>
-          <div class="kpi-value" style="color:var(--accent)">₹${cpl}</div>
-          <div class="kpi-trend">Average cost</div>
-        </div>` : ''}
+          <div class="kpi-title">COST PER LEAD (CPL)</div>
+          <div class="kpi-value" style="color:var(--accent)">₹${this.svc ? this.svc.getRoiMetrics().cpl : 0}</div>
+          <div class="kpi-trend">Live CPL</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-title">COST PER ACQUISITION (CPA)</div>
+          <div class="kpi-value" style="color:var(--success)">₹${this.svc ? this.svc.getRoiMetrics().cpa : 0}</div>
+          <div class="kpi-trend">Spend / Won Deal</div>
+        </div>
       </div>
 
       <!-- MAIN DASHBOARD GRID -->
@@ -1632,6 +1637,124 @@ class MetaCRMApp {
             })()}
           </tbody>
         </table>
+      </div>
+
+      <!-- PHASE B: AD SPEND & TRUE ROI ENGINE -->
+      <div class="card roi-section">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Ad Spend &amp; True ROI Performance</div>
+            <span class="text-xs text-gray">Live CPL &amp; CPA tracked against actual Meta Graph API spend</span>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="window.app.syncAdSpend()">🔄 Sync Ad Spend Now</button>
+        </div>
+
+        ${(() => {
+          const roi = this.svc ? this.svc.getRoiMetrics() : { totalSpend: 0, cpl: 0, cpa: 0, roas: 0, roiByPage: [], roiByCampaign: [] };
+          return `
+          <!-- Summary ROI KPI Grid -->
+          <div class="roi-grid" style="padding: 16px;">
+            <div class="roi-card">
+              <div class="roi-card-label">TOTAL AD SPEND</div>
+              <div class="roi-card-value">₹${this._formatNum(roi.totalSpend)}</div>
+              <div class="roi-card-sub">Meta Graph v20.0 Verified</div>
+            </div>
+            <div class="roi-card">
+              <div class="roi-card-label">COST PER LEAD (CPL)</div>
+              <div class="roi-card-value" style="color:var(--accent);">₹${roi.cpl}</div>
+              <div class="roi-card-sub">${roi.totalLeads} Total Inbound Leads</div>
+            </div>
+            <div class="roi-card">
+              <div class="roi-card-label">COST PER ACQUISITION (CPA)</div>
+              <div class="roi-card-value" style="color:var(--success);">₹${roi.cpa}</div>
+              <div class="roi-card-sub">${roi.totalWonDeals} Won Conversions</div>
+            </div>
+            <div class="roi-card">
+              <div class="roi-card-label">RETURN ON AD SPEND (ROAS)</div>
+              <div class="roi-card-value" style="color:#7C3AED;">${roi.roas}x</div>
+              <div class="roi-card-sub">Revenue: ₹${this._formatNum(roi.totalWonValue)}</div>
+            </div>
+          </div>
+
+          <!-- ROI By Page Table -->
+          <div style="padding: 0 16px 16px;">
+            <h4 style="font-size: 13px; font-weight: 600; margin-bottom: 8px;">ROI Breakdown by Page</h4>
+            <div class="roi-table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Facebook Page</th>
+                    <th>Ad Spend</th>
+                    <th>Leads</th>
+                    <th>Live CPL</th>
+                    <th>Won Deals</th>
+                    <th>Won Value</th>
+                    <th>Live CPA</th>
+                    <th>ROAS</th>
+                    <th>Performance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${roi.roiByPage.length > 0 ? roi.roiByPage.map(row => `
+                    <tr>
+                      <td><strong>${row.pageName}</strong></td>
+                      <td>₹${this._formatNum(row.spend)}</td>
+                      <td class="font-semibold">${row.leads}</td>
+                      <td>₹${row.cpl}</td>
+                      <td><span class="badge badge-green">${row.wonDeals}</span></td>
+                      <td>₹${this._formatNum(row.wonValue)}</td>
+                      <td class="font-semibold">₹${row.cpa}</td>
+                      <td><strong>${row.roas}x</strong></td>
+                      <td>
+                        ${row.performerFlag === 'top_roas' ? '<span class="badge-top-roas">★ Top ROI</span>' :
+                          row.performerFlag === 'high_cpl' ? '<span class="badge-high-cpl">⚠ High CPL</span>' :
+                          '<span class="badge-stable-roi">Stable</span>'}
+                      </td>
+                    </tr>`).join('') : '<tr><td colspan="9" class="empty-cell" style="text-align:center;padding:16px;">No pages assigned</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+
+            <!-- ROI By Campaign Table -->
+            <h4 style="font-size: 13px; font-weight: 600; margin-bottom: 8px; margin-top: 16px;">ROI Breakdown by Campaign</h4>
+            <div class="roi-table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Campaign</th>
+                    <th>Page</th>
+                    <th>Ad Spend</th>
+                    <th>Leads</th>
+                    <th>Live CPL</th>
+                    <th>Won Deals</th>
+                    <th>Live CPA</th>
+                    <th>ROAS</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${roi.roiByCampaign.length > 0 ? roi.roiByCampaign.map(camp => `
+                    <tr>
+                      <td><strong>${camp.campaignName}</strong></td>
+                      <td class="text-xs text-gray">${camp.pageName}</td>
+                      <td>₹${this._formatNum(camp.spend)}</td>
+                      <td class="font-semibold">${camp.leads}</td>
+                      <td>₹${camp.cpl}</td>
+                      <td><span class="badge badge-green">${camp.wonDeals}</span></td>
+                      <td class="font-semibold">₹${camp.cpa}</td>
+                      <td><strong>${camp.roas}x</strong></td>
+                      <td>
+                        ${camp.performerFlag === 'top_roas' ? '<span class="badge-top-roas">★ Top ROI</span>' :
+                          camp.performerFlag === 'high_cpl' ? '<span class="badge-high-cpl">Review Needed</span>' :
+                          '<span class="badge-stable-roi">Active</span>'}
+                      </td>
+                    </tr>`).join('') : '<tr><td colspan="9" class="empty-cell" style="text-align:center;padding:16px;">No campaigns available</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          `;
+        })()}
       </div>`;
   }
 
@@ -2073,6 +2196,15 @@ class MetaCRMApp {
       t.style.opacity = '0';
       setTimeout(() => t.remove(), 250);
     }, 3200);
+  }
+
+  async syncAdSpend() {
+    this.toast('Syncing ad spend and insights from Meta Graph API...');
+    if (this.svc) {
+      await this.svc.syncAdInsights();
+      this.toast('Ad spend insights synced successfully!');
+      this.render();
+    }
   }
 }
 

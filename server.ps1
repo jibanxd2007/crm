@@ -84,7 +84,56 @@ Write-Host "==========================================================" -Foregro
 
 $global:MockNotifications = @()
 $global:MockLeadsSpeed = @{}
-
+$global:MockAdInsights = @(
+    @{
+        id = "ins_page_01_cmp_01";
+        pageId = "page_01";
+        pageName = "TechNova Solutions";
+        adAccountId = "act_101";
+        campaignId = "cmp_leadgen_01";
+        campaignName = "Enterprise B2B Lead Gen";
+        adsetId = "adset_tech_01";
+        adsetName = "IT Decision Makers";
+        adId = "ad_lead_01";
+        adName = "Enterprise Cloud Demo Ad";
+        dateStart = (Get-Date).AddDays(-30).ToString("yyyy-MM-dd");
+        dateStop = (Get-Date).ToString("yyyy-MM-dd");
+        spend = 45000.00;
+        impressions = 125000;
+        clicks = 3400;
+        ctr = 2.72;
+        cpc = 13.23;
+        cpm = 360.00;
+        conversions = 45;
+        leads = 45;
+        wonDeals = 9;
+        wonValue = 185000.00
+    },
+    @{
+        id = "ins_page_02_cmp_02";
+        pageId = "page_02";
+        pageName = "Aura Living";
+        adAccountId = "act_102";
+        campaignId = "cmp_leadgen_02";
+        campaignName = "Spring Home Decor";
+        adsetId = "adset_aura_01";
+        adsetName = "Home Decor Enthusiasts";
+        adId = "ad_lead_02";
+        adName = "Spring Collection Carousel";
+        dateStart = (Get-Date).AddDays(-30).ToString("yyyy-MM-dd");
+        dateStop = (Get-Date).ToString("yyyy-MM-dd");
+        spend = 32000.00;
+        impressions = 98000;
+        clicks = 2100;
+        ctr = 2.14;
+        cpc = 15.24;
+        cpm = 326.53;
+        conversions = 20;
+        leads = 20;
+        wonDeals = 2;
+        wonValue = 48000.00
+    }
+)
 while ($listener.IsListening) {
     try {
         $context = $listener.GetContext()
@@ -116,8 +165,8 @@ while ($listener.IsListening) {
             if ($urlPath -eq "/api/zernio/status" -and $request.HttpMethod -eq "GET") {
                 try {
                     $zHeaders = @{ "Authorization" = "Bearer $ZERNIO_API_KEY" }
-                    $profRes = Invoke-RestMethod -Uri "$ZERNIO_BASE_URL/profiles" -Headers $zHeaders -Method Get -TimeoutSec 20
-                    $accRes = Invoke-RestMethod -Uri "$ZERNIO_BASE_URL/accounts" -Headers $zHeaders -Method Get -TimeoutSec 20
+                    $profRes = Invoke-RestMethod -Uri "$ZERNIO_BASE_URL/profiles" -Headers $zHeaders -Method Get -TimeoutSec 6
+                    $accRes = Invoke-RestMethod -Uri "$ZERNIO_BASE_URL/accounts" -Headers $zHeaders -Method Get -TimeoutSec 6
 
                     $activeProfile = if ($profRes.profiles -and $profRes.profiles.Count -gt 0) { $profRes.profiles[0] } else { $null }
                     $accountsList = if ($accRes.accounts) { $accRes.accounts } else { @() }
@@ -513,6 +562,108 @@ while ($listener.IsListening) {
                         processed = $true;
                         timestamp = (Get-Date).ToString("o")
                     }
+                }
+                continue
+            }
+
+            # Phase B: /api/meta/insights & /api/meta/roi (Ad Spend Sync & Role-Scoped ROI Engine)
+            if ($urlPath -eq "/api/meta/insights" -or $urlPath -eq "/api/meta/roi" -or $urlPath -eq "/api/meta/ad-spend-sync") {
+                if (-not $reqUser) {
+                    Send-JsonResponse $response 401 @{ error = "Unauthorized: Authentication required" }
+                    continue
+                }
+
+                # Handle POST ad-spend-sync trigger
+                if ($request.HttpMethod -eq "POST" -and $urlPath -eq "/api/meta/ad-spend-sync") {
+                    Send-JsonResponse $response 200 @{
+                        status = "success";
+                        action = "ad_spend_synced";
+                        recordsUpserted = 2;
+                        totalSpendSynced = 77000.00;
+                        syncedAt = (Get-Date).ToString("o")
+                    }
+                    continue
+                }
+
+                # Filter MockAdInsights by Authenticated Role (User A -> page_01, User B -> page_02, Admin -> all)
+                $scopedInsights = @()
+                if ($reqUser -eq "admin") {
+                    $scopedInsights = @($global:MockAdInsights)
+                } elseif ($reqUser -eq "user_a") {
+                    $scopedInsights = @($global:MockAdInsights | Where-Object { $_.pageId -eq "page_01" -or $_.pageId -eq "page_a" })
+                } elseif ($reqUser -eq "user_b") {
+                    $scopedInsights = @($global:MockAdInsights | Where-Object { $_.pageId -eq "page_02" -or $_.pageId -eq "page_b" })
+                }
+
+                # Financial ROI Aggregations
+                $totSpend = 0.0
+                $totImpressions = 0
+                $totClicks = 0
+                $totLeads = 0
+                $totWonDeals = 0
+                $totWonValue = 0.0
+
+                foreach ($item in $scopedInsights) {
+                    $totSpend += [double]$item.spend
+                    $totImpressions += [long]$item.impressions
+                    $totClicks += [long]$item.clicks
+                    $totLeads += [int]$item.leads
+                    $totWonDeals += [int]$item.wonDeals
+                    $totWonValue += [double]$item.wonValue
+                }
+
+                $liveCpl = if ($totLeads -gt 0) { [Math]::Round(($totSpend / $totLeads), 2) } else { 0.0 }
+                $liveCpa = if ($totWonDeals -gt 0) { [Math]::Round(($totSpend / $totWonDeals), 2) } else { 0.0 }
+                $liveRoas = if ($totSpend -gt 0) { [Math]::Round(($totWonValue / $totSpend), 2) } else { 0.0 }
+
+                # Build breakdown with Performer Flags
+                $pageBreakdown = @()
+                foreach ($item in $scopedInsights) {
+                    $itemSpend = [double]$item.spend
+                    $itemLeads = [int]$item.leads
+                    $itemWon = [int]$item.wonDeals
+                    $itemVal = [double]$item.wonValue
+                    $itemCpl = if ($itemLeads -gt 0) { [Math]::Round(($itemSpend / $itemLeads), 2) } else { 0.0 }
+                    $itemCpa = if ($itemWon -gt 0) { [Math]::Round(($itemSpend / $itemWon), 2) } else { 0.0 }
+                    $itemRoas = if ($itemSpend -gt 0) { [Math]::Round(($itemVal / $itemSpend), 2) } else { 0.0 }
+
+                    # Performer Flag
+                    $performerFlag = "average"
+                    if ($itemRoas -ge 3.0) { $performerFlag = "top_roas" }
+                    elseif ($itemCpl -gt 1500.0 -or ($itemWon -eq 0 -and $itemSpend -gt 10000)) { $performerFlag = "high_cpl" }
+
+                    $pageBreakdown += @{
+                        pageId = $item.pageId;
+                        pageName = $item.pageName;
+                        campaignId = $item.campaignId;
+                        campaignName = $item.campaignName;
+                        spend = $itemSpend;
+                        leads = $itemLeads;
+                        wonDeals = $itemWon;
+                        wonValue = $itemVal;
+                        cpl = $itemCpl;
+                        cpa = $itemCpa;
+                        roas = $itemRoas;
+                        performerFlag = $performerFlag
+                    }
+                }
+
+                Send-JsonResponse $response 200 @{
+                    status = "success";
+                    user = $reqUser;
+                    summary = @{
+                        totalSpend = $totSpend;
+                        impressions = $totImpressions;
+                        clicks = $totClicks;
+                        totalLeads = $totLeads;
+                        wonDeals = $totWonDeals;
+                        wonValue = $totWonValue;
+                        cpl = $liveCpl;
+                        cpa = $liveCpa;
+                        roas = $liveRoas
+                    };
+                    records = $scopedInsights;
+                    breakdown = $pageBreakdown
                 }
                 continue
             }

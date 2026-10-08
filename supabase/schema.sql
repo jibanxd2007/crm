@@ -384,6 +384,41 @@ CREATE TRIGGER trg_leads_first_response_once
   EXECUTE FUNCTION public.enforce_first_response_at_write_once();
 
 -- ------------------------------------------------------------------------------
+-- 13b. AD INSIGHTS & TRUE ROI ENGINE (PHASE B)
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.ad_insights (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  page_id UUID REFERENCES public.meta_pages(id) ON DELETE CASCADE,
+  ad_account_id TEXT NOT NULL,
+  campaign_id TEXT,
+  campaign_name TEXT,
+  adset_id TEXT,
+  adset_name TEXT,
+  ad_id TEXT,
+  ad_name TEXT,
+  date_start DATE NOT NULL,
+  date_stop DATE NOT NULL,
+  spend NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  impressions BIGINT NOT NULL DEFAULT 0,
+  clicks BIGINT NOT NULL DEFAULT 0,
+  ctr NUMERIC(6, 4) DEFAULT 0.0000,
+  cpc NUMERIC(10, 2) DEFAULT 0.00,
+  cpm NUMERIC(10, 2) DEFAULT 0.00,
+  conversions INT DEFAULT 0,
+  raw_data JSONB DEFAULT '{}'::jsonb,
+  synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ad_insights_page ON public.ad_insights(page_id);
+CREATE INDEX IF NOT EXISTS idx_ad_insights_campaign ON public.ad_insights(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_ad_insights_adset ON public.ad_insights(adset_id);
+CREATE INDEX IF NOT EXISTS idx_ad_insights_ad ON public.ad_insights(ad_id);
+CREATE INDEX IF NOT EXISTS idx_ad_insights_dates ON public.ad_insights(date_start, date_stop);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_ad_insights_daily_idx 
+  ON public.ad_insights(ad_account_id, COALESCE(campaign_id, ''), COALESCE(adset_id, ''), COALESCE(ad_id, ''), date_start);
+
+-- ------------------------------------------------------------------------------
 -- 14. SYSTEM AUDIT LOGS (SECURITY & USER ACTIONS)
 -- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.audit_logs (
@@ -742,6 +777,21 @@ CREATE POLICY "Users can access org audit logs"
   ON public.audit_logs FOR SELECT
   USING (organization_id = public.current_user_org_id());
 
+-- Ad Insights: Multi-user scoping (Staff see assigned pages only, Admins see all)
+ALTER TABLE public.ad_insights ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "ad_insights_select_policy" ON public.ad_insights
+  FOR SELECT TO authenticated
+  USING (
+    is_admin()
+    OR page_id IN (SELECT page_id FROM public.page_members WHERE user_id = auth.uid())
+  );
+
+CREATE POLICY "ad_insights_write_policy" ON public.ad_insights
+  FOR ALL TO authenticated
+  USING (is_admin())
+  WITH CHECK (is_admin());
+
 -- ==============================================================================
 -- REALTIME PUBLICATION
 -- ==============================================================================
@@ -755,3 +805,4 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.lead_notes;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.crm_activities;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.webhook_events;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.ad_insights;

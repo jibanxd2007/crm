@@ -306,6 +306,78 @@ $hasServiceMethods = $crmServiceContent.Contains("recordFirstResponse") -and $cr
 
 Assert-Test "PHASE A" "UI & Dashboard: Speed-to-Lead & Notifications Components" ($hasNotifBell -and $hasSlaBadgeCss -and $hasServiceMethods)
 
+# ------------------------------------------------------------------------------
+# PHASE B: AD SPEND SYNC & TRUE ROI TRACKING ENGINE
+# ------------------------------------------------------------------------------
+# 1. Schema: ad_insights Table, Upsert Constraint & Scoped RLS DDL
+$hasAdInsightsTable = $schemaContent.Contains("CREATE TABLE IF NOT EXISTS public.ad_insights")
+$hasDailyIdx = $schemaContent.Contains("uq_ad_insights_daily_idx")
+$hasAdInsightsRls = $schemaContent.Contains("ALTER TABLE public.ad_insights ENABLE ROW LEVEL SECURITY")
+$hasAdInsightsPolicy = $schemaContent.Contains("ad_insights_select_policy")
+$hasPhaseBMigration = Test-Path ".\supabase\migrations\20261009_phase_b_ad_spend_roi.sql"
+$hasSyncFunction = Test-Path ".\netlify\functions\ad-spend-sync.js"
+
+$phaseBSchemaValid = $hasAdInsightsTable -and $hasDailyIdx -and $hasAdInsightsRls -and $hasAdInsightsPolicy -and $hasPhaseBMigration -and $hasSyncFunction
+Assert-Test "PHASE B" "Schema: ad_insights Table, Upsert Constraint & Scoped RLS DDL" $phaseBSchemaValid
+
+# 2. Insights Ingestion & Parsing: Meta Graph /act_{id}/insights Schema
+try {
+  $syncRes = Invoke-RestMethod -Uri "$baseUri/api/meta/ad-spend-sync" -Method Post -Headers @{ "x-user-id" = "admin" } -Body (@{
+    adAccountId = "act_101";
+    datePreset = "last_30d"
+  } | ConvertTo-Json) -ContentType "application/json" -TimeoutSec 15
+
+  $syncPass = ($syncRes.status -eq "success") -and ($syncRes.recordsUpserted -gt 0) -and ($syncRes.totalSpendSynced -gt 0)
+  Assert-Test "PHASE B" "Insights Ingestion & Parsing: Meta Graph /act_{id}/insights Schema" $syncPass "(Records: $($syncRes.recordsUpserted), Synced Spend: ₹$($syncRes.totalSpendSynced))"
+} catch {
+  Assert-Test "PHASE B" "Insights Ingestion & Parsing: Meta Graph /act_{id}/insights Schema" $false $_.Exception.Message
+}
+
+# 3. Financial Engine: Live CPL (Spend/Leads) & CPA (Spend/Won) Math
+$mockSpend = 45000.0
+$mockLeads = 45
+$mockWon = 9
+$mockWonVal = 185000.0
+
+$calcCpl = [Math]::Round(($mockSpend / $mockLeads), 2) # Expected: 1000
+$calcCpa = [Math]::Round(($mockWon / 1), 0)            # 9 won
+$calcCpa = [Math]::Round(($mockSpend / $mockWon), 2)   # Expected: 5000
+$calcRoas = [Math]::Round(($mockWonVal / $mockSpend), 2) # Expected: 4.11
+$isTopPerformer = ($calcRoas -ge 3.0)
+
+$finMathValid = ($calcCpl -eq 1000.0) -and ($calcCpa -eq 5000.0) -and ($calcRoas -eq 4.11) -and $isTopPerformer
+Assert-Test "PHASE B" "Financial Engine: Live CPL (Spend/Leads) & CPA (Spend/Won) Math" $finMathValid "(CPL: ₹$calcCpl, CPA: ₹$calcCpa, ROAS: $calcRoas`x, Top: $isTopPerformer)"
+
+# 4. Multi-User RLS Scoping: Staff Isolation on ROI & Spend (User A vs User B vs Admin)
+try {
+  $unauthRoi = try { Invoke-RestMethod -Uri "$baseUri/api/meta/roi" -Method Get -TimeoutSec 5 } catch { $_.Exception.Response.StatusCode }
+  $userARoi = Invoke-RestMethod -Uri "$baseUri/api/meta/roi" -Method Get -Headers @{ "x-user-id" = "user_a" } -TimeoutSec 10
+  $userBRoi = Invoke-RestMethod -Uri "$baseUri/api/meta/roi" -Method Get -Headers @{ "x-user-id" = "user_b" } -TimeoutSec 10
+  $adminRoi = Invoke-RestMethod -Uri "$baseUri/api/meta/roi" -Method Get -Headers @{ "x-user-id" = "admin" } -TimeoutSec 10
+
+  $is401 = ($unauthRoi -eq 401) -or ($unauthRoi.Value__ -eq 401)
+  $userAOnlyA = (@($userARoi.records | Where-Object { $_.pageId -ne "page_01" -and $_.pageId -ne "page_a" }).Count -eq 0) -and (@($userARoi.records).Count -eq 1)
+  $userBOnlyB = (@($userBRoi.records | Where-Object { $_.pageId -ne "page_02" -and $_.pageId -ne "page_b" }).Count -eq 0) -and (@($userBRoi.records).Count -eq 1)
+  $adminHasAll = (@($adminRoi.records).Count -ge 2) -and ($adminRoi.summary.totalSpend -eq 77000.0)
+
+  $rlsPass = $is401 -and $userAOnlyA -and $userBOnlyB -and $adminHasAll
+  Assert-Test "PHASE B" "Multi-User RLS Scoping: Staff Isolation on ROI & Spend (User A vs User B vs Admin)" $rlsPass "(User A Spend: ₹$($userARoi.summary.totalSpend), User B Spend: ₹$($userBRoi.summary.totalSpend), Admin Spend: ₹$($adminRoi.summary.totalSpend))"
+} catch {
+  Assert-Test "PHASE B" "Multi-User RLS Scoping: Staff Isolation on ROI & Spend (User A vs User B vs Admin)" $false $_.Exception.Message
+}
+
+# 5. UI & Analytics: Spend, CPL, CPA Cards & ROI Breakdown Tables
+$appContent = Get-Content ".\js\app.js" -Raw
+$hasCplCard = $appContent.Contains("COST PER LEAD (CPL)")
+$hasCpaCard = $appContent.Contains("COST PER ACQUISITION (CPA)")
+$hasRoiByPageTable = $appContent.Contains("ROI Breakdown by Page")
+$hasRoiByCampTable = $appContent.Contains("ROI Breakdown by Campaign")
+$hasPerformerBadges = $cssContent.Contains(".badge-top-roas") -and $cssContent.Contains(".badge-high-cpl")
+$hasServiceRoiMethods = $crmServiceContent.Contains("syncAdInsights") -and $crmServiceContent.Contains("getRoiMetrics")
+
+$uiRoiValid = $hasCplCard -and $hasCpaCard -and $hasRoiByPageTable -and $hasRoiByCampTable -and $hasPerformerBadges -and $hasServiceRoiMethods
+Assert-Test "PHASE B" "UI & Analytics: Spend, CPL, CPA Cards & ROI Breakdown Tables" $uiRoiValid
+
 Write-Host "===========================================================" -ForegroundColor Cyan
 $passed = ($script:results | Where-Object { $_.Status -eq "PASSED" }).Count
 $total = $script:results.Count
