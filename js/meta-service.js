@@ -820,39 +820,17 @@ class MetaService {
       this.config.zernioApiKey = apiKey.trim();
       this.saveConfig({ zernioApiKey: apiKey.trim() });
 
-      // Map the 6 business pages into the active Zernio connection
-      const allSixPages = (typeof window !== "undefined" && (window.INITIAL_PAGES || (window.crmService && window.crmService.pages))) || [];
-      const connectedPages = allSixPages.length > 0 ? allSixPages.map(p => ({
+      // Map business pages into active connection
+      const allPages = (typeof window !== "undefined" && (window.INITIAL_PAGES || (window.crmService && window.crmService.pages))) || [];
+      const connectedPages = allPages.map(p => ({
         ...p,
         isConnected: true,
         webhookSubscribed: true,
         provider: "zernio"
-      })) : [
-        {
-          id: "page_01",
-          meta_page_id: "fb_page_apex_01",
-          name: pageName || "Apex Living (via Zernio)",
-          category: "Real Estate",
-          avatar: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=120&auto=format&fit=crop&q=80",
-          isConnected: true,
-          webhookSubscribed: true,
-          provider: "zernio",
-          igAccount: { id: "ig_apex_01", username: "apex.living", followers: 48200 }
-        }
-      ];
+      }));
 
       const allAdAccounts = (typeof window !== "undefined" && (window.INITIAL_AD_ACCOUNTS || (window.crmService && window.crmService.adAccounts))) || [];
-      const connectedAdAccounts = allAdAccounts.length > 0 ? allAdAccounts : [
-        {
-          id: "act_zernio_01",
-          accountId: "zernio_act_01",
-          name: "Meta Ad Account (via Zernio)",
-          currency: "INR",
-          status: "ACTIVE",
-          timezone: "Asia/Kolkata",
-          amountSpent: "437600.00"
-        }
-      ];
+      const connectedAdAccounts = allAdAccounts;
 
       const connectionData = {
         isConnected: true,
@@ -891,7 +869,7 @@ class MetaService {
           "CONNECT_ZERNIO",
           "Zernio Unified Infrastructure",
           "SUCCESS",
-          `Connected 6 Meta pages via Zernio verified gateway (Profile: 6ac64ff53904c4c3acfa60fd).`
+          `Connected Meta gateway via Zernio verified infrastructure.`
         );
       }
 

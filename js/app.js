@@ -18,16 +18,16 @@ class MetaCRMApp {
 
     // Load active user session from crmService
     this.user = this.svc ? this.svc.getCurrentUser() : {
-      id: 'usr_admin_01',
-      name: 'Ananya Sen (Super Admin)',
-      displayName: 'Ananya Sen',
-      email: 'admin@metacrm.io',
+      id: 'usr_admin',
+      name: 'Administrator',
+      displayName: 'Administrator',
+      email: 'admin@company.com',
       role: 'admin',
-      assignedPageIds: ['page_01', 'page_02', 'page_03', 'page_04', 'page_05', 'page_06']
+      assignedPageIds: []
     };
 
     // Active conversation in Inbox
-    this.activeConvId = 'c1';
+    this.activeConvId = null;
 
     // DOM References
     this.el = {
@@ -249,16 +249,18 @@ class MetaCRMApp {
     const followL = leads.filter(l => l.status === 'Follow-up');
 
     // Calculate Spend and CPL
-    const totalSpend = isAdmin ? 245000 : null; // ₹2,45,000
-    const cpl = totalSpend && leads.length ? Math.round(totalSpend / leads.length) : null;
+    const campaignsList = (this.svc && this.svc.campaigns) ? this.svc.campaigns : [];
+    const totalSpend = isAdmin ? campaignsList.reduce((sum, c) => sum + (c.spend || 0), 0) : null;
+    const cpl = totalSpend && leads.length ? Math.round(totalSpend / leads.length) : 0;
+    const unreadMessagesCount = (this.svc ? (this.svc.conversations || []) : []).reduce((sum, c) => sum + (c.unread || 0), 0);
 
     // Page Performance Rows (Section 18 & 19)
     const pageRows = availablePages.map(p => {
       const pLeads = (this.svc ? this.svc.leads : []).filter(l => l.page_id === p.id || l.pageId === p.id || l.source === p.name);
       const pWon = pLeads.filter(l => l.status === 'Won' || l.status === 'Converted');
       const conv = pLeads.length ? ((pWon.length / pLeads.length) * 100).toFixed(0) : 0;
-      const spend = p.spend || Math.round(pLeads.length * 185);
-      const pageCpl = pLeads.length ? Math.round(spend / pLeads.length) : 0;
+      const spend = p.spend || 0;
+      const pageCpl = pLeads.length && spend ? Math.round(spend / pLeads.length) : 0;
       return `
         <tr>
           <td><div class="page-dot" style="background:${p.color || '#6366F1'}"></div><strong>${p.name}</strong></td>
@@ -279,10 +281,10 @@ class MetaCRMApp {
         <tr>
           <td><strong>${c.name}</strong></td>
           <td>${this._pageName(c.page_id || c.pageId)}</td>
-          <td>₹${this._formatNum(c.spend || 28000)}</td>
-          <td class="font-semibold">${cLeads.length || c.leadsCount || 18}</td>
-          <td>₹${c.cpl || 195}</td>
-          <td><span class="badge badge-green">${cWon.length || 4}</span></td>
+          <td>₹${this._formatNum(c.spend || 0)}</td>
+          <td class="font-semibold">${cLeads.length || c.leadsCount || 0}</td>
+          <td>₹${c.cpl || (c.spend && cLeads.length ? Math.round(c.spend / cLeads.length) : 0)}</td>
+          <td><span class="badge badge-green">${cWon.length || 0}</span></td>
         </tr>`;
     }).join('');
 
@@ -301,7 +303,7 @@ class MetaCRMApp {
         <div class="kpi-card">
           <div class="kpi-title">TOTAL LEADS</div>
           <div class="kpi-value">${leads.length}</div>
-          <div class="kpi-trend up">↑ 14% vs prev period</div>
+          <div class="kpi-trend">${leads.length ? 'Active pipeline' : 'No leads captured'}</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-title">NEW LEADS</div>
@@ -316,33 +318,33 @@ class MetaCRMApp {
         <div class="kpi-card">
           <div class="kpi-title">WON / CONVERTED</div>
           <div class="kpi-value" style="color:var(--success)">${wonL.length}</div>
-          <div class="kpi-trend up">↑ Target achieved</div>
+          <div class="kpi-trend">${wonL.length ? 'Closed deals' : 'No conversions'}</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-title">UNREAD MESSAGES</div>
-          <div class="kpi-value" style="color:var(--warning)">5</div>
+          <div class="kpi-value" style="color:var(--warning)">${unreadMessagesCount}</div>
           <div class="kpi-trend">In Messenger &amp; IG</div>
         </div>
         ${isAdmin ? `
         <div class="kpi-card">
           <div class="kpi-title">AD SPEND</div>
-          <div class="kpi-value">₹${this._formatNum(totalSpend)}</div>
-          <div class="kpi-trend">6 Meta Campaigns</div>
+          <div class="kpi-value">₹${this._formatNum(totalSpend || 0)}</div>
+          <div class="kpi-trend">${campaigns.length} Active Campaigns</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-title">COST PER LEAD</div>
           <div class="kpi-value" style="color:var(--accent)">₹${cpl}</div>
-          <div class="kpi-trend up">↓ 8% lower CPL</div>
+          <div class="kpi-trend">Average cost</div>
         </div>` : ''}
       </div>
 
       <!-- MAIN DASHBOARD GRID -->
       <div class="dash-grid">
         <div class="dash-col-main">
-          <!-- 6-Page Performance Table -->
+          <!-- Page Performance Table -->
           <div class="card">
             <div class="card-header">
-              <div class="card-title">${isAdmin ? 'Leads by Page (All 6 Pages)' : 'My Assigned Pages Performance'}</div>
+              <div class="card-title">${isAdmin ? 'Leads by Page' : 'My Assigned Pages Performance'}</div>
               ${isAdmin ? `<a href="#reports" class="link-small">View Full Report →</a>` : ''}
             </div>
             <table>
@@ -354,7 +356,7 @@ class MetaCRMApp {
                 </tr>
               </thead>
               <tbody>
-                ${pageRows || '<tr><td colspan="7" class="empty-cell">No page activity found</td></tr>'}
+                ${pageRows || '<tr><td colspan="7" class="empty-cell" style="text-align:center;padding:24px;color:var(--text-muted);">No connected pages found. Connect a Facebook Page in Connections.</td></tr>'}
               </tbody>
             </table>
           </div>
@@ -371,7 +373,7 @@ class MetaCRMApp {
                 <tr><th>Campaign Name</th><th>Page</th><th>Spend</th><th>Leads</th><th>CPL</th><th>Won</th></tr>
               </thead>
               <tbody>
-                ${campaignRows || '<tr><td colspan="6" class="empty-cell">No campaigns</td></tr>'}
+                ${campaignRows || '<tr><td colspan="6" class="empty-cell" style="text-align:center;padding:24px;color:var(--text-muted);">No active campaigns found.</td></tr>'}
               </tbody>
             </table>
           </div>` : ''}
@@ -387,7 +389,7 @@ class MetaCRMApp {
                 <tr><th>Name</th><th>Source &amp; Page</th><th>Stage</th><th>Assigned</th><th>Date</th></tr>
               </thead>
               <tbody>
-                ${recentLeads.map(l => `
+                ${recentLeads.length > 0 ? recentLeads.map(l => `
                   <tr class="clickable-row" onclick="window.app.openLeadDrawer('${l.id}')">
                     <td>
                       <div class="lead-name">${l.name}</div>
@@ -400,7 +402,7 @@ class MetaCRMApp {
                     <td>${this._badge(l.status)}</td>
                     <td class="text-xs">${this._staffName(l.assigned_staff_id || l.assignedStaffId)}</td>
                     <td class="text-xs text-gray">${this._timeAgo(l.created_at || l.createdAt)}</td>
-                  </tr>`).join('')}
+                  </tr>`).join('') : '<tr><td colspan="5" class="empty-cell" style="text-align:center;padding:24px;color:var(--text-muted);">No leads captured yet. Connect your Meta Page to begin receiving leads.</td></tr>'}
               </tbody>
             </table>
           </div>
@@ -550,7 +552,7 @@ class MetaCRMApp {
                     <div class="text-xs font-semibold">${l.source || 'Facebook Lead Ad'}</div>
                     <div class="text-xs text-gray">${pageName}</div>
                   </td>
-                  <td class="text-xs text-gray">${l.campaign_id || l.campaignId || 'Diwali Leads 2026'}</td>
+                  <td class="text-xs text-gray">${l.campaign_name || l.campaign_id || l.campaignId || '—'}</td>
                   <td>${this._badge(l.status)}</td>
                   <td class="text-xs">${this._staffName(l.assigned_staff_id || l.assignedStaffId)}</td>
                   <td class="text-xs text-gray">${lastAct}</td>
@@ -654,11 +656,11 @@ class MetaCRMApp {
         <div class="drawer-section-title">Lead Source &amp; Attribution</div>
         <div class="attribution-block">
           <div class="attr-row"><span class="attr-label">Source</span><strong>${lead.source || 'Facebook Lead Ad'}</strong></div>
-          <div class="attr-row"><span class="attr-label">Page</span><strong>${this._pageName(lead.page_id || lead.pageId) || 'Apex Living'}</strong></div>
-          <div class="attr-row"><span class="attr-label">Campaign</span><span>${lead.campaign_id || lead.campaignId || 'Diwali Leads 2026'}</span></div>
-          <div class="attr-row"><span class="attr-label">Ad Set</span><span>${lead.adset_id || lead.adsetId || 'High Intent Homebuyers'}</span></div>
-          <div class="attr-row"><span class="attr-label">Ad</span><span>${lead.ad_id || lead.adId || 'Video 02 - Tour Demo'}</span></div>
-          <div class="attr-row"><span class="attr-label">Lead Form</span><span>${lead.form_id || lead.formId || 'Instant Quote Form #8412'}</span></div>
+          <div class="attr-row"><span class="attr-label">Page</span><strong>${this._pageName(lead.page_id || lead.pageId) || '—'}</strong></div>
+          <div class="attr-row"><span class="attr-label">Campaign</span><span>${lead.campaign_name || lead.campaign_id || lead.campaignId || '—'}</span></div>
+          <div class="attr-row"><span class="attr-label">Ad Set</span><span>${lead.adset_name || lead.adset_id || lead.adsetId || '—'}</span></div>
+          <div class="attr-row"><span class="attr-label">Ad</span><span>${lead.ad_name || lead.ad_id || lead.adId || '—'}</span></div>
+          <div class="attr-row"><span class="attr-label">Lead Form</span><span>${lead.form_name || lead.form_id || lead.formId || '—'}</span></div>
           <div class="attr-row"><span class="attr-label">Meta ID</span><span class="text-xs text-gray font-mono">${lead.meta_lead_id || lead.id}</span></div>
           <div class="attr-row"><span class="attr-label">Assigned</span>
             <select class="input input-sm" onchange="window.app.reassignLead('${lead.id}', this.value)">
@@ -816,7 +818,7 @@ class MetaCRMApp {
     if (this.pipelineView === 'kanban') {
       const colsHtml = stages.map(stage => {
         const cards = leads.filter(d => d.status === stage || (stage === 'New Lead' && d.status === 'New'));
-        const total = cards.reduce((s, c) => s + (c.value || c.dealValue || 35000), 0);
+        const total = cards.reduce((s, c) => s + (c.value || c.dealValue || 0), 0);
         return `
           <div class="kanban-col" data-stage="${stage}" ondragover="event.preventDefault()" ondrop="window.app.onKanbanDrop(event, '${stage}')">
             <div class="kanban-col-header">
@@ -836,7 +838,7 @@ class MetaCRMApp {
                   <div class="kanban-card-meta text-xs text-gray">${this._pageName(c.page_id || c.pageId)}</div>
                   <div class="kanban-card-footer">
                     <div class="staff-chip" title="${this._staffName(c.assigned_staff_id || c.assignedStaffId)}">${(this._staffName(c.assigned_staff_id || c.assignedStaffId)||'?').charAt(0)}</div>
-                    <span class="text-xs font-semibold">₹${this._formatNum(c.value || c.dealValue || 35000)}</span>
+                    ${(c.value || c.dealValue) ? `<span class="text-xs font-semibold">₹${this._formatNum(c.value || c.dealValue)}</span>` : ''}
                     <span class="text-xs text-gray ml-auto">${c.follow_up_date || c.followUpDate ? new Date(c.follow_up_date || c.followUpDate).toLocaleDateString('en-IN', {day:'numeric',month:'short'}) : 'No date'}</span>
                   </div>
                 </div>`).join('')
@@ -891,15 +893,22 @@ class MetaCRMApp {
     const userPages = this._getAccessiblePages().map(p => p.id);
     const accessibleConvs = convs.filter(c => !c.page_id || userPages.includes(c.page_id));
 
-    const convList = accessibleConvs.length ? accessibleConvs : [
-      { id: 'c1', name: 'Rajesh Kumar',   preview: 'Yes, I am interested in the property...', time: '10m', unread: 2, channel: 'Messenger', page_id: 'page_01', phone: '+91 98765 43210' },
-      { id: 'c2', name: 'Preethi Nair',   preview: 'Can I get more details on the 3BHK plan?', time: '25m', unread: 0, channel: 'Instagram', page_id: 'page_02', phone: '+91 98450 11223' },
-      { id: 'c3', name: 'Sunil Mehta',    preview: 'What is the pricing for the premium villa?', time: '1h', unread: 1, channel: 'Messenger', page_id: 'page_03', phone: '+91 99201 55667' },
-      { id: 'c4', name: 'Ananya Singh',   preview: 'I submitted the lead form earlier today', time: '2h', unread: 0, channel: 'Instagram', page_id: 'page_04', phone: '+91 97112 33445' },
-    ];
+    const convList = accessibleConvs;
+
+    if (convList.length === 0) {
+      this.el.content.innerHTML = this._empty(
+        'No conversations yet',
+        'Incoming messages from Facebook Messenger and Instagram Direct will appear here in real-time once connected.',
+        null,
+        null
+      );
+      return;
+    }
 
     const activeConv = convList.find(c => c.id === this.activeConvId) || convList[0];
-    const matchingLead = this.svc ? this.svc.leads.find(l => l.name === activeConv.name || l.phone === activeConv.phone) : null;
+    const matchingLead = this.svc ? this.svc.leads.find(l => l.name === activeConv.name || (activeConv.phone && l.phone === activeConv.phone)) : null;
+    const messages = activeConv.messages || (activeConv.preview ? [{ text: activeConv.preview, incoming: true, time: activeConv.time }] : []);
+    const unreadInboxCount = convList.filter(c => (c.unread || 0) > 0).length;
 
     this.el.content.innerHTML = `
       <div class="inbox-layout">
@@ -909,7 +918,7 @@ class MetaCRMApp {
             <input type="text" class="input" placeholder="Search conversations…" style="margin-bottom:8px;">
             <div class="inbox-filter-tabs">
               <div class="inbox-tab active">All</div>
-              <div class="inbox-tab">Unread (3)</div>
+              <div class="inbox-tab">Unread (${unreadInboxCount})</div>
               <div class="inbox-tab">Messenger</div>
               <div class="inbox-tab">Instagram</div>
             </div>
@@ -921,7 +930,7 @@ class MetaCRMApp {
                 <div class="conv-info">
                   <div class="conv-name-row">
                     <span class="conv-name">${c.name}</span>
-                    <span class="conv-time">${c.time || '10m'}</span>
+                    <span class="conv-time">${c.time || ''}</span>
                   </div>
                   <div class="conv-preview">${c.preview || ''}</div>
                   <div class="conv-channel">
@@ -946,9 +955,9 @@ class MetaCRMApp {
           </div>
 
           <div class="inbox-thread" id="inbox-thread">
-            <div class="msg msg-in"><div class="msg-bubble">Hi, I submitted your Facebook Lead form. Is this still available?</div></div>
-            <div class="msg msg-out"><div class="msg-bubble">Hello ${activeConv.name}! Yes, it is available. May I share the brochure with you on WhatsApp?</div></div>
-            <div class="msg msg-in"><div class="msg-bubble">${activeConv.preview}</div></div>
+            ${messages.length ? messages.map(m => `
+              <div class="msg ${m.incoming ? 'msg-in' : 'msg-out'}"><div class="msg-bubble">${m.text || ''}</div></div>
+            `).join('') : `<div class="text-xs text-gray text-center my-6">Beginning of direct messaging thread with ${activeConv.name}</div>`}
           </div>
 
           <div class="inbox-composer">
@@ -963,7 +972,7 @@ class MetaCRMApp {
           <div class="drawer-section-title mb-4">Customer &amp; CRM Link</div>
           <div class="idetail-avatar">${(activeConv.name||'?').charAt(0)}</div>
           <div class="idetail-name">${activeConv.name}</div>
-          <div class="text-xs text-gray mb-4 text-center">${activeConv.phone || '+91 98765 43210'}</div>
+          <div class="text-xs text-gray mb-4 text-center">${activeConv.phone || '—'}</div>
 
           <div class="attribution-block mb-4">
             <div class="attr-row"><span class="attr-label">Page</span><span>${this._pageName(activeConv.page_id)}</span></div>
@@ -1037,7 +1046,7 @@ class MetaCRMApp {
     const isAdmin = this.user.role === 'admin' || this.user.role === 'super_admin';
 
     this.el.content.innerHTML = `
-      <p class="text-gray mb-6" style="max-width:760px;">Connect your Meta Business Account through OAuth to automatically sync Leads, Messenger conversations, Instagram Direct messages, and Ad campaigns across ${isAdmin ? 'all 6 pages' : 'your assigned pages'}.</p>
+      <p class="text-gray mb-6" style="max-width:760px;">Connect your Meta Business Account through OAuth to automatically sync Leads, Messenger conversations, Instagram Direct messages, and Ad campaigns across ${isAdmin ? 'all connected pages' : 'your assigned pages'}.</p>
 
       <!-- USER IDENTITY & PERMISSION SCOPE BANNER -->
       <div class="card mb-4 connection-card" style="border-left: 4px solid var(--accent); padding: 14px 18px;">
@@ -1050,7 +1059,9 @@ class MetaCRMApp {
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;">
-            <span class="badge badge-green"><span class="status-dot green"></span> Meta Connected: 6ac64ff5</span>
+            ${isConnected
+              ? `<span class="badge badge-green"><span class="status-dot green"></span> Meta Connected</span>`
+              : `<span class="badge badge-gray"><span class="status-dot"></span> Not Connected</span>`}
             <button class="btn btn-secondary btn-sm" onclick="window.app.openSwitchUserModal()">Switch User</button>
           </div>
         </div>
@@ -1067,7 +1078,7 @@ class MetaCRMApp {
             </div>
           </div>
           ${isConnected
-            ? `<span class="badge badge-green"><span class="status-dot green"></span> Connected (Profile: 6ac64ff5)</span>`
+            ? `<span class="badge badge-green"><span class="status-dot green"></span> Connected</span>`
             : `<span class="badge badge-gray"><span class="status-dot"></span> Not Connected</span>`}
         </div>
 
@@ -1084,7 +1095,7 @@ class MetaCRMApp {
         </div>
 
         <div class="page-list">
-          ${pages.map(p => {
+          ${pages.length > 0 ? pages.map(p => {
             const pLeads = (this.svc ? this.svc.leads : []).filter(l => l.page_id === p.id || l.pageId === p.id).length;
             return `
               <div class="page-row" style="flex-direction:column;align-items:stretch;gap:10px;">
@@ -1093,7 +1104,7 @@ class MetaCRMApp {
                     <div class="page-dot-lg" style="background:${p.color||'#6366F1'}"></div>
                     <div>
                       <div class="font-semibold text-sm">${p.name}</div>
-                      <div class="text-xs text-gray">ID: <code>${p.id}</code> · Meta Page ID: <code>${p.page_id || '10928374' + p.id.replace('page_','')}</code> · Ad Account: <code>${p.ad_account_id || 'act_094821'}</code></div>
+                      <div class="text-xs text-gray">ID: <code>${p.id}</code> · Meta Page ID: <code>${p.page_id || p.meta_page_id || '—'}</code> · Ad Account: <code>${p.ad_account_id || '—'}</code></div>
                     </div>
                   </div>
                   <div style="display:flex;align-items:center;gap:8px;">
@@ -1106,10 +1117,10 @@ class MetaCRMApp {
                   <span class="badge badge-blue">⚡ Lead Sync: Active (${pLeads} leads)</span>
                   <span class="badge badge-purple">💬 Messenger Webhook: Active</span>
                   <span class="badge badge-orange">📷 Instagram Direct: Connected</span>
-                  <span class="badge badge-gray">Staff Assigned: ${p.assigned_staff_id ? (this.svc.staff.find(s=>s.id===p.assigned_staff_id)||{}).name || 'Auto' : 'Auto-Assign'}</span>
+                  <span class="badge badge-gray">Staff Assigned: ${p.assigned_staff_id ? ((this.svc && this.svc.staff ? this.svc.staff.find(s=>s.id===p.assigned_staff_id) : null)||{}).name || 'Auto' : 'Auto-Assign'}</span>
                 </div>
               </div>`;
-          }).join('')}
+          }).join('') : '<div class="empty-state" style="padding:24px;text-align:center;color:var(--text-muted);border:1px dashed var(--border);border-radius:8px;">No Facebook Pages connected yet. Click "+ Connect Another Page" to add your business page.</div>'}
         </div>
 
         <div class="connection-actions mt-4">
@@ -1158,7 +1169,7 @@ class MetaCRMApp {
     this.el.mBody.innerHTML = `
       <p class="text-gray text-xs mb-3">Authorize via Meta OAuth or link a Page ID managed by your Meta Business Account.</p>
       <label class="settings-label">Facebook Page Name *</label>
-      <input type="text" class="input mb-3" id="cp-name" placeholder="e.g. Apex Heights Living">
+      <input type="text" class="input mb-3" id="cp-name" placeholder="e.g. My Business Page">
       <label class="settings-label">Meta Page ID</label>
       <input type="text" class="input mb-3" id="cp-id" placeholder="e.g. 109283746592017">
       <label class="settings-label">Meta Ad Account ID</label>
@@ -1351,7 +1362,7 @@ class MetaCRMApp {
       <div class="card">
         <div class="card-header"><div class="card-title">Leads Breakdown by Page</div></div>
         <div class="chart-bars">
-          ${pageStats.map(p => `
+          ${pageStats.length > 0 ? pageStats.map(p => `
             <div class="chart-bar-row">
               <div class="chart-bar-label"><strong>${p.name}</strong></div>
               <div class="chart-bar-track">
@@ -1359,7 +1370,7 @@ class MetaCRMApp {
               </div>
               <div class="chart-bar-value">${p.leads} leads (${p.pct}%)</div>
               <div class="chart-bar-won text-xs text-gray">${p.won} won</div>
-            </div>`).join('')}
+            </div>`).join('') : '<div style="padding:16px;text-align:center;color:var(--text-muted);">No page data available</div>'}
         </div>
       </div>
 
@@ -1370,7 +1381,7 @@ class MetaCRMApp {
             <tr><th>Staff Member</th><th>Role</th><th>Assigned Pages</th><th>Leads</th><th>Won</th><th>Conv.%</th></tr>
           </thead>
           <tbody>
-            ${staff.map(s => {
+            ${staff.length > 0 ? staff.map(s => {
               const sl = leads.filter(l => l.assigned_staff_id === s.id || l.assignedStaffId === s.id);
               const sw = sl.filter(l => l.status === 'Won' || l.status === 'Converted');
               const conv = sl.length ? ((sw.length / sl.length) * 100).toFixed(1) : '0.0';
@@ -1383,7 +1394,7 @@ class MetaCRMApp {
                   <td><span class="badge badge-green">${sw.length}</span></td>
                   <td>${conv}%</td>
                 </tr>`;
-            }).join('')}
+            }).join('') : '<tr><td colspan="6" class="empty-cell" style="text-align:center;padding:24px;color:var(--text-muted);">No staff members found</td></tr>'}
           </tbody>
         </table>
       </div>`;
@@ -1407,7 +1418,7 @@ class MetaCRMApp {
             <tr><th>Staff Member</th><th>Role</th><th>Assigned Pages</th><th>Active Leads</th><th>Converted</th><th>Status</th><th>Actions</th></tr>
           </thead>
           <tbody>
-            ${staff.map(s => {
+            ${staff.length > 0 ? staff.map(s => {
               const sLeads = (this.svc ? this.svc.leads : []).filter(l => l.assigned_staff_id === s.id || l.assignedStaffId === s.id);
               const sWon = sLeads.filter(l => l.status === 'Won' || l.status === 'Converted');
               const pageNames = (s.assignedPageIds || []).map(pid => this._pageName(pid)).join(', ');
@@ -1423,7 +1434,7 @@ class MetaCRMApp {
                     </div>
                   </td>
                   <td>${this._roleBadge(s.role)}</td>
-                  <td class="text-xs">${pageNames || 'All 6 Pages (Full Access)'}</td>
+                  <td class="text-xs">${pageNames || 'All Pages (Full Access)'}</td>
                   <td class="font-semibold">${sLeads.length}</td>
                   <td><span class="badge badge-green">${sWon.length}</span></td>
                   <td><span class="badge ${s.status==='inactive'?'badge-gray':'badge-green'}">${s.status || 'Active'}</span></td>
@@ -1433,7 +1444,7 @@ class MetaCRMApp {
                     </div>
                   </td>
                 </tr>`;
-            }).join('')}
+            }).join('') : '<tr><td colspan="7" class="empty-cell" style="text-align:center;padding:24px;color:var(--text-muted);">No staff members configured. Click "+ Add Staff Member" to add a user.</td></tr>'}
           </tbody>
         </table>
       </div>`;
@@ -1446,20 +1457,20 @@ class MetaCRMApp {
   openUserSwitchModal() {
     const staff = this.svc ? this.svc.staff : [];
 
-    this.el.mTitle.textContent = 'Switch Active User Session (RBAC Demo)';
+    this.el.mTitle.textContent = 'Switch Active User Session';
     this.el.mBody.innerHTML = `
-      <p class="text-xs text-gray mb-4">Click any staff member or administrator to demonstrate real page-level access restriction and staff-restricted dashboards:</p>
+      <p class="text-xs text-gray mb-4">Select an active user profile to switch session context:</p>
       <div style="display:flex;flex-direction:column;gap:8px;">
-        ${staff.map(s => `
+        ${staff.length > 0 ? staff.map(s => `
           <div class="page-row" style="cursor:pointer;${s.id === this.user.id ? 'border-color:var(--accent);background:#EEF2FF;' : ''}" 
                onclick="window.app.switchUserDirect('${s.id}')">
             <div class="staff-avatar-sm" style="background:${s.role==='admin'?'var(--accent)':'#10B981'}">${(s.name||'?').charAt(0)}</div>
             <div style="flex:1;">
               <strong>${s.name}</strong>
-              <div class="text-xs text-gray">${this._roleLabel(s.role)} · Pages: ${(s.assignedPageIds||[]).map(pid => this._pageName(pid)).join(', ') || 'All 6 Pages'}</div>
+              <div class="text-xs text-gray">${this._roleLabel(s.role)} · Pages: ${(s.assignedPageIds||[]).map(pid => this._pageName(pid)).join(', ') || 'All Pages'}</div>
             </div>
             ${s.id === this.user.id ? '<span class="badge badge-indigo">Active</span>' : '<button class="btn btn-ghost btn-sm">Switch</button>'}
-          </div>`).join('')}
+          </div>`).join('') : '<div style="padding:16px;text-align:center;color:var(--text-muted);">No additional staff profiles available</div>'}
       </div>`;
 
     this.el.mConfirm.textContent = 'Close';

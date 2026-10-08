@@ -234,17 +234,17 @@ while ($listener.IsListening) {
                     name = if ($leadInput.name) { $leadInput.name } else { "Simulated Prospect " + (Get-Random -Minimum 10 -Maximum 99) };
                     email = if ($leadInput.email) { $leadInput.email } else { "prospect" + (Get-Random -Minimum 10 -Maximum 99) + "@example.com" };
                     phone = if ($leadInput.phone) { $leadInput.phone } else { "+91 98" + (Get-Random -Minimum 10000000 -Maximum 99999999) };
-                    pageId = if ($leadInput.pageId) { $leadInput.pageId } else { "page_01" };
-                    campaignId = if ($leadInput.campaignId) { $leadInput.campaignId } else { "cmp_apex_leadgen" };
-                    campaignName = if ($leadInput.campaignName) { $leadInput.campaignName } else { "Apex Living - Lead Gen Q4" };
-                    adId = if ($leadInput.adId) { $leadInput.adId } else { "ad_apex_01" };
-                    adName = if ($leadInput.adName) { $leadInput.adName } else { "Luxury 3BHK Video Tour" };
+                    pageId = if ($leadInput.pageId) { $leadInput.pageId } else { "page_live" };
+                    campaignId = if ($leadInput.campaignId) { $leadInput.campaignId } else { "cmp_leadgen" };
+                    campaignName = if ($leadInput.campaignName) { $leadInput.campaignName } else { "Lead Gen Campaign" };
+                    adId = if ($leadInput.adId) { $leadInput.adId } else { "ad_01" };
+                    adName = if ($leadInput.adName) { $leadInput.adName } else { "Lead Ad Creative" };
                     status = "new";
                     source = "Facebook Ads (via Zernio)";
                     attribution = @{
-                        page = "Apex Living";
-                        campaign = "Apex Living - Lead Gen Q4";
-                        ad = "Luxury 3BHK Video Tour";
+                        page = "Connected Page";
+                        campaign = "Lead Gen Campaign";
+                        ad = "Lead Ad Creative";
                         platform = "Facebook Lead Ad";
                         gateway = "Zernio Unified Webhook"
                     };

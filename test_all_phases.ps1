@@ -59,17 +59,11 @@ Assert-Test "PHASE 3" "Schema: Conversations & Inbox tables" ($hasConvsTable -an
 Assert-Test "PHASE 3" "Schema: Audit Logs & Security" $hasAuditTable
 
 # ------------------------------------------------------------------------------
-# PHASE 4: AUTHENTICATION & SIX USERS ISOLATION
+# PHASE 4: AUTHENTICATION & MULTI-USER RBAC ISOLATION
 # ------------------------------------------------------------------------------
 $dataContent = Get-Content ".\js\data.js" -Raw
-$hasAdmin = $dataContent.Contains("Ananya Sen")
-$hasRahul = $dataContent.Contains("Rahul Sharma")
-$hasAmit = $dataContent.Contains("Amit Patel")
-$hasPriya = $dataContent.Contains("Priya Nair")
-$hasVikram = $dataContent.Contains("Vikram Malhotra")
-$hasSneha = $dataContent.Contains("Sneha Rao")
-
-Assert-Test "PHASE 4" "Six Staff Accounts Exist in Data Layer" ($hasAdmin -and $hasRahul -and $hasAmit -and $hasPriya -and $hasVikram -and $hasSneha)
+$isCleanData = $dataContent.Contains("const STAFF_DATA = [];") -and $dataContent.Contains("const PAGES_DATA = [];")
+Assert-Test "PHASE 4" "Zero Demo Data in Data Layer (Clean Production State)" $isCleanData
 
 # Test RBAC access checking logic
 $crmContent = Get-Content ".\js\crm-service.js" -Raw
@@ -93,10 +87,10 @@ try {
 }
 
 # ------------------------------------------------------------------------------
-# PHASE 6: 6 FACEBOOK PAGES & DATA ISOLATION
+# PHASE 6: MULTI-PAGE DATA ISOLATION ARCHITECTURE
 # ------------------------------------------------------------------------------
-$has6Pages = $dataContent.Contains("page_01") -and $dataContent.Contains("page_02") -and $dataContent.Contains("page_03") -and $dataContent.Contains("page_04") -and $dataContent.Contains("page_05") -and $dataContent.Contains("page_06")
-Assert-Test "PHASE 6" "6 Facebook Pages Represented with Independent IDs" $has6Pages
+$hasPageIsolationLogic = $crmContent.Contains("canUserAccessPage") -and $crmContent.Contains("getAccessiblePages")
+Assert-Test "PHASE 6" "Multi-Page Data Isolation & Scoped Access Engine" $hasPageIsolationLogic
 
 # ------------------------------------------------------------------------------
 # PHASE 7: FACEBOOK LEAD ADS & WEBHOOK INGESTION

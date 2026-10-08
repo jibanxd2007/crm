@@ -20,7 +20,7 @@
 
 class CRMService {
   constructor() {
-    this.storagePrefix = "metacrm_v3_";
+    this.storagePrefix = "metacrm_v4_clean_";
     this.leadsKey = this.storagePrefix + "leads";
     this.pagesKey = this.storagePrefix + "pages";
     this.staffKey = this.storagePrefix + "staff";
@@ -279,12 +279,12 @@ class CRMService {
     // Default to Super Admin
     const admin = this.staff.find(s => s.role === "admin") || this.staff[0];
     return admin || {
-      id: "usr_admin_01",
-      name: "Ananya Sen (Super Admin)",
-      displayName: "Ananya Sen",
-      email: "admin@metacrm.io",
+      id: "usr_admin",
+      name: "Administrator",
+      displayName: "Administrator",
+      email: "admin@company.com",
       role: "admin",
-      assignedPageIds: ["page_01", "page_02", "page_03", "page_04", "page_05", "page_06"]
+      assignedPageIds: []
     };
   }
 
@@ -895,13 +895,13 @@ class CRMService {
       page_name: pageObj.name,
       platform: rawLead.platform || "Facebook",
       source: rawLead.source || "Facebook Lead Ads",
-      campaign_id: rawLead.campaign_id || "cmp_01",
-      campaign_name: rawLead.campaign_name || "Apex Luxury Towers - NRI Phase II",
-      adset_id: rawLead.adset_id || "adset_01",
-      adset_name: rawLead.adset_name || "Target Audience",
-      ad_id: rawLead.ad_id || "ad_01",
-      ad_name: rawLead.ad_name || "Video Tour: 4BHK Sky Mansion",
-      form_id: rawLead.form_id || "form_meta_inbound",
+      campaign_id: rawLead.campaign_id || "",
+      campaign_name: rawLead.campaign_name || "Lead Ad Form",
+      adset_id: rawLead.adset_id || "",
+      adset_name: rawLead.adset_name || "",
+      ad_id: rawLead.ad_id || "",
+      ad_name: rawLead.ad_name || "",
+      form_id: rawLead.form_id || "",
       form_name: rawLead.form_name || "Instant Lead Form",
       status: "New",
       assigned_staff_id: null,
@@ -955,7 +955,7 @@ class CRMService {
       message: `${newLead.name} arrived on ${newLead.page_name} via ${newLead.campaign_name}`,
       type: "lead",
       targetUrl: `/admin/leads/${newLead.id}`,
-      recipientId: "usr_admin_01"
+      recipientId: (this.currentUser && this.currentUser.role === 'admin' ? this.currentUser.id : "usr_admin")
     });
 
     this.leads.unshift(newLead);
@@ -1190,8 +1190,8 @@ class CRMService {
       location: data.location || "India",
       source: data.source || "Direct Inbound",
       platform: data.platform || "Facebook",
-      page_id: data.page_id || "page_01",
-      page_name: data.page_name || "Apex Living",
+      page_id: data.page_id || null,
+      page_name: data.page_name || "",
       assigned_to: data.assigned_to || (this.currentUser ? this.currentUser.id : null),
       assigned_staff_name: data.assigned_staff_name || (this.currentUser ? this.currentUser.displayName : "Unassigned"),
       lifecycle_stage: data.lifecycle_stage || "lead",
@@ -1377,14 +1377,14 @@ class CRMService {
       pipeline_id: pipeline.id,
       stage_id: initialStage.id,
       stage_name: initialStage.name,
-      value: Number(data.value) || 50000,
+      value: Number(data.value) || 0,
       currency: data.currency || "INR",
       status: "open",
       contact_id: data.contact_id || null,
-      contact_name: data.contact_name || "Prospective Client",
+      contact_name: data.contact_name || "",
       lead_id: data.lead_id || null,
-      page_id: data.page_id || "page_01",
-      page_name: data.page_name || "Apex Living",
+      page_id: data.page_id || null,
+      page_name: data.page_name || "",
       assigned_to: data.assigned_to || (this.currentUser ? this.currentUser.id : null),
       assigned_staff_name: data.assigned_staff_name || (this.currentUser ? this.currentUser.displayName : "Staff"),
       created_at: new Date().toISOString(),
