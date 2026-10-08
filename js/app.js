@@ -28,6 +28,7 @@ class MetaCRMApp {
 
     // Active conversation in Inbox
     this.activeConvId = null;
+    this.mobileInboxView = 'list';
 
     // DOM References
     this.el = {
@@ -36,6 +37,9 @@ class MetaCRMApp {
       actions: document.getElementById('topbar-actions'),
       content: document.getElementById('main-content'),
       sidebar: document.getElementById('sidebar'),
+      sidebarOverlay: document.getElementById('sidebar-overlay'),
+      mobileMenuBtn: document.getElementById('mobile-menu-btn'),
+      closeSidebarBtn: document.getElementById('close-sidebar-btn'),
       dOverlay: document.getElementById('drawer-overlay'),
       drawer: document.getElementById('drawer'),
       dTitle: document.getElementById('drawer-title'),
@@ -55,6 +59,17 @@ class MetaCRMApp {
     this._init();
   }
 
+  toggleMobileSidebar(open) {
+    const shouldOpen = open !== undefined ? open : !this.el.sidebar.classList.contains('open');
+    if (shouldOpen) {
+      this.el.sidebar.classList.add('open');
+      if (this.el.sidebarOverlay) this.el.sidebarOverlay.classList.add('open');
+    } else {
+      this.el.sidebar.classList.remove('open');
+      if (this.el.sidebarOverlay) this.el.sidebarOverlay.classList.remove('open');
+    }
+  }
+
   // ──────────────────────────────────────────────────────────
   // Bootstrap & Global Event Bindings
   // ──────────────────────────────────────────────────────────
@@ -72,6 +87,17 @@ class MetaCRMApp {
     this.el.mCancel.addEventListener('click', () => this.closeModal());
     this.el.mOverlay.addEventListener('click', e => { if (e.target === this.el.mOverlay) this.closeModal(); });
 
+    // Mobile Navigation Controls
+    if (this.el.mobileMenuBtn) {
+      this.el.mobileMenuBtn.addEventListener('click', () => this.toggleMobileSidebar(true));
+    }
+    if (this.el.sidebarOverlay) {
+      this.el.sidebarOverlay.addEventListener('click', () => this.toggleMobileSidebar(false));
+    }
+    if (this.el.closeSidebarBtn) {
+      this.el.closeSidebarBtn.addEventListener('click', () => this.toggleMobileSidebar(false));
+    }
+
     // Keyboard Shortcuts (Ctrl+K for search, Escape for modal/drawer)
     window.addEventListener('keydown', e => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -80,7 +106,7 @@ class MetaCRMApp {
         if (input) { input.focus(); }
         else { this.navigate('leads'); setTimeout(() => { const i = document.getElementById('lead-search-input'); if (i) i.focus(); }, 150); }
       }
-      if (e.key === 'Escape') { this.closeDrawer(); this.closeModal(); }
+      if (e.key === 'Escape') { this.closeDrawer(); this.closeModal(); this.toggleMobileSidebar(false); }
     });
 
     // Listen to real-time CRM updates
@@ -95,6 +121,7 @@ class MetaCRMApp {
     let hash = window.location.hash.replace(/^#\/?/, '') || 'dashboard';
     hash = hash.replace(/^(admin|staff)\//, '');
     this.currentRoute = hash;
+    this.toggleMobileSidebar(false);
     this.renderSidebar();
     this._renderPage();
   }
@@ -911,7 +938,7 @@ class MetaCRMApp {
     const unreadInboxCount = convList.filter(c => (c.unread || 0) > 0).length;
 
     this.el.content.innerHTML = `
-      <div class="inbox-layout">
+      <div class="inbox-layout ${this.mobileInboxView === 'chat' ? 'view-chat' : 'view-list'}">
         <!-- LEFT: CONVERSATIONS LIST -->
         <div class="inbox-sidebar">
           <div class="inbox-sidebar-header">
@@ -946,12 +973,18 @@ class MetaCRMApp {
         <!-- CENTER: CHAT WINDOW -->
         <div class="inbox-main">
           <div class="inbox-thread-header">
+            <button class="inbox-back-btn" onclick="window.app.closeMobileThread()" aria-label="Back to conversations">
+              <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+            </button>
             <div class="conv-avatar">${(activeConv.name||'?').charAt(0)}</div>
-            <div>
-              <div class="thread-name">${activeConv.name}</div>
-              <div class="text-xs text-gray">${this._pageName(activeConv.page_id)} · ${activeConv.channel || 'Messenger'}</div>
+            <div style="flex:1;min-width:0;">
+              <div class="thread-name text-truncate">${activeConv.name}</div>
+              <div class="text-xs text-gray text-truncate">${this._pageName(activeConv.page_id)} · ${activeConv.channel || 'Messenger'}</div>
             </div>
             <span class="badge badge-blue ml-auto">${activeConv.channel || 'Messenger'}</span>
+            <button class="inbox-info-btn btn btn-ghost btn-sm" onclick="window.app.toggleInboxDetails()" title="Contact details">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            </button>
           </div>
 
           <div class="inbox-thread" id="inbox-thread">
@@ -969,7 +1002,10 @@ class MetaCRMApp {
 
         <!-- RIGHT: CUSTOMER / LEAD INFORMATION (Section 14 & 15) -->
         <div class="inbox-details">
-          <div class="drawer-section-title mb-4">Customer &amp; CRM Link</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <div class="drawer-section-title" style="margin-bottom:0;">Customer &amp; CRM Link</div>
+            <button class="inbox-details-close btn btn-ghost btn-sm" onclick="window.app.toggleInboxDetails()">✕</button>
+          </div>
           <div class="idetail-avatar">${(activeConv.name||'?').charAt(0)}</div>
           <div class="idetail-name">${activeConv.name}</div>
           <div class="text-xs text-gray mb-4 text-center">${activeConv.phone || '—'}</div>
@@ -993,7 +1029,18 @@ class MetaCRMApp {
 
   selectInboxConv(convId) {
     this.activeConvId = convId;
+    this.mobileInboxView = 'chat';
     this.renderInbox();
+  }
+
+  closeMobileThread() {
+    this.mobileInboxView = 'list';
+    this.renderInbox();
+  }
+
+  toggleInboxDetails() {
+    const details = document.querySelector('.inbox-details');
+    if (details) details.classList.toggle('open');
   }
 
   sendInboxMessage() {
