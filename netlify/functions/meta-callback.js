@@ -34,8 +34,15 @@ exports.handler = async function(event, context) {
     };
   }
 
-  const clientId = process.env.META_APP_ID || "712341431446535";
-  const clientSecret = process.env.META_APP_SECRET || "";
+  const clientId = process.env.META_APP_ID;
+  const clientSecret = process.env.META_APP_SECRET;
+  if (!clientId || !clientSecret) {
+    return {
+      statusCode: 500,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: "META_APP_ID or META_APP_SECRET is not configured on the server." })
+    };
+  }
   const host = event.headers.host || "serene-toffee-fe3244.netlify.app";
   const redirectUri = process.env.META_REDIRECT_URI || `https://${host}/api/meta/callback`;
 

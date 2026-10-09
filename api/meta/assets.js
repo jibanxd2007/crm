@@ -28,6 +28,12 @@ export default async function handler(req, res) {
   const supabase = getSupabaseAdmin();
   const defaultOrgId = '00000000-0000-0000-0000-000000000001';
 
+  // 1. Authentication Check
+  const authHeader = req.headers.authorization || '';
+  if (!authHeader) {
+    return res.status(401).json({ error: 'Unauthorized: Authentication required.' });
+  }
+
   // --------------------------------------------------------------------------
   // GET: Fetch Connected Meta Assets
   // --------------------------------------------------------------------------
@@ -35,9 +41,9 @@ export default async function handler(req, res) {
     try {
       if (supabase) {
         const [pagesRes, adAccRes, connRes] = await Promise.all([
-          supabase.from('meta_pages').select('*, instagram_accounts(*)').eq('organization_id', defaultOrgId),
-          supabase.from('ad_accounts').select('*').eq('organization_id', defaultOrgId),
-          supabase.from('meta_connections').select('*').eq('organization_id', defaultOrgId).maybeSingle()
+          supabase.from('meta_pages').select('id, meta_page_id, name, username, category, avatar_url, tasks, is_connected, webhook_subscribed, ig_business_account_id, ig_username, followers_count, last_synced_at, instagram_accounts(*)').eq('organization_id', defaultOrgId),
+          supabase.from('ad_accounts').select('id, meta_ad_account_id, name, currency, timezone_name, account_status, amount_spent, business_name, is_connected').eq('organization_id', defaultOrgId),
+          supabase.from('meta_connections').select('id, organization_id, meta_user_id, meta_user_name, meta_user_email, token_expires_at, scopes, is_active, last_error, last_synced_at').eq('organization_id', defaultOrgId).maybeSingle()
         ]);
 
         return res.status(200).json({

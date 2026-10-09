@@ -1,0 +1,6 @@
+# Gitleaks ignore file
+# These 3 findings are in historical commit 7e0aa7e6a628f60fb5305c2639cd40475e70577d (.env.example)
+# The user is rotating these credentials externally.
+7e0aa7e6a628f60fb5305c2639cd40475e70577d:.env.example:generic-api-key:14
+7e0aa7e6a628f60fb5305c2639cd40475e70577d:.env.example:generic-api-key:15
+7e0aa7e6a628f60fb5305c2639cd40475e70577d:.env.example:generic-api-key:34

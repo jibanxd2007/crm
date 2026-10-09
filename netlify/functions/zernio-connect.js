@@ -1,12 +1,18 @@
 const https = require('https');
 
 exports.handler = async function(event, context) {
-  const apiKey = process.env.ZERNIO_API_KEY || "sk_70e384c607a377dd9cc9e1585a8def99688e735a3a47d515b2255808055dabe1";
-  const profileId = process.env.ZERNIO_PROFILE_ID || "6ac64ff53904c4c3acfa60fd";
+  const apiKey = process.env.ZERNIO_API_KEY;
+  const profileId = process.env.ZERNIO_PROFILE_ID;
   const channel = (event.queryStringParameters && event.queryStringParameters.channel) || 'facebook';
+  const clientId = process.env.META_APP_ID;
 
-  // Verified Meta OAuth dialog URL with registered Facebook Client ID: 712341431446535
-  const clientId = "712341431446535";
+  if (!profileId || !clientId) {
+    return {
+      statusCode: 500,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      body: JSON.stringify({ error: "ZERNIO_PROFILE_ID and META_APP_ID must be configured in environment variables." })
+    };
+  }
   const redirectUri = encodeURIComponent("https://zernio.com/api/v1/auth/facebook/callback");
   const state = encodeURIComponent(JSON.stringify({ profileId: profileId, channel: channel, source: "metacrm_netlify" }));
 

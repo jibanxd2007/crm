@@ -15,14 +15,17 @@ export default async function handler(req, res) {
   }
 
   const authHeader = req.headers.authorization;
-  const token = (authHeader && authHeader.startsWith('Bearer '))
-    ? authHeader.substring(7)
-    : (process.env.META_SYSTEM_USER_ACCESS_TOKEN || process.env.META_ACCESS_TOKEN);
-
-  if (!token) {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({
-      error: 'Missing Meta Access Token.',
-      message: 'Connect your Meta account via OAuth or provide an access token to view analytics.'
+      error: 'Unauthorized: Authentication required.',
+      message: 'Please provide valid user authentication credentials.'
+    });
+  }
+
+  const token = process.env.META_SYSTEM_USER_ACCESS_TOKEN || process.env.META_ACCESS_TOKEN;
+  if (!token) {
+    return res.status(500).json({
+      error: 'Meta Access Token not configured on the server.'
     });
   }
 

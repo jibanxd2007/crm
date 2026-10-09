@@ -1,7 +1,14 @@
 const https = require('https');
 
 exports.handler = async function(event, context) {
-  const apiKey = process.env.ZERNIO_API_KEY || "sk_70e384c607a377dd9cc9e1585a8def99688e735a3a47d515b2255808055dabe1";
+  const apiKey = process.env.ZERNIO_API_KEY;
+  if (!apiKey) {
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      body: JSON.stringify({ status: "not_configured", provider: "zernio", message: "ZERNIO_API_KEY is not configured in environment variables." })
+    };
+  }
 
   const options = {
     hostname: 'zernio.com',

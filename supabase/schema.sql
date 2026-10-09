@@ -700,14 +700,62 @@ ALTER TABLE public.crm_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.contacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.staff_pages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.pipelines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pipeline_stages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.deals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.lead_stage_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sprints ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.task_comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.followups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.webhook_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.automations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.automation_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ad_insights ENABLE ROW LEVEL SECURITY;
 
--- Notifications: Strictly user-scoped (no leakage across users)
+-- 1. Users / Profiles
+CREATE POLICY "Users can view org profiles"
+  ON public.users FOR SELECT
+  USING (organization_id = public.current_user_org_id());
+
+CREATE POLICY "Users can update own profile"
+  ON public.users FOR UPDATE
+  USING (auth.uid() = id);
+
+-- 2. Meta Connections: Isolated to owner/admin (tokens never leak across users)
+CREATE POLICY "Users can access own Meta connections"
+  ON public.meta_connections FOR ALL
+  USING (organization_id = public.current_user_org_id() AND (auth.uid() = user_id OR public.is_admin()));
+
+-- 3. Staff Pages (RBAC Assignments)
+CREATE POLICY "Users can view staff page assignments"
+  ON public.staff_pages FOR SELECT
+  USING (organization_id = public.current_user_org_id());
+
+CREATE POLICY "Admins can manage staff page assignments"
+  ON public.staff_pages FOR ALL
+  USING (organization_id = public.current_user_org_id() AND public.is_admin());
+
+-- 4. Meta Pages: Accessible only to assigned staff or admins
+CREATE POLICY "Users can view authorized meta pages"
+  ON public.meta_pages FOR SELECT
+  USING (
+    organization_id = public.current_user_org_id() AND (
+      public.is_admin() OR
+      EXISTS (
+        SELECT 1 FROM public.staff_pages sp
+        WHERE sp.staff_id = auth.uid() AND sp.page_id = meta_pages.id
+      )
+    )
+  );
+
+CREATE POLICY "Admins can manage meta pages"
+  ON public.meta_pages FOR ALL
+  USING (organization_id = public.current_user_org_id() AND public.is_admin());
+
+-- 5. Notifications: Strictly user-scoped (no leakage across users)
 CREATE POLICY "Users can view own notifications"
   ON public.notifications FOR SELECT
   USING (user_id = auth.uid());
@@ -717,54 +765,157 @@ CREATE POLICY "Users can update own notifications"
   USING (user_id = auth.uid())
   WITH CHECK (user_id = auth.uid());
 
--- Leads: Admins see all in org; Staff see only assigned
+-- 6. Leads: Admins see all in org; Staff see only assigned page or assigned lead
 CREATE POLICY "Admins have full access to org leads"
   ON public.leads FOR ALL
   USING (organization_id = public.current_user_org_id() AND public.is_admin());
 
 CREATE POLICY "Staff can view assigned leads"
   ON public.leads FOR SELECT
-  USING (organization_id = public.current_user_org_id() AND (assigned_to = auth.uid() OR EXISTS (
-    SELECT 1 FROM public.staff_pages WHERE staff_id = auth.uid() AND staff_pages.page_id = leads.page_id
-  )));
+  USING (organization_id = public.current_user_org_id() AND (
+    assigned_to = auth.uid() OR
+    EXISTS (
+      SELECT 1 FROM public.staff_pages sp
+      WHERE sp.staff_id = auth.uid() AND sp.page_id = leads.page_id
+    )
+  ));
 
 CREATE POLICY "Staff can update assigned leads"
   ON public.leads FOR UPDATE
-  USING (organization_id = public.current_user_org_id() AND assigned_to = auth.uid())
-  WITH CHECK (organization_id = public.current_user_org_id() AND assigned_to = auth.uid());
+  USING (organization_id = public.current_user_org_id() AND (
+    assigned_to = auth.uid() OR
+    EXISTS (
+      SELECT 1 FROM public.staff_pages sp
+      WHERE sp.staff_id = auth.uid() AND sp.page_id = leads.page_id
+    )
+  ));
 
--- Contacts: Org level access
+-- 7. Conversations: Strictly scoped to assigned staff or assigned page
+CREATE POLICY "Users can view authorized conversations"
+  ON public.conversations FOR SELECT
+  USING (
+    organization_id = public.current_user_org_id() AND (
+      public.is_admin() OR
+      assigned_to = auth.uid() OR
+      EXISTS (
+        SELECT 1 FROM public.staff_pages sp
+        WHERE sp.staff_id = auth.uid() AND sp.page_id = conversations.page_id
+      )
+    )
+  );
+
+CREATE POLICY "Users can manage authorized conversations"
+  ON public.conversations FOR ALL
+  USING (
+    organization_id = public.current_user_org_id() AND (
+      public.is_admin() OR
+      assigned_to = auth.uid() OR
+      EXISTS (
+        SELECT 1 FROM public.staff_pages sp
+        WHERE sp.staff_id = auth.uid() AND sp.page_id = conversations.page_id
+      )
+    )
+  );
+
+-- 8. Messages: Accessible only to users authorized on the parent conversation
+CREATE POLICY "Users can view authorized messages"
+  ON public.messages FOR SELECT
+  USING (
+    public.is_admin() OR
+    EXISTS (
+      SELECT 1 FROM public.conversations c
+      WHERE c.id = messages.conversation_id
+      AND (
+        c.assigned_to = auth.uid() OR
+        EXISTS (
+          SELECT 1 FROM public.staff_pages sp
+          WHERE sp.staff_id = auth.uid() AND sp.page_id = c.page_id
+        )
+      )
+    )
+  );
+
+CREATE POLICY "Users can insert authorized messages"
+  ON public.messages FOR INSERT
+  WITH CHECK (
+    public.is_admin() OR
+    EXISTS (
+      SELECT 1 FROM public.conversations c
+      WHERE c.id = messages.conversation_id
+      AND (
+        c.assigned_to = auth.uid() OR
+        EXISTS (
+          SELECT 1 FROM public.staff_pages sp
+          WHERE sp.staff_id = auth.uid() AND sp.page_id = c.page_id
+        )
+      )
+    )
+  );
+
+-- 9. Lead Notes & Activity: Scoped to authorized leads
+CREATE POLICY "Users view authorized lead notes"
+  ON public.lead_notes FOR SELECT
+  USING (
+    organization_id = public.current_user_org_id() AND (
+      public.is_admin() OR
+      EXISTS (
+        SELECT 1 FROM public.leads l
+        WHERE l.id = lead_notes.lead_id
+        AND (
+          l.assigned_to = auth.uid() OR
+          EXISTS (SELECT 1 FROM public.staff_pages sp WHERE sp.staff_id = auth.uid() AND sp.page_id = l.page_id)
+        )
+      )
+    )
+  );
+
+CREATE POLICY "Users view authorized crm activities"
+  ON public.crm_activities FOR SELECT
+  USING (organization_id = public.current_user_org_id());
+
+-- 10. Webhook Events: Strictly Admin-only (contains raw webhook payloads and PII)
+CREATE POLICY "Admins can view webhook events"
+  ON public.webhook_events FOR SELECT
+  USING (organization_id = public.current_user_org_id() AND public.is_admin());
+
+-- 11. Contacts, Tasks, Pipelines, Deals
 CREATE POLICY "Users can access org contacts"
   ON public.contacts FOR ALL
   USING (organization_id = public.current_user_org_id());
 
--- Conversations: Staff see assigned page conversations
-CREATE POLICY "Users access conversations"
-  ON public.conversations FOR ALL
-  USING (organization_id = public.current_user_org_id());
-
-CREATE POLICY "Users access messages"
-  ON public.messages FOR ALL
-  USING (TRUE);
-
--- Tasks & Pipelines: Full access in Org
 CREATE POLICY "Users access tasks"
   ON public.tasks FOR ALL
+  USING (organization_id = public.current_user_org_id());
+
+CREATE POLICY "Users access task comments"
+  ON public.task_comments FOR ALL
+  USING (EXISTS (SELECT 1 FROM public.tasks t WHERE t.id = task_comments.task_id AND t.organization_id = public.current_user_org_id()));
+
+CREATE POLICY "Users access sprints"
+  ON public.sprints FOR ALL
   USING (organization_id = public.current_user_org_id());
 
 CREATE POLICY "Users access pipelines"
   ON public.pipelines FOR ALL
   USING (organization_id = public.current_user_org_id());
 
+CREATE POLICY "Users access pipeline stages"
+  ON public.pipeline_stages FOR ALL
+  USING (EXISTS (SELECT 1 FROM public.pipelines p WHERE p.id = pipeline_stages.pipeline_id AND p.organization_id = public.current_user_org_id()));
+
 CREATE POLICY "Users access deals"
   ON public.deals FOR ALL
   USING (organization_id = public.current_user_org_id());
 
--- Pages & Ads: Org-level isolation
-CREATE POLICY "Users can access org meta pages"
-  ON public.meta_pages FOR ALL
+CREATE POLICY "Users access lead stage history"
+  ON public.lead_stage_history FOR SELECT
+  USING (EXISTS (SELECT 1 FROM public.leads l WHERE l.id = lead_stage_history.lead_id AND l.organization_id = public.current_user_org_id()));
+
+CREATE POLICY "Users access followups"
+  ON public.followups FOR ALL
   USING (organization_id = public.current_user_org_id());
 
+-- 12. Ads, Campaigns, Audit Logs, Settings
 CREATE POLICY "Users can access org ad accounts"
   ON public.ad_accounts FOR ALL
   USING (organization_id = public.current_user_org_id());
@@ -773,18 +924,40 @@ CREATE POLICY "Users can access org campaigns"
   ON public.campaigns FOR ALL
   USING (organization_id = public.current_user_org_id());
 
+CREATE POLICY "Users can access org ad sets"
+  ON public.ad_sets FOR ALL
+  USING (organization_id = public.current_user_org_id());
+
+CREATE POLICY "Users can access org ads"
+  ON public.ads FOR ALL
+  USING (organization_id = public.current_user_org_id());
+
+CREATE POLICY "Users can access org lead forms"
+  ON public.lead_forms FOR ALL
+  USING (organization_id = public.current_user_org_id());
+
 CREATE POLICY "Users can access org audit logs"
   ON public.audit_logs FOR SELECT
   USING (organization_id = public.current_user_org_id());
 
--- Ad Insights: Multi-user scoping (Staff see assigned pages only, Admins see all)
-ALTER TABLE public.ad_insights ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can access org crm settings"
+  ON public.crm_settings FOR ALL
+  USING (organization_id = public.current_user_org_id());
 
+CREATE POLICY "Users can access org automations"
+  ON public.automations FOR ALL
+  USING (organization_id = public.current_user_org_id());
+
+CREATE POLICY "Users can access org automation logs"
+  ON public.automation_logs FOR SELECT
+  USING (organization_id = public.current_user_org_id());
+
+-- 13. Ad Insights: Scoped to assigned pages for Staff, full access for Admins
 CREATE POLICY "ad_insights_select_policy" ON public.ad_insights
   FOR SELECT TO authenticated
   USING (
     is_admin()
-    OR page_id IN (SELECT page_id FROM public.page_members WHERE user_id = auth.uid())
+    OR page_id IN (SELECT page_id FROM public.staff_pages WHERE staff_id = auth.uid())
   );
 
 CREATE POLICY "ad_insights_write_policy" ON public.ad_insights

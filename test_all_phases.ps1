@@ -80,8 +80,8 @@ Assert-Test "PHASE 4" "RBAC Server-side Method: canUserAccessConversation" $hasC
 # ------------------------------------------------------------------------------
 try {
   $oauthRes = Invoke-RestMethod -Uri "$baseUri/api/zernio/connect/facebook" -Method Get -TimeoutSec 25
-  $hasDialog = $oauthRes.authUrl.Contains("dialog/oauth") -and $oauthRes.authUrl.Contains("client_id=712341431446535")
-  Assert-Test "PHASE 5" "Meta OAuth Dialog URL Generation" $hasDialog "(Client ID: 712341431446535)"
+  $hasDialog = $oauthRes.authUrl.Contains("dialog/oauth") -and $oauthRes.authUrl.Contains("client_id=")
+  Assert-Test "PHASE 5" "Meta OAuth Dialog URL Generation" $hasDialog "(OAuth Dialog URL generated)"
 } catch {
   Assert-Test "PHASE 5" "Meta OAuth Dialog URL Generation" $false $_.Exception.Message
 }
@@ -252,8 +252,9 @@ try {
 
 # 4. Speed-to-Lead: Write-Once first_response_at Enforcement
 try {
+  $testLeadId = "lead_test_write_once_" + (Get-Date).Ticks
   $firstResp1 = Invoke-RestMethod -Uri "$baseUri/api/leads/first-response" -Method Post -Headers @{ "x-user-id" = "user_a" } -Body (@{
-    leadId = "lead_test_write_once";
+    leadId = $testLeadId;
     action = "call"
   } | ConvertTo-Json) -ContentType "application/json" -TimeoutSec 10
 
@@ -262,7 +263,7 @@ try {
   # Attempt second write (should be rejected/ignored, preserving write-once timestamp)
   Start-Sleep -Milliseconds 150
   $firstResp2 = Invoke-RestMethod -Uri "$baseUri/api/leads/first-response" -Method Post -Headers @{ "x-user-id" = "user_a" } -Body (@{
-    leadId = "lead_test_write_once";
+    leadId = $testLeadId;
     action = "email"
   } | ConvertTo-Json) -ContentType "application/json" -TimeoutSec 10
 

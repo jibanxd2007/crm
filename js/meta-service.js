@@ -46,7 +46,7 @@ class MetaService {
       apiVersion: "v20.0",
       redirectUri: typeof window !== "undefined" ? `${window.location.origin}/api/auth/meta/callback` : "",
       webhookEndpoint: "/api/webhooks/meta",
-      verifyToken: "meta_crm_wh_verify_secret_2026",
+      verifyToken: "",
       autoSyncIntervalMinutes: 15,
       autoAssignmentEnabled: true
     };
@@ -67,22 +67,19 @@ class MetaService {
       if (saved) return JSON.parse(saved);
     } catch (e) {}
 
-    // Default clean state: Auto-connect to Zernio Unified API with live credentials
-    const defaultZernioKey = (typeof localStorage !== "undefined" && localStorage.getItem("metacrm_zernio_key")) || "sk_70e384c607a377dd9cc9e1585a8def99688e735a3a47d515b2255808055dabe1";
-    if (typeof localStorage !== "undefined" && !localStorage.getItem("metacrm_zernio_key")) {
-      try { localStorage.setItem("metacrm_zernio_key", defaultZernioKey); } catch (e) {}
-    }
+    // Default clean state
+    const defaultZernioKey = (typeof localStorage !== "undefined" && localStorage.getItem("metacrm_zernio_key")) || "";
 
     return {
-      isConnected: true,
-      provider: "zernio",
+      isConnected: false,
+      provider: "meta",
       apiKey: defaultZernioKey,
-      tokenLifespan: "Managed by Zernio Unified API (No Expiry)",
+      tokenLifespan: "OAuth 2.0 (Managed Server-Side)",
       user: {
-        id: "6ac64ff53904c4c3acfa60fd",
-        name: "Zernio Unified Meta Gateway",
-        email: "verified@zernio.com",
-        avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80"
+        id: "",
+        name: "Not Connected",
+        email: "",
+        avatar: ""
       },
       grantedScopes: [
         "pages_manage_posts",
@@ -273,8 +270,6 @@ class MetaService {
         name: p.name,
         category: p.category || "Business Page",
         avatar: (p.picture && p.picture.data && p.picture.data.url) || "",
-        pageAccessToken: p.access_token,
-        tasks: p.tasks || [],
         isConnected: true,
         webhookSubscribed: true,
         igAccount: p.instagram_business_account ? {
@@ -300,10 +295,9 @@ class MetaService {
         amountSpent: a.amount_spent ? (parseFloat(a.amount_spent) / 100).toFixed(2) : "0.00"
       }));
 
-      // 4. Save connection state
+      // 4. Save connection state (never persist tokens client-side)
       const connectionData = {
         isConnected: true,
-        accessToken: token,
         tokenLifespan: "System User / Developer Token",
         user: {
           id: meData.id,
@@ -838,10 +832,10 @@ class MetaService {
         apiKey: apiKey.trim(),
         tokenLifespan: "Managed by Zernio Unified API (No Expiry)",
         user: {
-          id: "6ac64ff53904c4c3acfa60fd",
+          id: "zernio_gateway",
           name: "Zernio Unified Meta Gateway",
-          email: "verified@zernio.com",
-          avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80"
+          email: "support@metacrm.io",
+          avatar: ""
         },
         grantedScopes: [
           "pages_manage_posts",
@@ -885,7 +879,7 @@ class MetaService {
   }
 
   async testZernioLiveConnection(customKey) {
-    const key = customKey || (typeof localStorage !== "undefined" && localStorage.getItem("metacrm_zernio_key")) || "sk_70e384c607a377dd9cc9e1585a8def99688e735a3a47d515b2255808055dabe1";
+    const key = customKey || (typeof localStorage !== "undefined" && localStorage.getItem("metacrm_zernio_key")) || "";
     try {
       const res = await fetch("/api/zernio/status");
       if (res.ok) {
@@ -893,16 +887,18 @@ class MetaService {
         return { success: true, data };
       }
     } catch (e) {
-      try {
-        const directRes = await fetch("https://zernio.com/api/v1/profiles", {
-          headers: { Authorization: `Bearer ${key}` }
-        });
-        if (directRes.ok) {
-          const prof = await directRes.json();
-          return { success: true, data: { status: "connected", provider: "zernio", profile: (prof.profiles || [])[0], hasAnalyticsAccess: true } };
+      if (key) {
+        try {
+          const directRes = await fetch("https://zernio.com/api/v1/profiles", {
+            headers: { Authorization: `Bearer ${key}` }
+          });
+          if (directRes.ok) {
+            const prof = await directRes.json();
+            return { success: true, data: { status: "connected", provider: "zernio", profile: (prof.profiles || [])[0], hasAnalyticsAccess: true } };
+          }
+        } catch (err2) {
+          return { success: false, error: err2.message };
         }
-      } catch (err2) {
-        return { success: false, error: err2.message };
       }
     }
     return { success: false, error: "Failed to connect to Zernio API" };
@@ -916,7 +912,7 @@ class MetaService {
         if (data.authUrl) return data.authUrl;
       }
     } catch (e) {}
-    return `https://zernio.com/api/v1/connect/${platform}?profileId=6ac64ff53904c4c3acfa60fd`;
+    return `/api/zernio/connect/${platform}`;
   }
 
   async syncZernioAccounts() {

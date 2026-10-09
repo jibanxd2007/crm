@@ -19,11 +19,15 @@ function getSupabaseAdmin() {
 }
 
 export default async function handler(req, res) {
-  // Verify authorization for cron job (optional token check)
+  // Verify authorization for scheduled sync or admin trigger
   const cronSecret = process.env.CRON_SECRET;
   const authHeader = req.headers['authorization'];
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}` && req.headers['x-cron-trigger'] !== 'true') {
-    // allow test trigger from admin frontend if needed
+  if (cronSecret) {
+    if (authHeader !== `Bearer ${cronSecret}` && req.headers['x-cron-trigger'] !== 'true') {
+      return res.status(401).json({ error: 'Unauthorized: Invalid CRON_SECRET authorization.' });
+    }
+  } else if (!authHeader) {
+    return res.status(401).json({ error: 'Unauthorized: Authentication required to trigger sync.' });
   }
 
   const metaToken = process.env.META_ACCESS_TOKEN;

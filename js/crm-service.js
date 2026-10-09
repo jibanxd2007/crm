@@ -2643,7 +2643,7 @@ class CRMService {
   // ZERNIO MARKETING API INTEGRATION
   // ==========================================================================
   async testZernioConnection(customKey) {
-    const key = customKey || (typeof localStorage !== "undefined" && localStorage.getItem("metacrm_zernio_key")) || "sk_70e384c607a377dd9cc9e1585a8def99688e735a3a47d515b2255808055dabe1";
+    const key = customKey || (typeof localStorage !== "undefined" && localStorage.getItem("metacrm_zernio_key")) || "";
     try {
       const res = await fetch("/api/zernio/status");
       if (res.ok) {
@@ -2651,16 +2651,18 @@ class CRMService {
         return { success: true, data };
       }
     } catch (e) {
-      try {
-        const directRes = await fetch("https://zernio.com/api/v1/profiles", {
-          headers: { Authorization: `Bearer ${key}` }
-        });
-        if (directRes.ok) {
-          const profData = await directRes.json();
-          return { success: true, data: { status: "connected", provider: "zernio", profile: (profData.profiles || [])[0], hasAnalyticsAccess: true } };
+      if (key) {
+        try {
+          const directRes = await fetch("https://zernio.com/api/v1/profiles", {
+            headers: { Authorization: `Bearer ${key}` }
+          });
+          if (directRes.ok) {
+            const profData = await directRes.json();
+            return { success: true, data: { status: "connected", provider: "zernio", profile: (profData.profiles || [])[0], hasAnalyticsAccess: true } };
+          }
+        } catch (err2) {
+          return { success: false, error: err2.message };
         }
-      } catch (err2) {
-        return { success: false, error: err2.message };
       }
     }
     return { success: false, error: "Failed to connect to Zernio API" };
@@ -2674,7 +2676,7 @@ class CRMService {
         if (data.authUrl) return data.authUrl;
       }
     } catch (e) {}
-    return `https://zernio.com/api/v1/connect/${platform}?profileId=6ac64ff53904c4c3acfa60fd`;
+    return `/api/zernio/connect/${platform}`;
   }
 
   async simulateZernioLead(options = {}) {

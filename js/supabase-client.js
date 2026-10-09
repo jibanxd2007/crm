@@ -26,10 +26,9 @@ class SupabaseService {
       if (saved) return JSON.parse(saved);
     } catch (e) {}
 
-    // Live Supabase Production Project Defaults
     return {
-      url: (typeof window !== "undefined" && window.NEXT_PUBLIC_SUPABASE_URL) || "https://hsudmspwseonzfdaldxj.supabase.co",
-      anonKey: (typeof window !== "undefined" && (window.NEXT_PUBLIC_SUPABASE_ANON_KEY || window.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)) || "sb_publishable_S95sOi3C8gIS9u96HYSLSA_VAW-QYlF"
+      url: (typeof window !== "undefined" && window.NEXT_PUBLIC_SUPABASE_URL) || "",
+      anonKey: (typeof window !== "undefined" && (window.NEXT_PUBLIC_SUPABASE_ANON_KEY || window.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)) || ""
     };
   }
 

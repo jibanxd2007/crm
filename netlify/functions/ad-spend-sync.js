@@ -66,6 +66,22 @@ exports.handler = async function(event, context) {
     return { statusCode: 200, headers, body: '' };
   }
 
+  // 1. Mandatory Authorization Check (CRON_SECRET or Admin)
+  const cronSecret = process.env.CRON_SECRET;
+  const authHeader = event.headers['authorization'] || event.headers['Authorization'] || '';
+  const userId = (event.headers['x-user-id'] || event.headers['X-User-Id'] || '').toLowerCase();
+
+  const isCronAuth = cronSecret && authHeader === `Bearer ${cronSecret}`;
+  const isAdminAuth = userId === 'admin' || authHeader === 'Bearer admin';
+
+  if (!isCronAuth && !isAdminAuth) {
+    return {
+      statusCode: 401,
+      headers,
+      body: JSON.stringify({ error: "Unauthorized: Admin privileges or CRON_SECRET required to sync ad spend." })
+    };
+  }
+
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

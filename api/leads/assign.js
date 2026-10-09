@@ -27,10 +27,15 @@ export default async function handler(req, res) {
   try {
     const supabase = getSupabaseClient(req.headers['authorization']);
 
-    // Check user role
+    // Check user authentication
+    const authHeader = req.headers['authorization'];
+    if (!authHeader) {
+      return res.status(401).json({ error: 'Unauthorized: Authentication required.' });
+    }
+
     const { data: { user }, error: authErr } = await supabase.auth.getUser();
     if (authErr || !user) {
-      // If service role allowed or fallback
+      return res.status(401).json({ error: 'Unauthorized: Invalid authentication credentials.' });
     }
 
     // Update lead

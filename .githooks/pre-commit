@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Pre-commit secret scanning hook using Gitleaks
+
+# Check if gitleaks is installed in PATH or in .tools
+GITLEAKS_BIN="gitleaks"
+if ! command -v gitleaks &> /dev/null; then
+  if [ -f "./.tools/gitleaks.exe" ]; then
+    GITLEAKS_BIN="./.tools/gitleaks.exe"
+  elif [ -f "./.tools/gitleaks" ]; then
+    GITLEAKS_BIN="./.tools/gitleaks"
+  else
+    echo "[SECURITY HOOK WARNING] Gitleaks binary not found. Skipping local secret scan."
+    exit 0
+  fi
+fi
+
+IGNORE_OPT=""
+if [ -f ".gitleaksignore" ]; then
+  IGNORE_OPT="--gitleaks-ignore-path .gitleaksignore"
+fi
+
+echo "[SECURITY HOOK] Running Gitleaks staged secret scan..."
+$GITLEAKS_BIN protect --staged -v $IGNORE_OPT
+RESULT=$?
+
+if [ $RESULT -ne 0 ]; then
+  echo ""
+  echo "====================================================================="
+  echo " [SECURITY VIOLATION] Gitleaks detected potential secret(s) staged!"
+  echo " Commit aborted. Remove the secret from staged files before committing."
+  echo "====================================================================="
+  exit 1
+fi
+
+echo "[SECURITY HOOK] Zero secrets detected in staged changes. Commit approved."
+exit 0

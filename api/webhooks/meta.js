@@ -86,7 +86,10 @@ export default async function handler(req, res) {
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
 
-    const expectedToken = process.env.META_VERIFY_TOKEN || 'meta_crm_wh_verify_secret_2026';
+    const expectedToken = process.env.META_VERIFY_TOKEN;
+    if (!expectedToken) {
+      return res.status(500).send('Server misconfiguration: META_VERIFY_TOKEN is missing');
+    }
 
     if (mode === 'subscribe' && token === expectedToken) {
       console.log('[Meta Webhook] Verification challenge approved.');
@@ -105,15 +108,16 @@ export default async function handler(req, res) {
     const body = req.body;
     const appSecret = process.env.META_APP_SECRET;
 
-    // Verify SHA-256 signature if appSecret is configured
-    let signatureVerified = true;
-    if (appSecret) {
-      signatureVerified = verifyMetaSignature(req, appSecret);
-      if (!signatureVerified) {
-        console.warn('[Meta Webhook] Signature verification failed. Potential spoofed request.');
-        // If strict mode enabled, return 401
-        // return res.status(401).json({ error: 'Invalid HMAC signature' });
-      }
+    // Verify SHA-256 signature
+    if (!appSecret) {
+      console.error('[Meta Webhook] META_APP_SECRET is not configured on the server.');
+      return res.status(500).json({ error: 'Server misconfiguration: META_APP_SECRET missing' });
+    }
+
+    const signatureVerified = verifyMetaSignature(req, appSecret);
+    if (!signatureVerified) {
+      console.warn('[Meta Webhook] Signature verification failed. Rejecting spoofed request.');
+      return res.status(401).json({ error: 'Invalid or missing Meta X-Hub-Signature-256' });
     }
 
     if (!body || body.object !== 'page' || !Array.isArray(body.entry)) {

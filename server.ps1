@@ -7,6 +7,7 @@ param (
 )
 
 $baseDir = $PSScriptRoot
+try { Add-Type -AssemblyName System.Web -ErrorAction SilentlyContinue } catch {}
 
 # Load environment variables from .env if present
 $envFile = Join-Path $baseDir ".env"
@@ -24,15 +25,14 @@ if (Test-Path $envFile) {
     }
 }
 
-$META_APP_ID = $envVars["META_APP_ID"]
-$META_APP_SECRET = $envVars["META_APP_SECRET"]
-$META_TOKEN = if ($envVars["META_SYSTEM_USER_ACCESS_TOKEN"]) { $envVars["META_SYSTEM_USER_ACCESS_TOKEN"] } else { $envVars["META_ACCESS_TOKEN"] }
-$META_VERSION = if ($envVars["META_API_VERSION"]) { $envVars["META_API_VERSION"] } else { "v20.0" }
-$VERIFY_TOKEN = if ($envVars["META_VERIFY_TOKEN"]) { $envVars["META_VERIFY_TOKEN"] } else { "meta_crm_wh_verify_secret_2026" }
+$META_APP_ID = if ($envVars["META_APP_ID"]) { $envVars["META_APP_ID"] } else { $env:META_APP_ID }
+$META_APP_SECRET = if ($envVars["META_APP_SECRET"]) { $envVars["META_APP_SECRET"] } else { $env:META_APP_SECRET }
+$META_TOKEN = if ($envVars["META_SYSTEM_USER_ACCESS_TOKEN"]) { $envVars["META_SYSTEM_USER_ACCESS_TOKEN"] } elseif ($envVars["META_ACCESS_TOKEN"]) { $envVars["META_ACCESS_TOKEN"] } elseif ($env:META_SYSTEM_USER_ACCESS_TOKEN) { $env:META_SYSTEM_USER_ACCESS_TOKEN } else { $env:META_ACCESS_TOKEN }
+$VERIFY_TOKEN = if ($envVars["META_VERIFY_TOKEN"]) { $envVars["META_VERIFY_TOKEN"] } else { $env:META_VERIFY_TOKEN }
 
 # Zernio API Configuration
-$ZERNIO_API_KEY = if ($envVars["ZERNIO_API_KEY"]) { $envVars["ZERNIO_API_KEY"] } else { "sk_70e384c607a377dd9cc9e1585a8def99688e735a3a47d515b2255808055dabe1" }
-$ZERNIO_PROFILE_ID = if ($envVars["ZERNIO_PROFILE_ID"]) { $envVars["ZERNIO_PROFILE_ID"] } else { "6ac64ff53904c4c3acfa60fd" }
+$ZERNIO_API_KEY = if ($envVars["ZERNIO_API_KEY"]) { $envVars["ZERNIO_API_KEY"] } else { "" }
+$ZERNIO_PROFILE_ID = if ($envVars["ZERNIO_PROFILE_ID"]) { $envVars["ZERNIO_PROFILE_ID"] } else { "" }
 $ZERNIO_BASE_URL = if ($envVars["ZERNIO_BASE_URL"]) { $envVars["ZERNIO_BASE_URL"] } else { "https://zernio.com/api/v1" }
 
 function Send-JsonResponse($res, [int]$statusCode, $obj) {
@@ -62,6 +62,20 @@ function Send-TextResponse($res, [int]$statusCode, [string]$text) {
     }
 }
 
+function Read-RequestBody($req) {
+    if ($req.HasEntityBody -and $req.ContentLength64 -gt 0) {
+        $buffer = New-Object byte[] $req.ContentLength64
+        $totalRead = 0
+        while ($totalRead -lt $req.ContentLength64) {
+            $read = $req.InputStream.Read($buffer, $totalRead, $req.ContentLength64 - $totalRead)
+            if ($read -le 0) { break }
+            $totalRead += $read
+        }
+        return [System.Text.Encoding]::UTF8.GetString($buffer, 0, $totalRead)
+    }
+    return ""
+}
+
 $listener = New-Object System.Net.HttpListener
 $listener.Prefixes.Add("http://localhost:$Port/")
 $listener.Prefixes.Add("http://127.0.0.1:$Port/")
@@ -84,6 +98,7 @@ Write-Host "==========================================================" -Foregro
 
 $global:MockNotifications = @()
 $global:MockLeadsSpeed = @{}
+$global:IngestedLeadIds = @{}
 $global:MockAdInsights = @(
     @{
         id = "ins_page_01_cmp_01";
@@ -171,10 +186,11 @@ while ($listener.IsListening) {
                     $activeProfile = if ($profRes.profiles -and $profRes.profiles.Count -gt 0) { $profRes.profiles[0] } else { $null }
                     $accountsList = if ($accRes.accounts) { $accRes.accounts } else { @() }
 
+                    $maskedKey = if ($ZERNIO_API_KEY -and $ZERNIO_API_KEY.Length -gt 10) { $ZERNIO_API_KEY.Substring(0, 7) + "..." + $ZERNIO_API_KEY.Substring($ZERNIO_API_KEY.Length - 4) } elseif ($ZERNIO_API_KEY) { "configured" } else { "" }
                     $statusObj = @{
                         status = "connected";
                         provider = "zernio";
-                        apiKey = "sk_70e384c6..." + $ZERNIO_API_KEY.Substring($ZERNIO_API_KEY.Length - 6);
+                        apiKey = $maskedKey;
                         profile = $activeProfile;
                         accounts = $accountsList;
                         hasAnalyticsAccess = $accRes.hasAnalyticsAccess;
@@ -277,8 +293,7 @@ while ($listener.IsListening) {
 
             # POST /api/zernio/simulate-lead (Simulate real inbound lead via Zernio)
             if ($urlPath -eq "/api/zernio/simulate-lead" -and $request.HttpMethod -eq "POST") {
-                $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
-                $bodyStr = $reader.ReadToEnd()
+                $bodyStr = Read-RequestBody $request
                 $leadInput = if ($bodyStr) { $bodyStr | ConvertFrom-Json } else { @{} }
 
                 $val = if ($leadInput.value) { [double]$leadInput.value } else { 0.0 }
@@ -369,8 +384,7 @@ while ($listener.IsListening) {
                     Send-JsonResponse $response 401 @{ error = "Unauthorized: Authentication required" }
                     continue
                 }
-                $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
-                $bStr = $reader.ReadToEnd()
+                $bStr = Read-RequestBody $request
                 $bJson = if ($bStr) { $bStr | ConvertFrom-Json } else { @{} }
                 $leadId = if ($bJson.leadId) { $bJson.leadId } else { "lead_sample" }
                 $action = if ($bJson.action) { $bJson.action } else { "call" }
@@ -421,7 +435,7 @@ while ($listener.IsListening) {
                     Send-JsonResponse $response 401 @{ error = "Unauthorized: Authentication required" }
                     continue
                 }
-                $query = [System.Web.HttpUtility]::ParseQueryString($queryString)
+                $query = $request.QueryString
                 $reqPage = if ($query["page_id"]) { $query["page_id"] } else { $query["pageId"] }
 
                 # Enforce Page Isolation: User A only page_01/page_a; User B only page_02/page_b; Admin full
@@ -435,8 +449,7 @@ while ($listener.IsListening) {
                 }
 
                 if ($request.HttpMethod -eq "POST") {
-                    $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
-                    $bStr = $reader.ReadToEnd()
+                    $bStr = Read-RequestBody $request
                     $bJson = if ($bStr) { $bStr | ConvertFrom-Json } else { @{} }
                     $tgtPage = if ($bJson.page_id) { $bJson.page_id } else { $bJson.pageId }
                     if ($reqUser -eq "user_a" -and $tgtPage -and ($tgtPage -ne "page_01" -and $tgtPage -ne "page_a")) {
@@ -461,7 +474,7 @@ while ($listener.IsListening) {
                     Send-JsonResponse $response 401 @{ error = "Unauthorized: Authentication required" }
                     continue
                 }
-                $query = [System.Web.HttpUtility]::ParseQueryString($queryString)
+                $query = $request.QueryString
                 $reqPage = if ($query["page_id"]) { $query["page_id"] } else { $query["pageId"] }
                 $reqConv = if ($query["conversation_id"]) { $query["conversation_id"] } else { $query["conversationId"] }
 
@@ -483,8 +496,7 @@ while ($listener.IsListening) {
                 }
 
                 if ($request.HttpMethod -eq "POST") {
-                    $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
-                    $bStr = $reader.ReadToEnd()
+                    $bStr = Read-RequestBody $request
                     $bJson = if ($bStr) { $bStr | ConvertFrom-Json } else { @{} }
                     $tgtPage = if ($bJson.page_id) { $bJson.page_id } else { $bJson.pageId }
                     if ($reqUser -eq "user_a" -and $tgtPage -and ($tgtPage -ne "page_01" -and $tgtPage -ne "page_a")) {
@@ -519,47 +531,190 @@ while ($listener.IsListening) {
                 continue
             }
 
-            # GET /api/meta/callback or /api/auth/meta/callback
-            if (($urlPath -eq "/api/meta/callback" -or $urlPath -eq "/api/auth/meta/callback") -and $request.HttpMethod -eq "GET") {
-                $query = [System.Web.HttpUtility]::ParseQueryString($queryString)
+            # GET & POST /api/meta/callback or /api/auth/meta/callback or /api/meta/oauth/token
+            if ($urlPath -eq "/api/meta/callback" -or $urlPath -eq "/api/auth/meta/callback" -or $urlPath -eq "/api/meta/oauth/token") {
+                $query = $request.QueryString
                 $code = $query["code"]
-                $error = $query["error"]
-                if ($error) {
-                    $response.Redirect("http://localhost:$Port/?meta_auth=error&msg=$([System.Uri]::EscapeDataString($error))")
-                    $response.Close()
+                $oauthError = $query["error"]
+                $errorDesc = if ($query["error_description"]) { $query["error_description"] } else { $oauthError }
+                $isJsonReq = ($query["format"] -eq "json") -or ($request.AcceptTypes -and ($request.AcceptTypes -contains "application/json")) -or ($request.HttpMethod -eq "POST")
+
+                if ($request.HttpMethod -eq "POST") {
+                    $postBody = Read-RequestBody $request
+                    $bJson = if ($postBody) { try { $postBody | ConvertFrom-Json } catch { $null } } else { $null }
+                    if ($bJson) {
+                        if ($bJson.code) { $code = $bJson.code }
+                        if ($bJson.error) { $oauthError = $bJson.error; $errorDesc = $bJson.error_description }
+                    }
+                }
+
+                if ($oauthError) {
+                    if ($isJsonReq) {
+                        Send-JsonResponse $response 400 @{ error = $oauthError; error_description = $errorDesc }
+                    } else {
+                        $response.Redirect("http://localhost:$Port/?meta_auth=error&msg=$([System.Uri]::EscapeDataString($errorDesc))")
+                        $response.Close()
+                    }
                     continue
                 }
-                $response.Redirect("http://localhost:$Port/#connections?meta_auth=success&connected=true&code=$code")
-                $response.Close()
+
+                if (-not $code) {
+                    if ($isJsonReq) {
+                        Send-JsonResponse $response 400 @{ error = "Missing authorization code" }
+                    } else {
+                        $response.Redirect("http://localhost:$Port/?meta_auth=error&msg=missing_code")
+                        $response.Close()
+                    }
+                    continue
+                }
+
+                # Successful token exchange
+                if ($isJsonReq) {
+                    Send-JsonResponse $response 200 @{
+                        status = "success";
+                        access_token = "mock_user_token_long_lived_" + (Get-Random -Minimum 100000 -Maximum 999999);
+                        token_type = "bearer";
+                        expires_in = 5184000;
+                        scopes = @("pages_show_list", "pages_read_engagement", "leads_retrieval", "ads_read", "pages_messaging")
+                    }
+                } else {
+                    $response.Redirect("http://localhost:$Port/#connections?meta_auth=success&connected=true")
+                    $response.Close()
+                }
                 continue
             }
 
-            # /api/webhooks/meta (Verification Handshake & Event Ingestion)
+            # GET /api/meta/simulate-error (Tests graceful error handling for Meta API failures)
+            if ($urlPath -eq "/api/meta/simulate-error" -and $request.HttpMethod -eq "GET") {
+                $query = $request.QueryString
+                $errType = $query["type"]
+                if ($errType -eq "expired_token") {
+                    Send-JsonResponse $response 401 @{
+                        error = @{
+                            message = "Error validating access token: Session has expired on Monday, 06-Oct-26 12:00:00 PDT.";
+                            type = "OAuthException";
+                            code = 190;
+                            error_subcode = 463
+                        }
+                    }
+                    continue
+                } elseif ($errType -eq "rate_limit") {
+                    Send-JsonResponse $response 429 @{
+                        error = @{
+                            message = "(#4) Application request limit reached";
+                            type = "OAuthException";
+                            code = 4
+                        }
+                    }
+                    continue
+                } elseif ($errType -eq "permissions") {
+                    Send-JsonResponse $response 403 @{
+                        error = @{
+                            message = "(#200) Requires pages_manage_ads permission to manage this ad account";
+                            type = "OAuthException";
+                            code = 200
+                        }
+                    }
+                    continue
+                } else {
+                    Send-JsonResponse $response 400 @{ error = "Unknown error type requested" }
+                    continue
+                }
+            }
+
+            # /api/webhooks/meta (Verification Handshake, Payload Validation, Deduplication & Attribution)
             if ($urlPath -eq "/api/webhooks/meta") {
                 if ($request.HttpMethod -eq "GET") {
-                    $query = [System.Web.HttpUtility]::ParseQueryString($queryString)
+                    $query = $request.QueryString
                     $mode = $query["hub.mode"]
                     $token = $query["hub.verify_token"]
                     $challenge = $query["hub.challenge"]
 
-                    if ($mode -eq "subscribe" -and $token -eq $VERIFY_TOKEN) {
+                    if ($mode -eq "subscribe" -and $VERIFY_TOKEN -and $token -eq $VERIFY_TOKEN) {
                         Send-TextResponse $response 200 $challenge
                     } else {
-                        Send-JsonResponse $response 200 @{
-                            status = "active";
-                            provider = "meta_webhook";
-                            endpoint = "/api/webhooks/meta";
-                            verifyTokenConfigured = $true;
-                            timestamp = (Get-Date).ToString("o")
-                        }
+                        Send-TextResponse $response 403 "Forbidden: Verification token mismatch"
                     }
                 } elseif ($request.HttpMethod -eq "POST") {
-                    $reader = New-Object System.IO.StreamReader($request.InputStream, [System.Text.Encoding]::UTF8)
-                    $postBody = $reader.ReadToEnd()
-                    Write-Host "[Meta Webhook] Inbound event received: $postBody" -ForegroundColor Green
+                    $postBody = Read-RequestBody $request
+
+                    # Enforce HMAC SHA-256 validation if META_APP_SECRET configured
+                    if ($META_APP_SECRET) {
+                        $sigHeader = $request.Headers["x-hub-signature-256"]
+                        if (-not $sigHeader) {
+                            Send-JsonResponse $response 401 @{ error = "Unauthorized: Missing X-Hub-Signature-256 header" }
+                            continue
+                        }
+                        $hmac = New-Object System.Security.Cryptography.HMACSHA256
+                        $hmac.Key = [System.Text.Encoding]::UTF8.GetBytes($META_APP_SECRET)
+                        $hashBytes = $hmac.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($postBody))
+                        $expSig = "sha256=" + [System.BitConverter]::ToString($hashBytes).Replace("-", "").ToLower()
+                        if ($sigHeader -ne $expSig) {
+                            Send-JsonResponse $response 401 @{ error = "Unauthorized: Invalid HMAC signature" }
+                            continue
+                        }
+                    }
+
+                    # Validate JSON payload structure (Malformed payload defense)
+                    $whJson = $null
+                    try {
+                        if (-not [string]::IsNullOrWhiteSpace($postBody)) {
+                            $whJson = $postBody | ConvertFrom-Json
+                        }
+                    } catch {
+                        Send-JsonResponse $response 400 @{ error = "Bad Request: Malformed JSON payload" }
+                        continue
+                    }
+
+                    if (-not $whJson -or -not $whJson.object -or -not $whJson.entry) {
+                        Send-JsonResponse $response 400 @{ error = "Bad Request: Invalid Meta webhook structure (missing object or entry)" }
+                        continue
+                    }
+
+                    # Process entries, 5-tier attribution & idempotency deduplication
+                    $leadId = $null
+                    $isDuplicate = $false
+                    $attribution = @{}
+                    if ($whJson.entry -and $whJson.entry.Count -gt 0) {
+                        foreach ($entry in $whJson.entry) {
+                            if ($entry.changes) {
+                                foreach ($change in $entry.changes) {
+                                    if ($change.field -eq "leadgen" -and $change.value) {
+                                        $leadId = $change.value.leadgen_id
+                                        $pageId = if ($change.value.page_id) { $change.value.page_id } else { $entry.id }
+                                        $attribution = @{
+                                            page_id = $pageId;
+                                            form_id = $change.value.form_id;
+                                            ad_id = $change.value.ad_id;
+                                            adset_id = $change.value.adgroup_id;
+                                            campaign_id = $change.value.campaign_id
+                                        }
+
+                                        if ($leadId) {
+                                            if ($global:IngestedLeadIds.ContainsKey($leadId)) {
+                                                $isDuplicate = $true
+                                            } else {
+                                                $global:IngestedLeadIds[$leadId] = @{
+                                                    id = $leadId;
+                                                    attribution = $attribution;
+                                                    ingestedAt = (Get-Date).ToString("o")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Write-Host "[Meta Webhook] Inbound event processed. Lead: $leadId (Duplicate: $isDuplicate)" -ForegroundColor Green
                     Send-JsonResponse $response 200 @{
                         status = "success";
                         processed = $true;
+                        duplicate = $isDuplicate;
+                        leadId = $leadId;
+                        attribution = $attribution;
+                        signatureVerified = $true;
                         timestamp = (Get-Date).ToString("o")
                     }
                 }
@@ -707,6 +862,13 @@ while ($listener.IsListening) {
             Send-TextResponse $response 404 "404 Not Found: $urlPath"
         }
     } catch {
-        # Catch and continue loop
+        Write-Host "[REQUEST ERROR] $($_.Exception.Message) at line $($_.InvocationInfo.ScriptLineNumber)" -ForegroundColor Red
+        try {
+            if ($response -and $response.OutputStream) {
+                Send-JsonResponse $response 500 @{ error = "Internal server error: $($_.Exception.Message)" }
+            }
+        } catch {
+            try { $response.Close() } catch {}
+        }
     }
 }

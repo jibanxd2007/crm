@@ -121,7 +121,7 @@ const INITIAL_META_CONFIG = {
   apiVersion: "v24.0",
   redirectUri: typeof window !== "undefined" ? window.location.origin + "/api/meta/callback" : "",
   webhookEndpoint: typeof window !== "undefined" ? window.location.origin + "/api/webhooks/meta" : "/api/webhooks/meta",
-  verifyToken: "meta_crm_wh_verify_secret_2026",
+  verifyToken: "",
   autoSyncIntervalMinutes: 15,
   lastSyncTimestamp: new Date().toISOString(),
   autoAssignmentEnabled: true,
