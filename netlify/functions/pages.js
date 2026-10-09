@@ -39,7 +39,23 @@ exports.handler = async function(event, context) {
     };
   }
 
-  // 2. Return scoped pages
+  // 2. Fetch server-side registered pages (tokens stripped)
+  const registeredPages = [];
+  if (global.META_PAGE_TOKENS) {
+    for (const pid of Object.keys(global.META_PAGE_TOKENS)) {
+      const p = global.META_PAGE_TOKENS[pid];
+      // Only include if user has access to this page or is admin
+      if (user.role === 'admin' || user.pages.includes('*') || user.pages.includes(p.pageId)) {
+        registeredPages.push({
+          id: p.pageId,
+          name: p.pageName,
+          connectedAt: p.savedAt
+        });
+      }
+    }
+  }
+
+  // 3. Return scoped pages
   return {
     statusCode: 200,
     headers: {
@@ -51,7 +67,7 @@ exports.handler = async function(event, context) {
       authorized: true,
       userRole: user.role,
       accessiblePages: user.pages,
-      pages: [],
+      pages: registeredPages,
       timestamp: new Date().toISOString()
     })
   };

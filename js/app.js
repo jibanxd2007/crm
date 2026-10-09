@@ -232,16 +232,49 @@ class MetaCRMApp {
     const fullUrl = search + hash;
 
     if (fullUrl.includes('meta_auth=success') || fullUrl.includes('connected=true')) {
+      const pageNameMatch = fullUrl.match(/page_name=([^&]+)/);
+      const pageIdMatch = fullUrl.match(/page_id=([^&]+)/);
+      const pageName = pageNameMatch ? decodeURIComponent(pageNameMatch[1]) : 'Your Facebook Page';
+      const pageId = pageIdMatch ? decodeURIComponent(pageIdMatch[1]) : `page_${Date.now()}`;
+
+      // Register connected page in CRM state
+      if (this.svc) {
+        if (!this.svc.pages) this.svc.pages = [];
+        const existing = this.svc.pages.find(p => p.id === pageId || p.page_id === pageId);
+        if (!existing) {
+          this.svc.pages.push({
+            id: pageId,
+            page_id: pageId,
+            name: pageName,
+            color: '#1877F2',
+            connected_at: new Date().toISOString()
+          });
+          if (this.svc._saveToStorage) this.svc._saveToStorage();
+          else if (this.svc.saveAll) this.svc.saveAll();
+        }
+      }
+
       this.metaConnectionState = 'connected';
       try { localStorage.setItem('metacrm_meta_conn_state', 'connected'); } catch (e) {}
-      this.toast('🎉 Meta Facebook & Instagram connected successfully!', 'success');
+      this.toast(`✅ "${pageName}" is connected! Leads will now appear automatically.`, 'success');
+      
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, document.title, window.location.pathname + '#connections');
+      }
+      this.renderSidebar();
+    } else if (fullUrl.includes('meta_auth=no_pages')) {
+      this.metaConnectionState = 'not_connected';
+      try { localStorage.setItem('metacrm_meta_conn_state', 'not_connected'); } catch (e) {}
+      this.toast('⚠️ Connected to Facebook, but no Facebook Pages were found on this account. Please create or manage a Facebook Page first.', 'warning');
       if (window.history && window.history.replaceState) {
         window.history.replaceState({}, document.title, window.location.pathname + '#connections');
       }
     } else if (fullUrl.includes('meta_auth=error')) {
       const msgMatch = fullUrl.match(/msg=([^&]+)/);
       const msg = msgMatch ? decodeURIComponent(msgMatch[1]) : 'Permissions declined or window closed';
-      this.toast(`⚠️ Meta connection incomplete: ${msg}`, 'warning');
+      this.metaConnectionState = 'not_connected';
+      try { localStorage.setItem('metacrm_meta_conn_state', 'not_connected'); } catch (e) {}
+      this.toast(`⚠️ Couldn't connect to Facebook: ${msg}`, 'error');
       if (window.history && window.history.replaceState) {
         window.history.replaceState({}, document.title, window.location.pathname + '#connections');
       }
@@ -533,19 +566,19 @@ class MetaCRMApp {
       {
         title: 'MAIN',
         items: [
-          { id: 'dashboard', icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>`, label: 'Dashboard' },
-          { id: 'leads',     icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`, label: 'Leads', badge: newLeads || null },
-          { id: 'inbox',     icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`, label: 'Messages', badge: (this.svc ? (this.svc.conversations||[]).reduce((s,c)=>s+(c.unread||0),0) : 0) || null },
-          { id: 'tasks',     icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`, label: 'Follow-ups', badge: overdueTasks || null },
-          { id: 'pipeline',  icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`, label: 'Pipeline' },
+          { id: 'dashboard',   icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>`, label: 'Dashboard' },
+          { id: 'leads',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`, label: 'Leads', badge: newLeads || null },
+          { id: 'inbox',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`, label: 'Messages', badge: (this.svc ? (this.svc.conversations||[]).reduce((s,c)=>s+(c.unread||0),0) : 0) || null },
+          { id: 'tasks',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`, label: 'Follow-ups', badge: overdueTasks || null },
+          { id: 'pipeline',    icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`, label: 'Pipeline' },
+          { id: 'connections', icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>`, label: 'Connect Facebook' },
         ]
       },
       ...(isAdmin ? [{
-        title: 'SETTINGS & CHANNELS',
+        title: 'MANAGEMENT',
         items: [
-          { id: 'connections', icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>`, label: 'Connect Facebook' },
-          { id: 'staff',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`, label: 'Team' },
-          { id: 'reports',     icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`, label: 'Reports' },
+          { id: 'staff',   icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`, label: 'Team' },
+          { id: 'reports', icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`, label: 'Reports' },
         ]
       }] : []),
     ];
@@ -1570,7 +1603,7 @@ class MetaCRMApp {
     if (details) details.classList.toggle('open');
   }
 
-  sendInboxMessage() {
+  async sendInboxMessage() {
     const input = document.getElementById('inbox-msg-input');
     if (!input || !input.value.trim()) return;
     const text = input.value.trim();
@@ -1578,7 +1611,28 @@ class MetaCRMApp {
 
     const convList = (this.svc ? (this.svc.conversations || []) : []);
     const activeConv = convList.find(c => c.id === this.activeConvId) || convList[0];
-    if (activeConv) {
+    if (!activeConv) return;
+
+    try {
+      this.toast('Sending message via Meta API…', 'info');
+      const res = await fetch('/api/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': this.user.id
+        },
+        body: JSON.stringify({
+          pageId: activeConv.page_id,
+          recipientId: activeConv.sender_id || activeConv.phone || 'customer',
+          text: text
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Failed to dispatch message via Meta API');
+      }
+
       if (!activeConv.messages) activeConv.messages = [];
       const newMsg = { text, incoming: false, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) };
       activeConv.messages.push(newMsg);
@@ -1589,17 +1643,22 @@ class MetaCRMApp {
         if (this.svc._saveToStorage) this.svc._saveToStorage();
         else if (this.svc.saveAll) this.svc.saveAll();
       }
-    }
 
-    const thread = document.getElementById('inbox-thread');
-    if (thread) {
-      const msgDiv = document.createElement('div');
-      msgDiv.className = 'msg msg-out';
-      msgDiv.innerHTML = `<div class="msg-bubble">${escapeHtml(text)}</div>`;
-      thread.appendChild(msgDiv);
-      thread.scrollTop = thread.scrollHeight;
+      const thread = document.getElementById('inbox-thread');
+      if (thread) {
+        const msgDiv = document.createElement('div');
+        msgDiv.className = 'msg msg-out';
+        msgDiv.innerHTML = `<div class="msg-bubble">${escapeHtml(text)}</div>`;
+        thread.appendChild(msgDiv);
+        thread.scrollTop = thread.scrollHeight;
+      }
+      this.toast(`Message sent via ${activeConv.channel || 'Facebook'} ✓`, 'success');
+
+    } catch (err) {
+      console.error('[Send Message Error]:', err);
+      this.toast(`Couldn't send: ${err.message}`, 'error');
+      if (input) input.value = text;
     }
-    this.toast('Message sent via Meta API ✓', 'success');
   }
 
   simulateInboundMessage() {
@@ -1870,69 +1929,21 @@ class MetaCRMApp {
       if (data.lead && this.svc) {
         this.svc.leads.unshift(data.lead);
         if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
+        this.toast(`🎉 New Lead arrived from Facebook Page "${pageName}"!`, 'success');
+        this.renderNotifications();
+        setTimeout(() => this.navigate('leads'), 800);
+      } else {
+        throw new Error(data.error || 'Server did not return lead data');
       }
     } catch (e) {
-      if (this.svc) {
-        const fallbackLead = {
-          id: `lead_${Date.now()}`,
-          name: `Prospect from ${pageName}`,
-          email: `lead_${Math.floor(Math.random()*900+100)}@example.com`,
-          phone: `+91 98${Math.floor(Math.random()*90000000+10000000)}`,
-          page_id: pageId,
-          pageId: pageId,
-          source: 'Facebook Lead Ad',
-          status: 'New Lead',
-          sla_target_minutes: 5,
-          created_at: new Date().toISOString()
-        };
-        this.svc.leads.unshift(fallbackLead);
-        if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
-      }
+      console.error('[Simulate Lead Error]:', e);
+      this.toast(`Simulation failed: ${e.message}`, 'error');
     }
-    this.toast(`🎉 New Lead arrived from Facebook Page "${pageName}"!`, 'success');
-    this.renderNotifications();
-    setTimeout(() => {
-      this.navigate('leads');
-    }, 800);
   }
 
   openConnectPageModal() {
-    this.el.mTitle.textContent = 'Connect a Facebook Page';
-    this.el.mBody.innerHTML = `
-      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px;line-height:1.4;">
-        Enter the name of your Facebook Business Page. New lead form submissions and customer messages will appear directly in your CRM.
-      </p>
-      <label class="settings-label">Facebook Page Name *</label>
-      <input type="text" class="input mb-3" id="cp-name" placeholder="e.g. My Business Page / Store">
-    `;
-    this.el.mConfirm.textContent = 'Connect Page';
-    this.el.mConfirm.className = 'btn btn-primary';
-    this.el.mConfirm.onclick = () => {
-      const name = (document.getElementById('cp-name')?.value || '').trim();
-      if (!name) {
-        this.toast('Please enter your Facebook Page name.', 'warning');
-        return;
-      }
-      if (this.svc) {
-        const newPage = {
-          id: `page_${Date.now()}`,
-          page_id: `page_${Date.now()}`,
-          name: name,
-          color: '#1877F2',
-          created_at: new Date().toISOString()
-        };
-        if (!this.svc.pages) this.svc.pages = [];
-        this.svc.pages.push(newPage);
-        if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
-      }
-      this.metaConnectionState = 'connected';
-      try { localStorage.setItem('metacrm_meta_conn_state', 'connected'); } catch (e) {}
-      this.closeModal();
-      this.toast(`✅ "${name}" is connected! Leads will now appear automatically.`, 'success');
-      this.renderConnections();
-      this.renderSidebar();
-    };
-    this.el.mOverlay.classList.add('open');
+    this.closeModal();
+    this.connectFacebookOAuth();
   }
 
   async connectFacebookOAuth() {
@@ -1941,49 +1952,24 @@ class MetaCRMApp {
     if (btnText) btnText.innerHTML = '<span class="spinner"></span> Opening Facebook…';
     if (heroBtn) heroBtn.disabled = true;
 
-    this.toast('Opening Facebook to connect your page…', 'info');
+    this.toast('Opening Facebook to connect your Page…', 'info');
 
     try {
-      let authUrl = null;
-      try {
-        const res = await fetch('/api/zernio/connect/facebook');
-        const data = await res.json();
-        authUrl = data.authUrl;
-      } catch (e) {
-        authUrl = null;
+      const res = await fetch('/api/meta/oauth');
+      const data = await res.json();
+
+      if (!res.ok || !data.url) {
+        throw new Error(data.error || 'Meta OAuth URL could not be generated. Please ensure META_APP_ID is set in Netlify.');
       }
 
-      if (authUrl) {
-        const win = window.open(authUrl, '_blank', 'width=650,height=720');
-        if (!win || win.closed || typeof win.closed === 'undefined') {
-          window.location.href = authUrl;
-          return;
-        }
-      }
-
-      // Friendly connection completion
-      setTimeout(() => {
-        this.metaConnectionState = 'connected';
-        try { localStorage.setItem('metacrm_meta_conn_state', 'connected'); } catch (e) {}
-
-        // Ensure at least one business page is connected
-        if (this.svc && (!this.svc.pages || this.svc.pages.length === 0)) {
-          this.svc.pages = [
-            { id: 'page_fb_001', name: 'My Business Facebook Page', color: '#1877F2' }
-          ];
-          if (this.svc._saveToStorage) this.svc._saveToStorage(); else if (this.svc.saveAll) this.svc.saveAll();
-        }
-
-        const pageName = (this.svc && this.svc.pages && this.svc.pages[0]) ? this.svc.pages[0].name : 'Your Facebook Page';
-        this.toast(`✅ ${pageName} is connected. Leads will now appear automatically.`, 'success');
-        this.renderConnections();
-        this.renderSidebar();
-      }, 1600);
+      // Direct window redirect ensures compatibility on all devices and mobile browsers
+      window.location.href = data.url;
 
     } catch (err) {
+      console.error('[Meta Connect Error]:', err);
       if (btnText) btnText.innerHTML = 'Connect Facebook Page';
       if (heroBtn) heroBtn.disabled = false;
-      this.toast('Couldn\'t connect to Facebook. Please try again.', 'error');
+      this.toast(`Couldn't connect: ${err.message}`, 'error');
     }
   }
 
@@ -2353,6 +2339,7 @@ class MetaCRMApp {
                   <td><span class="badge ${s.status==='inactive'?'badge-gray':'badge-green'}">${s.status || 'Active'}</span></td>
                   <td>
                     <div class="row-actions">
+                      <button class="btn btn-secondary btn-sm" onclick="window.app.openAssignPagesModal('${s.id}')">Assign Pages</button>
                       <button class="btn btn-ghost btn-sm" onclick="window.app.switchUserDirect('${s.id}')">Switch</button>
                       <button class="btn btn-ghost btn-sm text-red" style="color:var(--danger);" onclick="window.app.removeStaff('${s.id}')" title="Remove staff member">🗑️</button>
                     </div>
@@ -2362,6 +2349,55 @@ class MetaCRMApp {
           </tbody>
         </table>
       </div>`;
+  }
+
+  openAssignPagesModal(staffId) {
+    const staff = this.svc ? this.svc.staff.find(s => s.id === staffId) : null;
+    if (!staff) return;
+    const pages = this.svc ? (this.svc.pages || []) : [];
+
+    this.el.mTitle.textContent = `Assign Facebook Pages: ${staff.name}`;
+    this.el.mBody.innerHTML = `
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px;line-height:1.4;">
+        Select which Facebook Pages <strong>${escapeHtml(staff.name)}</strong> is allowed to access. They will only see leads and messages for checked pages.
+      </p>
+      <div style="display:flex;flex-direction:column;gap:10px;max-height:260px;overflow-y:auto;padding:4px 0;">
+        <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;padding:6px 8px;border-radius:4px;background:#F8FAFC;">
+          <input type="checkbox" id="ap-all" ${(!staff.assignedPageIds || staff.assignedPageIds.length === 0 || staff.assignedPageIds.length === pages.length) ? 'checked' : ''} 
+                 onchange="document.querySelectorAll('.ap-page-cb').forEach(cb => cb.checked = this.checked)">
+          <strong>All Pages (Full Access)</strong>
+        </label>
+        <hr style="border:none;border-top:1px solid var(--border);margin:4px 0;">
+        ${pages.length > 0 ? pages.map(p => `
+          <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;padding:4px 8px;">
+            <input type="checkbox" class="ap-page-cb" value="${p.id}" ${(staff.assignedPageIds && staff.assignedPageIds.includes(p.id)) ? 'checked' : ''}
+                   onchange="if(!this.checked) document.getElementById('ap-all').checked = false;">
+            <span>${escapeHtml(p.name)}</span>
+          </label>
+        `).join('') : '<div class="text-xs text-gray">No connected Facebook Pages yet. Connect a Page first.</div>'}
+      </div>
+    `;
+
+    this.el.mConfirm.textContent = 'Save Page Assignments';
+    this.el.mConfirm.className = 'btn btn-primary';
+    this.el.mConfirm.onclick = () => {
+      const isAll = document.getElementById('ap-all')?.checked;
+      let selectedIds = [];
+      if (isAll) {
+        selectedIds = pages.map(p => p.id);
+      } else {
+        document.querySelectorAll('.ap-page-cb:checked').forEach(cb => selectedIds.push(cb.value));
+      }
+      staff.assignedPageIds = selectedIds;
+      if (this.svc) {
+        if (this.svc._saveToStorage) this.svc._saveToStorage();
+        else if (this.svc.saveAll) this.svc.saveAll();
+      }
+      this.closeModal();
+      this.toast(`Page assignments saved for "${staff.name}" ✓`, 'success');
+      this.renderStaff();
+    };
+    this.el.mOverlay.classList.add('open');
   }
 
   // ──────────────────────────────────────────────────────────
