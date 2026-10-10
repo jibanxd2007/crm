@@ -309,6 +309,9 @@ class MetaCRMApp {
     if (this.el.appLayout) this.el.appLayout.style.display = 'flex';
 
     this.currentRoute = hash;
+    if (document.body) {
+      document.body.setAttribute('data-page', hash);
+    }
     this.toggleMobileSidebar(false);
     this.renderSidebar();
     this._renderPage();
@@ -1578,10 +1581,10 @@ class MetaCRMApp {
   renderInbox() {
     this.el.title.textContent = this.user.role === 'staff' ? 'My Messages' : 'Messages';
     this.el.actions.innerHTML = `
-      <button class="btn btn-primary btn-sm" onclick="window.app.refreshRealInbox()">
+      <button class="btn btn-lime btn-sm btn-inbox-refresh" onclick="window.app.refreshRealInbox()">
         🔄 Refresh Real Instagram Inbox
       </button>
-      <button class="btn btn-secondary btn-sm" onclick="window.app.syncConnections()">
+      <button class="btn btn-secondary-lime btn-sm btn-inbox-sync" onclick="window.app.syncConnections()">
         🔄 Sync Accounts
       </button>`;
 
@@ -1621,8 +1624,11 @@ class MetaCRMApp {
         <!-- LEFT: CONVERSATIONS LIST -->
         <div class="inbox-sidebar">
           <div class="inbox-sidebar-header">
-            <input type="text" class="input" placeholder="Search conversations…" style="margin-bottom:8px;" oninput="window.app.searchInboxConversations(this.value)">
-            <div class="inbox-filter-tabs">
+            <div class="inbox-search-wrap">
+              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              <input type="text" class="input inbox-search-input" placeholder="Search conversations…" oninput="window.app.searchInboxConversations(this.value)">
+            </div>
+            <div class="inbox-filter-tabs" id="inbox-filter-tabs">
               <div class="inbox-tab ${activeTab === 'all' ? 'active' : ''}" onclick="window.app.setInboxTab('all')">All</div>
               <div class="inbox-tab ${activeTab === 'unread' ? 'active' : ''}" onclick="window.app.setInboxTab('unread')">Unread (${unreadInboxCount})</div>
               <div class="inbox-tab ${activeTab === 'messenger' ? 'active' : ''}" onclick="window.app.setInboxTab('messenger')">Messenger</div>
@@ -1631,13 +1637,13 @@ class MetaCRMApp {
           </div>
           <div class="inbox-conv-list">
             ${convList.length === 0 ? `
-              <div style="padding:32px 16px;text-align:center;color:var(--text-secondary);font-size:13px;">
-                <div style="font-size:32px;margin-bottom:8px;">${activeTab === 'instagram' ? '📷' : '💬'}</div>
-                <strong style="display:block;color:var(--text-primary);margin-bottom:4px;font-size:14px;">No ${activeTab === 'all' ? '' : (activeTab === 'instagram' ? 'Instagram ' : 'Messenger ')}messages yet</strong>
-                <p style="margin:0 0 14px;font-size:12px;color:var(--text-muted);line-height:1.4;">
+              <div class="inbox-conv-empty">
+                <div class="inbox-conv-empty-icon">${activeTab === 'instagram' ? '📷' : '💬'}</div>
+                <strong class="inbox-conv-empty-title">No ${activeTab === 'all' ? '' : (activeTab === 'instagram' ? 'Instagram ' : 'Messenger ')}messages yet</strong>
+                <p class="inbox-conv-empty-desc">
                   Incoming messages from your connected ${activeTab === 'instagram' ? 'Instagram' : 'Facebook & Instagram'} account will appear here automatically.
                 </p>
-                <button class="btn btn-secondary btn-sm" onclick="window.app.simulateInboundMessage('${activeTab === 'instagram' ? 'Instagram Direct' : 'Messenger'}')" style="${activeTab === 'instagram' ? 'border-color:#E1306C;color:#E1306C;' : ''}">
+                <button class="btn btn-lime btn-sm" onclick="window.app.simulateInboundMessage('${activeTab === 'instagram' ? 'Instagram Direct' : 'Messenger'}')">
                   + Test ${activeTab === 'instagram' ? 'Instagram DM' : 'Message'}
                 </button>
               </div>
@@ -1645,20 +1651,22 @@ class MetaCRMApp {
               const isIg = c.channel && c.channel.toLowerCase().includes('insta');
               return `
               <div class="inbox-conv-item ${activeConv && c.id === activeConv.id ? 'active' : ''}" onclick="window.app.selectInboxConv('${c.id}')">
-                <div class="conv-avatar" style="${isIg ? 'background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);color:#fff;' : 'background:#1877F2;color:#fff;'}">
-                  ${isIg ? '📷' : (c.name||'?').charAt(0)}
+                <div class="conv-avatar">
+                  ${(c.name||'?').charAt(0).toUpperCase()}
+                  <span class="conv-platform-badge ${isIg ? 'badge-ig-dot' : 'badge-fb-dot'}" title="${isIg ? 'Instagram Direct' : 'Messenger'}"></span>
                 </div>
                 <div class="conv-info">
                   <div class="conv-name-row">
-                    <span class="conv-name">${c.name}</span>
+                    <span class="conv-name">${escapeHtml(c.name)}</span>
                     <span class="conv-time">${c.time || ''}</span>
                   </div>
-                  <div class="conv-preview">${c.preview || ''}</div>
+                  <div class="conv-preview">${escapeHtml(c.preview || '')}</div>
                   <div class="conv-channel">
-                    <span style="${isIg ? 'color:#E1306C;font-weight:600;' : 'color:#1877F2;font-weight:600;'}">
-                      ${isIg ? '📷 Instagram Direct' : '💬 Messenger'}
-                    </span> · 
-                    <span class="text-gray">${this._pageName(c.page_id)}</span>
+                    <span class="conv-channel-pill ${isIg ? 'pill-ig' : 'pill-fb'}">
+                      ${isIg ? '📷 Instagram' : '💬 Messenger'}
+                    </span>
+                    <span class="conv-channel-sep">·</span>
+                    <span class="conv-page-name">${escapeHtml(this._pageName(c.page_id))}</span>
                   </div>
                 </div>
                 ${(c.unread || 0) > 0 ? `<div class="conv-unread">${c.unread}</div>` : ''}
@@ -1674,50 +1682,53 @@ class MetaCRMApp {
               <button class="inbox-back-btn" onclick="window.app.closeMobileThread()" aria-label="Back to conversations">
                 <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
               </button>
-              <div class="conv-avatar" style="${isIgActive ? 'background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);color:#fff;' : 'background:#1877F2;color:#fff;'}">
-                ${isIgActive ? '📷' : (activeConv.name||'?').charAt(0)}
+              <div class="thread-avatar">
+                ${(activeConv.name||'?').charAt(0).toUpperCase()}
               </div>
-              <div style="flex:1;min-width:0;">
-                <div class="thread-name text-truncate">${activeConv.name}</div>
-                <div class="text-xs text-gray text-truncate">${this._pageName(activeConv.page_id)} · ${isIgActive ? 'Instagram Direct' : 'Facebook Messenger'}</div>
+              <div class="thread-meta">
+                <div class="thread-name text-truncate">${escapeHtml(activeConv.name)}</div>
+                <div class="thread-sub text-truncate">${escapeHtml(this._pageName(activeConv.page_id))} · ${isIgActive ? 'Instagram Direct' : 'Facebook Messenger'}</div>
               </div>
-              <span class="badge ${isIgActive ? 'badge-purple' : 'badge-blue'} ml-auto" style="${isIgActive ? 'background:#FDF2F8;color:#BE185D;border-color:#FBCFE8;' : ''}">
+              <span class="inbox-platform-badge ${isIgActive ? 'badge-ig' : 'badge-fb'} ml-auto">
                 ${isIgActive ? '📷 Instagram' : '💬 Messenger'}
               </span>
-              <button class="inbox-info-btn btn btn-ghost btn-sm" onclick="window.app.toggleInboxDetails()" title="Contact details">
+              <button class="inbox-info-btn btn btn-ghost btn-sm" onclick="window.app.toggleInboxDetails()" title="Customer CRM Details">
                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
               </button>
             </div>
 
             <div class="inbox-thread" id="inbox-thread">
               ${messages.length ? messages.map(m => `
-                <div class="msg ${m.incoming ? 'msg-in' : 'msg-out'}"><div class="msg-bubble">${escapeHtml(m.text || '')}</div></div>
-              `).join('') : `<div class="text-xs text-gray text-center my-6">Beginning of direct messaging thread with ${activeConv.name}</div>`}
+                <div class="msg ${m.incoming ? 'msg-in' : 'msg-out'}">
+                  <div class="msg-bubble">${escapeHtml(m.text || '')}</div>
+                  ${m.time ? `<span class="msg-time">${m.time}</span>` : ''}
+                </div>
+              `).join('') : `<div class="inbox-thread-empty">Beginning of direct messaging thread with ${escapeHtml(activeConv.name)}</div>`}
             </div>
 
             <div class="inbox-composer">
-              <input type="text" class="input" placeholder="Type a message to reply on ${isIgActive ? 'Instagram Direct' : 'Messenger'}…" id="inbox-msg-input" 
+              <input type="text" class="input inbox-msg-input" placeholder="Type a message to reply on ${isIgActive ? 'Instagram Direct' : 'Messenger'}…" id="inbox-msg-input" 
                      onkeydown="if(event.key==='Enter')window.app.sendInboxMessage()">
-              <button class="btn btn-primary" onclick="window.app.sendInboxMessage()" style="${isIgActive ? 'background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);border:none;' : ''}">
+              <button class="btn btn-lime btn-send-msg" id="inbox-send-btn" onclick="window.app.sendInboxMessage()">
                 Send via ${isIgActive ? 'Instagram' : 'Facebook'}
               </button>
             </div>
           ` : `
-            <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px;text-align:center;color:var(--text-secondary);min-height:360px;">
-              <div style="width:68px;height:68px;border-radius:20px;background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:34px;margin-bottom:16px;box-shadow:0 8px 16px rgba(225,48,108,0.25);">
-                📷
+            <div class="inbox-empty-view">
+              <div class="inbox-empty-icon">
+                💬
               </div>
-              <h3 style="font-size:19px;font-weight:700;color:var(--text-primary);margin-bottom:8px;">
-                Instagram Direct &amp; Messenger Inbox
+              <h3 class="inbox-empty-title">
+                Unified Messages Hub
               </h3>
-              <p style="max-width:440px;font-size:14px;color:var(--text-secondary);line-height:1.5;margin-bottom:20px;">
-                Your connected accounts are live and listening for direct messages. Click below to test receiving an incoming inquiry!
+              <p class="inbox-empty-desc">
+                Live direct messages from connected Facebook Pages and Instagram accounts appear here in real-time. Select a conversation on the left to start chatting.
               </p>
-              <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">
-                <button class="btn btn-primary" onclick="window.app.simulateInboundMessage('Instagram Direct')" style="background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);border:none;padding:10px 18px;font-weight:600;">
+              <div class="inbox-empty-actions">
+                <button class="btn btn-lime" onclick="window.app.simulateInboundMessage('Instagram Direct')">
                   📷 Simulate Inbound Instagram DM
                 </button>
-                <button class="btn btn-secondary" onclick="window.app.simulateInboundMessage('Messenger')" style="padding:10px 18px;">
+                <button class="btn btn-secondary-lime" onclick="window.app.simulateInboundMessage('Messenger')">
                   💬 Simulate Messenger Chat
                 </button>
               </div>
@@ -1728,42 +1739,78 @@ class MetaCRMApp {
         <!-- RIGHT: CUSTOMER / LEAD INFORMATION -->
         <div class="inbox-details">
           ${activeConv ? `
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-              <div class="drawer-section-title" style="margin-bottom:0;">Customer &amp; CRM Link</div>
+            <div class="inbox-details-header">
+              <div class="inbox-details-title">Customer &amp; CRM Link</div>
               <button class="inbox-details-close btn btn-ghost btn-sm" onclick="window.app.toggleInboxDetails()">✕</button>
             </div>
-            <div class="idetail-avatar" style="${isIgActive ? 'background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);color:#fff;' : ''}">
-              ${isIgActive ? '📷' : (activeConv.name||'?').charAt(0)}
-            </div>
-            <div class="idetail-name">${activeConv.name}</div>
-            <div class="text-xs text-gray mb-4 text-center">${activeConv.phone || (isIgActive ? 'Instagram Direct Inquiry' : '—')}</div>
 
-            <div class="attribution-block mb-4">
-              <div class="attr-row"><span class="attr-label">Channel</span><span>${isIgActive ? '📷 Instagram Direct' : '💬 Messenger'}</span></div>
-              <div class="attr-row"><span class="attr-label">Account</span><span>${this._pageName(activeConv.page_id)}</span></div>
-              <div class="attr-row"><span class="attr-label">Stage</span><span>${this._badge(matchingLead ? matchingLead.status : 'New Lead')}</span></div>
-              <div class="attr-row"><span class="attr-label">Assigned</span><span>${this._staffName(matchingLead ? matchingLead.assigned_staff_id : this.user.id)}</span></div>
+            <div class="idetail-card idetail-profile-card">
+              <div class="idetail-avatar">
+                ${(activeConv.name||'?').charAt(0).toUpperCase()}
+              </div>
+              <div class="idetail-name text-truncate">${escapeHtml(activeConv.name)}</div>
+              <div class="idetail-handle text-truncate">${escapeHtml(activeConv.participantUsername ? `@${activeConv.participantUsername.replace(/^@/, '')}` : (activeConv.phone || (isIgActive ? 'Instagram Direct Inquiry' : 'Messenger Inquiry')))}</div>
+              <div class="idetail-badge-wrap">
+                <span class="idetail-lime-badge">${isIgActive ? '📷 Instagram DM' : '💬 Messenger Chat'}</span>
+              </div>
             </div>
 
-            ${matchingLead ? `
-            <button class="btn btn-primary btn-sm w-full mb-2" onclick="window.app.openLeadDrawer('${matchingLead.id}')">Open Full CRM Profile →</button>
-            <button class="btn btn-secondary btn-sm w-full mb-2" onclick="window.app.updateLeadStage('${matchingLead.id}', 'Qualified')">Mark as Qualified</button>
-            ` : `
-            <button class="btn btn-primary btn-sm w-full mb-2" onclick="window.app.createLeadFromConv('${activeConv.name}', '${activeConv.page_id}')">+ Create Lead in CRM</button>
-            `}
+            <div class="idetail-card">
+              <div class="idetail-section-heading">Account Information</div>
+              <div class="idetail-row">
+                <span class="idetail-label">Channel</span>
+                <span class="idetail-value">
+                  ${isIgActive ? '📷 Instagram Direct' : '💬 Messenger'}
+                </span>
+              </div>
+              <div class="idetail-row">
+                <span class="idetail-label">Account</span>
+                <span class="idetail-value text-truncate" title="${escapeHtml(this._pageName(activeConv.page_id))}">${escapeHtml(this._pageName(activeConv.page_id))}</span>
+              </div>
+              <div class="idetail-row">
+                <span class="idetail-label">Status</span>
+                <span class="idetail-value"><span class="status-dot-lime"></span> Active Channel</span>
+              </div>
+            </div>
+
+            <div class="idetail-card">
+              <div class="idetail-section-heading">CRM Status</div>
+              <div class="idetail-row">
+                <span class="idetail-label">Lead Stage</span>
+                <span class="idetail-value">
+                  <span class="badge badge-lime">${matchingLead ? (matchingLead.status || 'New Lead') : 'Not in CRM'}</span>
+                </span>
+              </div>
+              <div class="idetail-row">
+                <span class="idetail-label">Assignee</span>
+                <span class="idetail-value">
+                  <span class="assignee-avatar">${(this._staffName(matchingLead ? matchingLead.assigned_staff_id : this.user.id) || 'A').charAt(0)}</span>
+                  ${escapeHtml(this._staffName(matchingLead ? matchingLead.assigned_staff_id : this.user.id))}
+                </span>
+              </div>
+            </div>
+
+            <div class="idetail-actions">
+              ${matchingLead ? `
+                <button class="btn btn-lime w-full mb-2" onclick="window.app.openLeadDrawer('${matchingLead.id}')">Open Full CRM Profile →</button>
+                <button class="btn btn-secondary-lime w-full mb-2" onclick="window.app.updateLeadStage('${matchingLead.id}', 'Qualified')">Mark as Qualified</button>
+              ` : `
+                <button class="btn btn-lime btn-create-lead-crm w-full mb-2" onclick="window.app.createLeadFromConv('${escapeHtml(activeConv.name)}', '${activeConv.page_id}')">+ Create Lead in CRM</button>
+              `}
+            </div>
           ` : `
-            <div class="drawer-section-title" style="margin-bottom:12px;">Connected Channels</div>
-            <div style="display:flex;flex-direction:column;gap:10px;">
+            <div class="idetail-section-heading">Connected Channels</div>
+            <div class="idetail-channels-list">
               ${this._getAccessiblePages().map(p => {
                 const isIg = p.channel === 'instagram' || p.name.startsWith('@');
                 return `
-                <div style="display:flex;align-items:center;gap:10px;padding:8px;background:#F8FAFC;border:1px solid var(--border);border-radius:8px;">
-                  <div style="width:32px;height:32px;border-radius:8px;${isIg ? 'background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888)' : 'background:#1877F2'};color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;">
+                <div class="idetail-channel-card">
+                  <div class="idetail-channel-icon ${isIg ? 'icon-ig' : 'icon-fb'}">
                     ${isIg ? '📷' : 'f'}
                   </div>
-                  <div style="flex:1;min-width:0;">
-                    <div style="font-weight:600;font-size:13px;color:var(--text-primary);" class="text-truncate">${p.name}</div>
-                    <div style="font-size:11px;color:#10B981;">● Direct Messages Active</div>
+                  <div class="idetail-channel-info">
+                    <div class="idetail-channel-name text-truncate">${escapeHtml(p.name)}</div>
+                    <div class="idetail-channel-status"><span class="status-dot-lime"></span> Direct Messages Active</div>
                   </div>
                 </div>`;
               }).join('') || '<p class="text-xs text-gray">No channels connected yet.</p>'}
