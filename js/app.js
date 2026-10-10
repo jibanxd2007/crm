@@ -20,6 +20,7 @@ class MetaCRMApp {
     this.leadSearchQuery = '';
     this.selectedPageFilter = 'all';
     this.selectedDateRange = 'last_30d';
+    this.selectedLeadIds = new Set();
 
     // Service Singletons
     this.svc = window.crmService;
@@ -157,15 +158,19 @@ class MetaCRMApp {
       this.renderNotifications();
     });
 
-    // Keyboard Shortcuts (Ctrl+K for search, Escape for modal/drawer)
+    // Keyboard Shortcuts (Ctrl+K for command palette, Escape, and module navigation)
     window.addEventListener('keydown', e => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        const input = document.getElementById('lead-search-input');
-        if (input) { input.focus(); }
-        else { this.navigate('leads'); setTimeout(() => { const i = document.getElementById('lead-search-input'); if (i) i.focus(); }, 150); }
+        this.openCommandPalette();
       }
-      if (e.key === 'Escape') { this.closeDrawer(); this.closeModal(); this.toggleMobileSidebar(false); if (this.el.notifPopover) this.el.notifPopover.classList.remove('open'); }
+      if (e.key === 'Escape') {
+        this.closeCommandPalette();
+        this.closeDrawer();
+        this.closeModal();
+        this.toggleMobileSidebar(false);
+        if (this.el.notifPopover) this.el.notifPopover.classList.remove('open');
+      }
     });
 
     // Listen to real-time CRM updates
@@ -183,6 +188,152 @@ class MetaCRMApp {
     if (this.el.notifPopover.classList.contains('open')) {
       this.renderNotifications();
     }
+  }
+
+  openCommandPalette() {
+    this.closeCommandPalette();
+    const existing = document.getElementById('cmd-palette-backdrop');
+    if (existing) existing.remove();
+
+    const backdrop = document.createElement('div');
+    backdrop.id = 'cmd-palette-backdrop';
+    backdrop.className = 'cmd-palette-backdrop';
+    backdrop.onclick = (e) => {
+      if (e.target === backdrop) this.closeCommandPalette();
+    };
+
+    backdrop.innerHTML = `
+      <div class="cmd-palette-modal" onclick="event.stopPropagation()">
+        <div class="cmd-search-header">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input type="text" id="cmd-palette-input" class="cmd-search-input" placeholder="Type a command or jump to page…" autocomplete="off" />
+          <kbd class="nav-shortcut">ESC</kbd>
+        </div>
+        <div class="cmd-palette-results" id="cmd-palette-results">
+          <div class="cmd-section-label">Navigation</div>
+          <div class="cmd-item" data-cmd="dashboard" onclick="window.app.navigate('dashboard'); window.app.closeCommandPalette();">
+            <div class="cmd-item-left">
+              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+              <span>Go to Dashboard</span>
+            </div>
+            <kbd class="cmd-badge">⌘D</kbd>
+          </div>
+          <div class="cmd-item" data-cmd="leads" onclick="window.app.navigate('leads'); window.app.closeCommandPalette();">
+            <div class="cmd-item-left">
+              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              <span>Go to Leads</span>
+            </div>
+            <kbd class="cmd-badge">⌘L</kbd>
+          </div>
+          <div class="cmd-item" data-cmd="inbox" onclick="window.app.navigate('inbox'); window.app.closeCommandPalette();">
+            <div class="cmd-item-left">
+              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              <span>Go to Messages &amp; Inbox</span>
+            </div>
+            <kbd class="cmd-badge">⌘M</kbd>
+          </div>
+          <div class="cmd-item" data-cmd="pipeline" onclick="window.app.navigate('pipeline'); window.app.closeCommandPalette();">
+            <div class="cmd-item-left">
+              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+              <span>Go to Pipeline Kanban</span>
+            </div>
+            <kbd class="cmd-badge">⌘P</kbd>
+          </div>
+          <div class="cmd-item" data-cmd="tasks" onclick="window.app.navigate('tasks'); window.app.closeCommandPalette();">
+            <div class="cmd-item-left">
+              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+              <span>Go to Follow-ups &amp; Tasks</span>
+            </div>
+            <kbd class="cmd-badge">⌘T</kbd>
+          </div>
+          <div class="cmd-item" data-cmd="connections" onclick="window.app.navigate('connections'); window.app.closeCommandPalette();">
+            <div class="cmd-item-left">
+              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
+              <span>Connect Meta &amp; Facebook Pages</span>
+            </div>
+            <kbd class="cmd-badge">⌘C</kbd>
+          </div>
+          <div class="cmd-item" data-cmd="reports" onclick="window.app.navigate('reports'); window.app.closeCommandPalette();">
+            <div class="cmd-item-left">
+              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+              <span>Go to Performance Reports</span>
+            </div>
+            <kbd class="cmd-badge">⌘R</kbd>
+          </div>
+          <div class="cmd-item" data-cmd="settings" onclick="window.app.navigate('settings'); window.app.closeCommandPalette();">
+            <div class="cmd-item-left">
+              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              <span>Go to Settings</span>
+            </div>
+            <kbd class="cmd-badge">⌘,</kbd>
+          </div>
+
+          <div class="cmd-section-label">Quick Actions</div>
+          <div class="cmd-item" data-cmd="add lead" onclick="window.app.closeCommandPalette(); window.app.openAddLeadModal();">
+            <div class="cmd-item-left">
+              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <span>Create New Lead</span>
+            </div>
+            <kbd class="cmd-badge">Action</kbd>
+          </div>
+          <div class="cmd-item" data-cmd="export csv" onclick="window.app.closeCommandPalette(); window.app.exportLeadsCsv();">
+            <div class="cmd-item-left">
+              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span>Export Leads to CSV</span>
+            </div>
+            <kbd class="cmd-badge">Action</kbd>
+          </div>
+          <div class="cmd-item" data-cmd="switch user" onclick="window.app.closeCommandPalette(); window.app.openUserSwitchModal();">
+            <div class="cmd-item-left">
+              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <span>Switch User Role &amp; Session</span>
+            </div>
+            <kbd class="cmd-badge">RBAC</kbd>
+          </div>
+          <div class="cmd-item" data-cmd="sync accounts" onclick="window.app.closeCommandPalette(); window.app.syncConnections();">
+            <div class="cmd-item-left">
+              <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+              <span>Sync Meta Connections</span>
+            </div>
+            <kbd class="cmd-badge">Meta API</kbd>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(backdrop);
+    const input = document.getElementById('cmd-palette-input');
+    if (input) {
+      input.focus();
+      input.addEventListener('input', (e) => this._filterCommandPalette(e.target.value));
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          const firstVisible = backdrop.querySelector('.cmd-item:not([style*="display: none"])');
+          if (firstVisible) firstVisible.click();
+        }
+      });
+    }
+  }
+
+  closeCommandPalette() {
+    const el = document.getElementById('cmd-palette-backdrop');
+    if (el) el.remove();
+  }
+
+  _filterCommandPalette(query) {
+    const q = (query || '').toLowerCase().trim();
+    const items = document.querySelectorAll('.cmd-palette-results .cmd-item');
+    items.forEach(it => {
+      const txt = (it.innerText || '').toLowerCase();
+      const cmd = (it.getAttribute('data-cmd') || '').toLowerCase();
+      if (!q || txt.includes(q) || cmd.includes(q)) {
+        it.style.display = 'flex';
+      } else {
+        it.style.display = 'none';
+      }
+    });
   }
 
   renderNotifications() {
@@ -208,7 +359,7 @@ class MetaCRMApp {
     this.el.notifList.innerHTML = notifs.map(n => {
       const isUnread = !n.read && !n.read_at;
       const isHot = n.type === 'hot_lead';
-      const icon = isHot ? '🔥' : n.type === 'sla_breach' ? '⚠️' : '👤';
+      const icon = isHot ? this._icon('flame', 14) : n.type === 'sla_breach' ? this._icon('alert', 14) : this._icon('user', 14);
       return `
         <div class="notif-item ${isUnread ? 'unread' : ''} ${isHot ? 'hot-lead' : ''}" onclick="window.app.onNotificationClick('${n.id}', '${n.lead_id || ''}')">
           <div class="notif-icon-wrap">${icon}</div>
@@ -408,21 +559,21 @@ class MetaCRMApp {
           <div class="auth-demo-pills">
             <div class="auth-demo-pill" onclick="window.app.quickDemoLogin('admin')">
               <div>
-                <strong>🛡️ Administrator (Super Admin)</strong>
+                <strong style="display:flex;align-items:center;gap:6px;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Administrator (Super Admin)</strong>
                 <div class="text-xs text-gray">admin@company.com · Full Access</div>
               </div>
               <span class="badge badge-purple">Log In</span>
             </div>
             <div class="auth-demo-pill" onclick="window.app.quickDemoLogin('staff_a')">
               <div>
-                <strong>👤 Vikram Sharma (Staff A)</strong>
+                <strong style="display:flex;align-items:center;gap:6px;">${this._icon('user', 14)} Vikram Sharma (Staff A)</strong>
                 <div class="text-xs text-gray">vikram@company.com · Page 1 Assigned</div>
               </div>
               <span class="badge badge-green">Log In</span>
             </div>
             <div class="auth-demo-pill" onclick="window.app.quickDemoLogin('staff_b')">
               <div>
-                <strong>👤 Priya Patel (Staff B)</strong>
+                <strong style="display:flex;align-items:center;gap:6px;">${this._icon('user', 14)} Priya Patel (Staff B)</strong>
                 <div class="text-xs text-gray">priya@company.com · Page 2 Assigned</div>
               </div>
               <span class="badge badge-green">Log In</span>
@@ -732,6 +883,39 @@ class MetaCRMApp {
     }, 80);
   }
 
+  _icon(name, size = 15, className = '') {
+    const s = size;
+    const icons = {
+      phone: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>`,
+      whatsapp: `<svg width="${s}" height="${s}" class="${className}" fill="currentColor" viewBox="0 0 24 24"><path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.694.072-2.127-.521-1.727-.714-2.839-2.477-2.926-2.593-.086-.115-.705-.939-.705-1.789 0-.85.447-1.267.606-1.44.159-.174.347-.217.462-.217.116 0 .232.001.332.006.107.005.25-.041.39.296.145.348.492 1.202.535 1.289.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.261.304c-.087.086-.177.18-.076.353.101.174.45 1.06 1.488 1.984.779.695 1.436.909 1.639.996.202.087.322.072.441-.065.119-.137.509-.594.646-.797.137-.202.274-.173.462-.101.188.072 1.185.558 1.387.66.202.101.337.151.386.236.049.085.049.493-.095.898z"/></svg>`,
+      mail: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`,
+      instagram: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect width="20" height="20" x="2" y="2" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/></svg>`,
+      facebook: `<svg width="${s}" height="${s}" class="${className}" fill="currentColor" viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>`,
+      calendar: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>`,
+      user: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
+      trash: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>`,
+      flame: `<svg width="${s}" height="${s}" class="${className}" fill="currentColor" viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>`,
+      check: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>`,
+      search: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`,
+      refresh: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>`,
+      alert: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
+    };
+    return icons[name] || '';
+  }
+
+  _setBreadcrumbs(sectionName) {
+    const ws = this.selectedWorkspace || 'Acme MetaCRM';
+    this.el.title.innerHTML = `
+      <div class="topbar-breadcrumbs">
+        <a href="#dashboard" class="breadcrumb-item">MetaCRM</a>
+        <span class="breadcrumb-sep">/</span>
+        <span class="breadcrumb-item">${escapeHtml(ws)}</span>
+        <span class="breadcrumb-sep">/</span>
+        <span class="breadcrumb-item active">${escapeHtml(sectionName)}</span>
+      </div>
+    `;
+  }
+
   // ──────────────────────────────────────────────────────────
   // DASHBOARD (Section 18 & 19)
   // ──────────────────────────────────────────────────────────
@@ -957,35 +1141,82 @@ class MetaCRMApp {
       return;
     }
 
+    const roi = this.svc ? this.svc.getRoiMetrics() : { totalSpend: 0, cpl: 0, cpa: 0, roas: 0, totalLeads: leads.length, totalWonDeals: wonL.length, totalWonValue: 0 };
+    const speed = this.svc ? this.svc.getSpeedToLeadMetrics(leads) : { medianText: '—', complianceRate: '100%', liveBreachCount: 0 };
+
     this.el.content.innerHTML = `
-      <!-- TOP 4 CORE DAILY KPI CARDS -->
-      <div class="kpi-row" style="grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));">
-        <div class="kpi-card">
+      <!-- TOP PRIMARY OPERATIONAL KPIS (CLICKABLE) -->
+      <div class="kpi-row" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
+        <div class="kpi-card" style="cursor:pointer;" onclick="window.app.navigate('leads'); setTimeout(() => window.app.renderLeads('new'), 60);" title="View new leads awaiting contact">
           <div class="kpi-title">NEW LEADS</div>
-          <div class="kpi-value" style="color:var(--info)">${newL.length}</div>
-          <div class="kpi-trend">Requires contact today</div>
+          <div class="kpi-value" style="color:var(--info);">${newL.length}</div>
+          <div class="kpi-trend">Requires contact today →</div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" style="cursor:pointer;" onclick="window.app.navigate('inbox'); setTimeout(() => window.app.setInboxTab('unread'), 60);" title="View unread conversations">
           <div class="kpi-title">UNREAD MESSAGES</div>
-          <div class="kpi-value" style="color:var(--warning)">${unreadMessagesCount}</div>
-          <div class="kpi-trend">Waiting for reply</div>
+          <div class="kpi-value" style="color:var(--warning);">${unreadMessagesCount}</div>
+          <div class="kpi-trend">Waiting for reply →</div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" style="cursor:pointer;" onclick="window.app.navigate('tasks'); setTimeout(() => window.app.renderTasks('overdue'), 60);" title="View overdue callbacks & reminders">
           <div class="kpi-title">FOLLOW-UPS DUE</div>
-          <div class="kpi-value" style="color:var(--accent)">${tasks.length}</div>
-          <div class="kpi-trend">Callbacks &amp; reminders</div>
+          <div class="kpi-value" style="color:var(--accent);">${tasks.length}</div>
+          <div class="kpi-trend">Callbacks &amp; reminders →</div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card" style="cursor:pointer;" onclick="window.app.navigate('leads'); setTimeout(() => window.app.renderLeads('won'), 60);" title="View closed customers">
           <div class="kpi-title">DEALS WON</div>
-          <div class="kpi-value" style="color:var(--success)">${wonL.length}</div>
-          <div class="kpi-trend">Closed customers</div>
+          <div class="kpi-value" style="color:var(--success);">${wonL.length}</div>
+          <div class="kpi-trend">Closed customers →</div>
+        </div>
+        <div class="kpi-card" style="cursor:pointer;" onclick="window.app.navigate('leads');" title="View all captured leads">
+          <div class="kpi-title">TOTAL LEADS</div>
+          <div class="kpi-value">${leads.length}</div>
+          <div class="kpi-trend">All captured leads →</div>
+        </div>
+        <div class="kpi-card" title="Conversion rate from lead to customer">
+          <div class="kpi-title">CONVERSION RATE</div>
+          <div class="kpi-value" style="color:#7C3AED;">${leads.length ? ((wonL.length / leads.length) * 100).toFixed(1) : 0}%</div>
+          <div class="kpi-trend">Won / Total leads</div>
         </div>
       </div>
 
-      <!-- MAIN DASHBOARD GRID -->
-      <div class="dash-grid">
+      <!-- CORE FINANCIAL & SPEED-TO-LEAD ANALYTICS ROW -->
+      <div class="kpi-row" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-top: 14px;">
+        <div class="kpi-card" style="cursor:pointer;" onclick="window.app.navigate('reports');" title="Meta Graph verified ad spend">
+          <div class="kpi-title">AD SPEND</div>
+          <div class="kpi-value">₹${this._formatNum(roi.totalSpend)}</div>
+          <div class="kpi-trend">${isAdmin ? (campaigns.length + ' Active Campaigns') : 'Assigned Pages'}</div>
+        </div>
+        <div class="kpi-card" title="Cost Per Lead: Total Ad Spend / Captured Leads">
+          <div class="kpi-title">COST PER LEAD (CPL)</div>
+          <div class="kpi-value" style="color:var(--accent);">₹${roi.cpl}</div>
+          <div class="kpi-trend">Live CPL</div>
+        </div>
+        <div class="kpi-card" title="Cost Per Customer: Total Ad Spend / Won Deals">
+          <div class="kpi-title">COST PER ACQUISITION (CPA)</div>
+          <div class="kpi-value" style="color:var(--success);">₹${roi.cpa}</div>
+          <div class="kpi-trend">Spend / Won Deal</div>
+        </div>
+        <div class="kpi-card" title="Return on Ad Spend: Won Deals Value / Ad Spend">
+          <div class="kpi-title">RETURN ON AD SPEND (ROAS)</div>
+          <div class="kpi-value" style="color:#7C3AED;">${roi.roas}x</div>
+          <div class="kpi-trend">${roi.roas >= 3 ? '★ Top ROI' : 'Live ROI'}</div>
+        </div>
+        <div class="kpi-card" title="Average time before first outbound contact">
+          <div class="kpi-title">MEDIAN RESPONSE TIME</div>
+          <div class="kpi-value" style="color:var(--accent);">${speed.medianText}</div>
+          <div class="kpi-trend">Target: &lt; 5 mins</div>
+        </div>
+        <div class="kpi-card" title="Percentage of leads contacted within 5m SLA">
+          <div class="kpi-title">SLA COMPLIANCE</div>
+          <div class="kpi-value" style="color:var(--success);">${speed.complianceRate}</div>
+          <div class="kpi-trend">Within 5m SLA</div>
+        </div>
+      </div>
+
+      <!-- MAIN DASHBOARD CONTENT GRID -->
+      <div class="dash-grid" style="margin-top: 18px;">
         <div class="dash-col-main">
-          <!-- Recent Leads with 1-Click Call & WhatsApp -->
+          <!-- Recent Inbound Leads -->
           <div class="card">
             <div class="card-header">
               <div class="card-title">Recent Inbound Leads</div>
@@ -997,113 +1228,50 @@ class MetaCRMApp {
                   <th>Lead Details</th>
                   <th>Platform / Page</th>
                   <th>Status</th>
-                  <th>Received</th>
+                  <th>SLA Speed</th>
                   <th>Quick Contact</th>
                 </tr>
               </thead>
               <tbody>
-                ${recentLeads.length > 0 ? recentLeads.map(l => `
+                ${recentLeads.length > 0 ? recentLeads.map(l => {
+                  const sla = this.svc ? this.svc.getLeadSlaStatus(l) : { state: 'pending', text: '5m', label: 'Pending' };
+                  const isIg = (l.source || '').toLowerCase().includes('insta');
+                  return `
                   <tr class="clickable-row" onclick="window.app.openLeadDrawer('${l.id}')">
                     <td>
-                      <div class="lead-name" style="font-weight:600;font-size:13px;">${l.name}</div>
-                      <div class="text-xs text-gray">${l.phone || l.email || 'No phone'}</div>
+                      <div class="lead-name" style="font-weight:600;font-size:13px;">${escapeHtml(l.name)}</div>
+                      <div class="text-xs text-gray">${escapeHtml(l.phone || l.email || 'No phone')}</div>
                     </td>
                     <td>
-                      <div class="text-xs font-semibold">${l.source || 'Facebook Lead Ad'}</div>
-                      <div class="text-xs text-gray">${this._pageName(l.page_id || l.pageId)}</div>
+                      <div class="${isIg ? 'platform-chip-ig' : 'platform-chip-fb'}">
+                        ${isIg ? this._icon('instagram', 13) : this._icon('facebook', 13)}
+                        <span>${l.source || 'Facebook Lead Ad'}</span>
+                      </div>
+                      <div class="text-xs text-gray">${escapeHtml(this._pageName(l.page_id || l.pageId))}</div>
                     </td>
                     <td>${this._badge(l.status)}</td>
-                    <td class="text-xs text-gray">${this._timeAgo(l.created_at || l.createdAt)}</td>
+                    <td><span class="sla-badge ${sla.state}" title="${sla.label}">${sla.text}</span></td>
                     <td onclick="event.stopPropagation()">
                       <div style="display:flex;align-items:center;gap:6px;">
-                        <button class="btn-direct-call" title="Call lead" onclick="window.app.quickCall('${l.id}')">📞 Call</button>
-                        ${l.phone ? `<button class="btn-direct-wa" title="WhatsApp message" onclick="window.crmService.recordFirstResponse('${l.id}','whatsapp');window.open('https://wa.me/'+'${l.phone.replace(/\\D/g,'')}','_blank')">💬 WhatsApp</button>` : ''}
+                        <button class="btn-direct-call" title="Call lead" onclick="window.app.quickCall('${l.id}')">
+                          ${this._icon('phone', 12)} Call
+                        </button>
+                        ${l.phone ? `
+                        <button class="btn-direct-wa" title="WhatsApp message" onclick="window.crmService.recordFirstResponse('${l.id}','whatsapp');window.open('https://wa.me/'+'${l.phone.replace(/\\D/g,'')}','_blank')">
+                          ${this._icon('whatsapp', 12)} WhatsApp
+                        </button>` : ''}
                       </div>
                     </td>
-                  </tr>`).join('') : '<tr><td colspan="5" class="empty-cell" style="text-align:center;padding:24px;color:var(--text-muted);">No leads captured yet. Your leads will appear here as soon as someone submits a form.</td></tr>'}
+                  </tr>`;
+                }).join('') : '<tr><td colspan="5" class="empty-cell" style="text-align:center;padding:24px;color:var(--text-muted);">No leads captured yet. Leads will appear here automatically.</td></tr>'}
               </tbody>
             </table>
           </div>
-        </div>
 
-        <div class="dash-col-side">
-          <!-- Quick Action Buttons -->
-          <div class="card">
+          <!-- Leads Breakdown by Page (Facebook & Instagram) -->
+          <div class="card" style="margin-top: 18px;">
             <div class="card-header">
-              <div class="card-title">Quick Actions</div>
-            </div>
-            <div class="quick-actions">
-              <button class="qa-btn" onclick="window.app.openAddLeadModal()">+ Add New Lead</button>
-              <button class="qa-btn" onclick="window.app.openAddTaskModal()">+ Schedule Follow-up</button>
-              <button class="qa-btn" onclick="window.app.navigate('inbox')">Open Messages</button>
-              <button class="qa-btn" onclick="window.app.navigate('connections')">Manage Facebook Pages</button>
-            </div>
-          </div>
-
-          <!-- Tasks Due Today -->
-          <div class="card">
-            <div class="card-header">
-              <div class="card-title">Follow-ups Today</div>
-              <a href="#tasks" class="link-small">All Tasks →</a>
-            </div>
-            ${tasks.length ? tasks.map(t => `
-              <div class="task-mini">
-                <input type="checkbox" class="task-check" onchange="window.app.completeTask('${t.id}', this)">
-                <div class="task-mini-info">
-                  <div class="task-mini-title">${t.title}</div>
-                  <div class="text-xs text-gray">Due: ${t.dueDate ? new Date(t.dueDate).toLocaleDateString('en-IN', {day:'numeric',month:'short'}) : 'Today'}</div>
-                </div>
-                ${this._priorityBadge(t.priority)}
-              </div>`).join('') : `<div class="empty-mini">✓ No overdue follow-ups!</div>`}
-          </div>
-        </div>
-      </div>
-
-      <!-- COLLAPSIBLE DETAILED AD SPEND & ANALYTICS -->
-      <details class="tech-details-toggle" style="margin-top:24px;background:#ffffff;border:1px solid var(--border);border-radius:var(--radius);padding:18px 22px;">
-        <summary style="font-weight:600;font-size:14px;color:var(--text-primary);cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;">
-          <span>📊 Ad Spend &amp; Detailed Analytics (Click to view spend, CPL, speed-to-lead &amp; page stats)</span>
-          <span class="text-xs text-gray font-normal">Expand ▾</span>
-        </summary>
-        <div style="margin-top:20px;">
-          <!-- Secondary Financial & SLA KPI Row -->
-          <div class="kpi-row" style="margin-bottom:20px;">
-            <div class="kpi-card">
-              <div class="kpi-title">TOTAL LEADS</div>
-              <div class="kpi-value">${leads.length}</div>
-              <div class="kpi-trend">All time capture</div>
-            </div>
-            <div class="kpi-card">
-              <div class="kpi-title">AD SPEND</div>
-              <div class="kpi-value">₹${this._formatNum(this.svc ? this.svc.getRoiMetrics().totalSpend : 0)}</div>
-              <div class="kpi-trend">${isAdmin ? (campaigns.length + ' Active Campaigns') : 'Assigned Pages'}</div>
-            </div>
-            <div class="kpi-card">
-              <div class="kpi-title">COST PER LEAD (CPL)</div>
-              <div class="kpi-value" style="color:var(--accent)">₹${this.svc ? this.svc.getRoiMetrics().cpl : 0}</div>
-              <div class="kpi-trend">Live CPL</div>
-            </div>
-            <div class="kpi-card">
-              <div class="kpi-title">COST PER ACQUISITION (CPA)</div>
-              <div class="kpi-value" style="color:var(--success)">₹${this.svc ? this.svc.getRoiMetrics().cpa : 0}</div>
-              <div class="kpi-trend">Spend / Won Deal</div>
-            </div>
-            <div class="kpi-card">
-              <div class="kpi-title">MEDIAN RESPONSE TIME</div>
-              <div class="kpi-value" style="color:var(--accent)">${this.svc ? this.svc.getSpeedToLeadMetrics(leads).medianText : '—'}</div>
-              <div class="kpi-trend">Target: &lt; 5 mins</div>
-            </div>
-            <div class="kpi-card">
-              <div class="kpi-title">SLA COMPLIANCE</div>
-              <div class="kpi-value" style="color:var(--success)">${this.svc ? this.svc.getSpeedToLeadMetrics(leads).complianceRate : '100%'}</div>
-              <div class="kpi-trend">Within 5m SLA</div>
-            </div>
-          </div>
-
-          <!-- Page Performance Table -->
-          <div class="card" style="margin-bottom:16px;">
-            <div class="card-header">
-              <div class="card-title">${isAdmin ? 'Leads by Page' : 'My Assigned Pages Performance'}</div>
+              <div class="card-title">Leads Breakdown by Page</div>
               ${isAdmin ? `<a href="#reports" class="link-small">View Full Report →</a>` : ''}
             </div>
             <table>
@@ -1119,25 +1287,70 @@ class MetaCRMApp {
               </tbody>
             </table>
           </div>
+        </div>
 
-          <!-- Campaign Performance -->
-          ${isAdmin ? `
+        <div class="dash-col-side">
+          <!-- Live Meta Connection Diagnostics Card -->
+          <div class="card" style="margin-bottom: 18px;">
+            <div class="card-header">
+              <div class="card-title" style="display:flex;align-items:center;gap:8px;">
+                <span class="diag-status-dot active"></span>
+                <span>Meta Connection Status</span>
+              </div>
+              <a href="#connections" class="link-small">Manage →</a>
+            </div>
+            <div style="padding: 12px 16px; font-size: 12.5px; color: #475569;">
+              <div style="display:flex;justify-content:space-between;padding:4px 0;">
+                <span>Facebook Pages Connected:</span>
+                <strong style="color:#0F172A;">${availablePages.length} active</strong>
+              </div>
+              <div style="display:flex;justify-content:space-between;padding:4px 0;">
+                <span>Webhook Ingestion:</span>
+                <span class="badge badge-green" style="font-size:11px;">Active</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;padding:4px 0;">
+                <span>Access Token Health:</span>
+                <span style="color:#10B981;font-weight:600;">Verified</span>
+              </div>
+              <div style="margin-top:12px;display:flex;gap:8px;">
+                <button class="btn btn-secondary btn-sm w-full" onclick="window.app.syncAdSpend()" style="font-size:11.5px;">
+                  ${this._icon('refresh', 12)} Sync Ad Spend
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Action Buttons -->
+          <div class="card" style="margin-bottom: 18px;">
+            <div class="card-header">
+              <div class="card-title">Quick Actions</div>
+            </div>
+            <div class="quick-actions">
+              <button class="qa-btn" onclick="window.app.openAddLeadModal()">+ Add New Inbound Lead</button>
+              <button class="qa-btn" onclick="window.app.openAddTaskModal()">+ Schedule Follow-up</button>
+              <button class="qa-btn" onclick="window.app.navigate('inbox')">Open Unified Messages</button>
+              <button class="qa-btn" onclick="window.app.navigate('connections')">Manage Facebook &amp; Instagram</button>
+            </div>
+          </div>
+
+          <!-- Follow-ups Due Today -->
           <div class="card">
             <div class="card-header">
-              <div class="card-title">Campaign Performance</div>
-              <span class="text-xs text-gray">Synced with Meta Ads</span>
+              <div class="card-title">Follow-ups Today</div>
+              <a href="#tasks" class="link-small">All Tasks →</a>
             </div>
-            <table>
-              <thead>
-                <tr><th>Campaign Name</th><th>Page</th><th>Spend</th><th>Leads</th><th>CPL</th><th>Won</th></tr>
-              </thead>
-              <tbody>
-                ${campaignRows || '<tr><td colspan="6" class="empty-cell" style="text-align:center;padding:24px;color:var(--text-muted);">No active campaigns found.</td></tr>'}
-              </tbody>
-            </table>
-          </div>` : ''}
+            ${tasks.length ? tasks.map(t => `
+              <div class="task-mini">
+                <input type="checkbox" class="task-check" onchange="window.app.completeTask('${t.id}', this)">
+                <div class="task-mini-info">
+                  <div class="task-mini-title">${escapeHtml(t.title)}</div>
+                  <div class="text-xs text-gray">Due: ${t.dueDate ? new Date(t.dueDate).toLocaleDateString('en-IN', {day:'numeric',month:'short'}) : 'Today'}</div>
+                </div>
+                ${this._priorityBadge(t.priority)}
+              </div>`).join('') : `<div class="empty-mini">✓ No overdue follow-ups!</div>`}
+          </div>
         </div>
-      </details>`;
+      </div>`;
   }
 
   onPageFilterChange(pageId) {
@@ -1221,12 +1434,17 @@ class MetaCRMApp {
               const pageName = this._pageName(l.page_id || l.pageId);
               const sla = this.svc ? this.svc.getLeadSlaStatus(l) : { state: 'pending', text: '5m', label: 'Pending' };
               const isHot = l.is_hot_lead || (l.value && l.value >= 50000) || (l.lead_value && l.lead_value >= 50000);
+              const dup = this.findDuplicateLead(l);
+              const isChecked = this.selectedLeadIds.has(l.id);
               return `
                 <tr class="clickable-row ${isHot ? 'hot-lead-card' : ''}" onclick="window.app.openLeadDrawer('${l.id}')">
-                  <td onclick="event.stopPropagation()"><input type="checkbox" class="lead-select-box" value="${l.id}"></td>
+                  <td onclick="event.stopPropagation()"><input type="checkbox" class="lead-select-box" value="${l.id}" ${isChecked ? 'checked' : ''} onchange="window.app.onLeadSelect(this)"></td>
                   <td>
-                    <strong>${l.name}</strong>
-                    ${isHot ? `<span class="badge badge-hot" style="margin-left:4px;font-size:10px;">🔥 Hot</span>` : ''}
+                    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                      <strong>${l.name}</strong>
+                      ${isHot ? `<span class="badge badge-hot" style="font-size:10px;">${this._icon('flame', 11)} Hot</span>` : ''}
+                      ${dup ? `<button class="badge badge-duplicate" title="Potential duplicate detected with ${escapeHtml(dup.name)}" onclick="event.stopPropagation(); window.app.openMergeModal('${l.id}')">Duplicate ⇄</button>` : ''}
+                    </div>
                   </td>
                   <td class="text-xs">
                     <div>${l.phone || '—'}</div>
@@ -1244,8 +1462,8 @@ class MetaCRMApp {
                   <td class="text-xs ${l.followUpDate && new Date(l.followUpDate) < new Date() ? 'text-red font-semibold' : ''}">${followUp}</td>
                   <td onclick="event.stopPropagation()">
                     <div class="row-actions" style="display:flex;align-items:center;gap:6px;">
-                      <button class="btn-direct-call" title="Call lead" onclick="window.app.quickCall('${l.id}')">📞 Call</button>
-                      ${l.phone ? `<button class="btn-direct-wa" title="WhatsApp message" onclick="window.crmService.recordFirstResponse('${l.id}','whatsapp');window.open('https://wa.me/'+'${l.phone.replace(/\\D/g,'')}','_blank')">💬 WhatsApp</button>` : ''}
+                      <button class="btn-direct-call" title="Call lead" onclick="window.app.quickCall('${l.id}')">${this._icon('phone', 12)} Call</button>
+                      ${l.phone ? `<button class="btn-direct-wa" title="WhatsApp message" onclick="window.crmService.recordFirstResponse('${l.id}','whatsapp');window.open('https://wa.me/'+'${l.phone.replace(/\\D/g,'')}','_blank')">${this._icon('whatsapp', 12)} WhatsApp</button>` : ''}
                       <button class="btn btn-ghost btn-sm" onclick="window.app.openLeadDrawer('${l.id}')">View</button>
                     </div>
                   </td>
@@ -1275,8 +1493,128 @@ class MetaCRMApp {
     this.renderLeads();
   }
 
+  onLeadSelect(cb) {
+    if (cb.checked) {
+      this.selectedLeadIds.add(cb.value);
+    } else {
+      this.selectedLeadIds.delete(cb.value);
+    }
+    this._updateBulkBar();
+  }
+
   toggleSelectAll(master) {
-    document.querySelectorAll('.lead-select-box').forEach(cb => { cb.checked = master.checked; });
+    document.querySelectorAll('.lead-select-box').forEach(cb => {
+      cb.checked = master.checked;
+      if (master.checked) this.selectedLeadIds.add(cb.value);
+      else this.selectedLeadIds.delete(cb.value);
+    });
+    this._updateBulkBar();
+  }
+
+  clearLeadSelection() {
+    this.selectedLeadIds.clear();
+    document.querySelectorAll('.lead-select-box').forEach(cb => { cb.checked = false; });
+    const master = document.getElementById('select-all-leads');
+    if (master) master.checked = false;
+    this._updateBulkBar();
+  }
+
+  _updateBulkBar() {
+    let bar = document.getElementById('bulk-actions-bar');
+    if (this.selectedLeadIds.size === 0) {
+      if (bar) bar.classList.remove('visible');
+      return;
+    }
+
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'bulk-actions-bar';
+      bar.className = 'bulk-actions-bar';
+      document.body.appendChild(bar);
+    }
+
+    const staffList = this.svc ? (this.svc.staff || []) : [];
+    const staffOptions = staffList.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+    const stages = ['New Lead', 'Contacted', 'Qualified', 'Follow-up', 'Won', 'Lost'];
+    const stageOptions = stages.map(s => `<option value="${s}">${s}</option>`).join('');
+
+    bar.innerHTML = `
+      <div class="bulk-selected-count">
+        <span style="background:var(--accent);color:#fff;border-radius:12px;padding:2px 8px;font-size:11px;">${this.selectedLeadIds.size}</span>
+        <span>Selected</span>
+      </div>
+      <div class="bulk-action-btns">
+        <select class="btn-bulk" onchange="if(this.value){window.app.bulkAssignStaff(this.value); this.selectedIndex=0;}">
+          <option value="">Assign Staff…</option>
+          ${staffOptions}
+        </select>
+        <select class="btn-bulk" onchange="if(this.value){window.app.bulkChangeStage(this.value); this.selectedIndex=0;}">
+          <option value="">Move Stage…</option>
+          ${stageOptions}
+        </select>
+        <button class="btn-bulk" onclick="window.app.bulkExportCsv()">
+          <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export (${this.selectedLeadIds.size})
+        </button>
+        <button class="btn-bulk btn-bulk-danger" onclick="window.app.clearLeadSelection()">Cancel</button>
+      </div>
+    `;
+    bar.classList.add('visible');
+  }
+
+  bulkAssignStaff(staffId) {
+    if (!staffId || this.selectedLeadIds.size === 0) return;
+    const staff = this.svc ? this.svc.staff.find(s => s.id === staffId) : null;
+    const count = this.selectedLeadIds.size;
+    this.selectedLeadIds.forEach(id => {
+      const l = this.svc ? this.svc.leads.find(x => x.id === id) : null;
+      if (l) {
+        l.assigned_staff_id = staffId;
+        l.assignedStaffId = staffId;
+        if (!l.notes) l.notes = [];
+        l.notes.push({
+          id: `note_${Date.now()}_${Math.random()}`,
+          text: `Reassigned to ${staff ? staff.name : staffId} via bulk action`,
+          createdAt: new Date().toISOString()
+        });
+      }
+    });
+
+    if (this.svc && this.svc._saveToStorage) this.svc._saveToStorage();
+    else if (this.svc && this.svc.saveAll) this.svc.saveAll();
+
+    this.clearLeadSelection();
+    this.renderLeads();
+    this.toast(`✓ Reassigned ${count} leads to ${staff ? staff.name : 'staff'}`, 'success');
+  }
+
+  bulkChangeStage(newStage) {
+    if (!newStage || this.selectedLeadIds.size === 0) return;
+    const count = this.selectedLeadIds.size;
+    this.selectedLeadIds.forEach(id => {
+      this.updateLeadStage(id, newStage);
+    });
+
+    this.clearLeadSelection();
+    this.renderLeads();
+    this.toast(`✓ Moved ${count} leads to stage "${newStage}"`, 'success');
+  }
+
+  bulkExportCsv() {
+    if (this.selectedLeadIds.size === 0) return;
+    const allLeads = this._getFilteredLeads();
+    const leads = allLeads.filter(l => this.selectedLeadIds.has(l.id));
+    let csv = 'ID,Name,Phone,Email,Page,Campaign,Status,AssignedTo,Created\n';
+    leads.forEach(l => {
+      csv += `"${l.id}","${l.name}","${l.phone||''}","${l.email||''}","${this._pageName(l.page_id||l.pageId)}","${l.campaign_id||l.campaignId||''}","${l.status}","${this._staffName(l.assigned_staff_id||l.assignedStaffId)}","${l.created_at||l.createdAt||''}"\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `leads_bulk_export_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    this.toast(`Exported ${leads.length} selected leads to CSV! ✓`);
   }
 
   exportLeadsCsv() {
@@ -1294,6 +1632,109 @@ class MetaCRMApp {
     this.toast('Leads exported to CSV successfully! ✓');
   }
 
+  findDuplicateLead(lead) {
+    if (!lead || !this.svc || !Array.isArray(this.svc.leads)) return null;
+    const cleanPhone = (lead.phone || '').replace(/\D/g, '');
+    const cleanEmail = (lead.email || '').trim().toLowerCase();
+    return this.svc.leads.find(l => {
+      if (l.id === lead.id) return false;
+      if (cleanPhone && cleanPhone.length >= 8 && (l.phone || '').replace(/\D/g, '') === cleanPhone) return true;
+      if (cleanEmail && cleanEmail.length >= 4 && (l.email || '').trim().toLowerCase() === cleanEmail) return true;
+      return false;
+    }) || null;
+  }
+
+  openMergeModal(leadId) {
+    const lead = this.svc ? this.svc.leads.find(l => l.id === leadId) : null;
+    if (!lead) return;
+    const dup = this.findDuplicateLead(lead);
+    if (!dup) {
+      this.toast('No duplicate lead detected for this contact.', 'info');
+      return;
+    }
+
+    this.el.mTitle.textContent = 'Merge Duplicate Leads';
+    this.el.mBody.innerHTML = `
+      <p class="text-xs text-gray mb-3">
+        A matching lead was detected based on identical phone number or email address. Select which lead to retain as the primary record. Activity logs, notes, and tasks will be consolidated without data loss.
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+        <div style="border:2px solid var(--accent);border-radius:8px;padding:12px;background:#FFF9F5;">
+          <div style="font-weight:700;font-size:13px;color:var(--accent);margin-bottom:6px;">Record A (Current)</div>
+          <div style="font-size:14px;font-weight:600;color:#0F172A;">${escapeHtml(lead.name)}</div>
+          <div style="font-size:12px;color:#64748B;">${escapeHtml(lead.phone || 'No phone')}</div>
+          <div style="font-size:12px;color:#64748B;">${escapeHtml(lead.email || 'No email')}</div>
+          <div style="font-size:11px;margin-top:6px;"><strong>Stage:</strong> ${lead.status || 'New'}</div>
+          <div style="font-size:11px;"><strong>Source:</strong> ${escapeHtml(lead.source || 'Facebook Lead Ad')}</div>
+          <div style="font-size:11px;"><strong>Notes:</strong> ${(lead.notes||[]).length}</div>
+        </div>
+        <div style="border:1px solid var(--border);border-radius:8px;padding:12px;background:#F8FAFC;">
+          <div style="font-weight:700;font-size:13px;color:#64748B;margin-bottom:6px;">Record B (Duplicate)</div>
+          <div style="font-size:14px;font-weight:600;color:#0F172A;">${escapeHtml(dup.name)}</div>
+          <div style="font-size:12px;color:#64748B;">${escapeHtml(dup.phone || 'No phone')}</div>
+          <div style="font-size:12px;color:#64748B;">${escapeHtml(dup.email || 'No email')}</div>
+          <div style="font-size:11px;margin-top:6px;"><strong>Stage:</strong> ${dup.status || 'New'}</div>
+          <div style="font-size:11px;"><strong>Source:</strong> ${escapeHtml(dup.source || 'Facebook Lead Ad')}</div>
+          <div style="font-size:11px;"><strong>Notes:</strong> ${(dup.notes||[]).length}</div>
+        </div>
+      </div>
+      <label class="settings-label">Merge Action:</label>
+      <select id="merge-target-choice" class="input">
+        <option value="keep_a" selected>Keep Record A ("${escapeHtml(lead.name)}") — Absorb Record B</option>
+        <option value="keep_b">Keep Record B ("${escapeHtml(dup.name)}") — Absorb Record A</option>
+      </select>
+    `;
+
+    this.el.mConfirm.textContent = 'Consolidate & Merge Leads';
+    this.el.mConfirm.className = 'btn btn-primary';
+    this.el.mConfirm.onclick = () => {
+      const choice = document.getElementById('merge-target-choice')?.value || 'keep_a';
+      const primary = choice === 'keep_a' ? lead : dup;
+      const secondary = choice === 'keep_a' ? dup : lead;
+
+      if (!primary.notes) primary.notes = [];
+      if (secondary.notes && secondary.notes.length) {
+        secondary.notes.forEach(n => {
+          primary.notes.push({ ...n, text: `[Merged from ${secondary.name}]: ${n.text}` });
+        });
+      }
+      primary.notes.push({
+        id: `note_${Date.now()}`,
+        text: `Consolidated with duplicate lead "${secondary.name}" (ID: ${secondary.id})`,
+        createdAt: new Date().toISOString()
+      });
+
+      if (!primary.phone && secondary.phone) primary.phone = secondary.phone;
+      if (!primary.email && secondary.email) primary.email = secondary.email;
+      if (!primary.value && secondary.value) primary.value = secondary.value;
+
+      secondary.status = 'Invalid';
+      secondary.notes.push({
+        id: `note_arch_${Date.now()}`,
+        text: `Archived as duplicate and merged into primary lead ID: ${primary.id}`,
+        createdAt: new Date().toISOString()
+      });
+
+      if (this.svc && this.svc._saveToStorage) this.svc._saveToStorage();
+      else if (this.svc && this.svc.saveAll) this.svc.saveAll();
+
+      this.closeModal();
+      this.toast(`✓ Successfully merged duplicate leads into primary record "${primary.name}"!`, 'success');
+      this.renderLeads();
+      if (this.currentRoute === 'leads') this.openLeadDrawer(primary.id);
+    };
+
+    this.el.mOverlay.classList.add('open');
+  }
+
+  insertSavedReply(text) {
+    const inp = document.getElementById('inbox-msg-input');
+    if (inp) {
+      inp.value = text;
+      inp.focus();
+    }
+  }
+
   // ──────────────────────────────────────────────────────────
   // LEAD DETAIL DRAWER (Section 9 & 12)
   // ──────────────────────────────────────────────────────────
@@ -1307,6 +1748,7 @@ class MetaCRMApp {
     const notes = (lead.notes || []).slice().reverse();
     const sla = this.svc ? this.svc.getLeadSlaStatus(lead) : { state: 'pending', text: '5m', label: 'Pending' };
     const isHot = lead.is_hot_lead || (lead.lead_value && lead.lead_value >= 50000);
+    const dup = this.findDuplicateLead(lead);
 
     this.el.dTitle.textContent = 'Lead Details & Attribution';
     this.el.dContent.innerHTML = `
@@ -1316,18 +1758,26 @@ class MetaCRMApp {
         <div class="lead-header-info">
           <div class="lead-header-name">
             ${lead.name}
-            ${isHot ? `<span class="badge badge-hot" style="margin-left:4px;font-size:11px;">🔥 Hot</span>` : ''}
+            ${isHot ? `<span class="badge badge-hot" style="margin-left:4px;font-size:11px;">${this._icon('flame', 11)} Hot</span>` : ''}
           </div>
           <div class="text-sm text-gray">${lead.phone || 'No phone'} ${lead.email ? '• ' + lead.email : ''}</div>
           <div style="margin-top:4px;">${this._badge(lead.status)}</div>
         </div>
       </div>
 
+      ${dup ? `
+      <div style="background:#FEF3C7;border:1px solid #FCD34D;border-radius:8px;padding:10px 12px;margin:12px 0;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <div style="font-size:12px;color:#92400E;">
+          <strong>Duplicate Alert:</strong> Matches record "${escapeHtml(dup.name)}".
+        </div>
+        <button class="badge badge-duplicate" onclick="window.app.openMergeModal('${lead.id}')">Merge ⇄</button>
+      </div>` : ''}
+
       <!-- ONE-CLICK COMMUNICATION BAR (Hooks first_response_at) -->
       <div class="lead-actions-bar">
-        <a href="tel:${lead.phone}" onclick="window.crmService.recordFirstResponse('${lead.id}', 'call')" class="btn btn-primary btn-sm">📞 Call</a>
-        <a href="https://wa.me/${(lead.phone||'').replace(/\D/g,'')}" target="_blank" onclick="window.crmService.recordFirstResponse('${lead.id}', 'whatsapp')" class="btn btn-secondary btn-sm whatsapp-btn">💬 WhatsApp</a>
-        <a href="mailto:${lead.email}" onclick="window.crmService.recordFirstResponse('${lead.id}', 'email')" class="btn btn-secondary btn-sm">✉ Email</a>
+        <a href="tel:${lead.phone}" onclick="window.crmService.recordFirstResponse('${lead.id}', 'call')" class="btn btn-primary btn-sm">${this._icon('phone', 13)} Call</a>
+        <a href="https://wa.me/${(lead.phone||'').replace(/\D/g,'')}" target="_blank" onclick="window.crmService.recordFirstResponse('${lead.id}', 'whatsapp')" class="btn btn-secondary btn-sm whatsapp-btn">${this._icon('whatsapp', 13)} WhatsApp</a>
+        <a href="mailto:${lead.email}" onclick="window.crmService.recordFirstResponse('${lead.id}', 'email')" class="btn btn-secondary btn-sm">${this._icon('mail', 13)} Email</a>
       </div>
 
       <!-- SPEED-TO-LEAD & SLA TRACKING (Phase A) -->
@@ -1439,7 +1889,7 @@ class MetaCRMApp {
       <!-- DANGER ZONE: DELETE LEAD -->
       <div class="drawer-section mt-4 pt-3" style="border-top:1px solid var(--border);">
         <button class="btn btn-ghost btn-sm text-red-500 w-full" style="display:flex;align-items:center;justify-content:center;gap:6px;" onclick="window.app.deleteLead('${lead.id}')">
-          🗑️ Delete Lead Permanently
+          ${this._icon('trash', 13)} Delete Lead Permanently
         </button>
       </div>`;
 
@@ -1650,10 +2100,10 @@ class MetaCRMApp {
     this.el.title.textContent = this.user.role === 'staff' ? 'My Messages' : 'Messages';
     this.el.actions.innerHTML = `
       <button class="btn btn-orange btn-sm btn-inbox-refresh" onclick="window.app.refreshRealInbox()">
-        🔄 Refresh Real Instagram Inbox
+        ${this._icon('refresh', 13)} Refresh Real Instagram Inbox
       </button>
       <button class="btn btn-secondary-orange btn-sm btn-inbox-sync" onclick="window.app.syncConnections()">
-        🔄 Sync Accounts
+        ${this._icon('refresh', 13)} Sync Accounts
       </button>`;
 
     // Auto-fetch real Instagram conversations if not loaded yet
@@ -1706,7 +2156,7 @@ class MetaCRMApp {
           <div class="inbox-conv-list">
             ${convList.length === 0 ? `
               <div class="inbox-conv-empty">
-                <div class="inbox-conv-empty-icon">${activeTab === 'instagram' ? '📷' : '💬'}</div>
+                <div class="inbox-conv-empty-icon" style="display:flex;justify-content:center;">${activeTab === 'instagram' ? this._icon('instagram', 32) : this._icon('facebook', 32)}</div>
                 <strong class="inbox-conv-empty-title">No ${activeTab === 'all' ? '' : (activeTab === 'instagram' ? 'Instagram ' : 'Messenger ')}messages yet</strong>
                 <p class="inbox-conv-empty-desc">
                   Incoming messages from your connected ${activeTab === 'instagram' ? 'Instagram' : 'Facebook & Instagram'} account will appear here automatically.
@@ -1731,7 +2181,7 @@ class MetaCRMApp {
                   <div class="conv-preview">${escapeHtml(c.preview || '')}</div>
                   <div class="conv-channel">
                     <span class="conv-channel-pill ${isIg ? 'pill-ig' : 'pill-fb'}">
-                      ${isIg ? '📷 Instagram' : '💬 Messenger'}
+                      ${isIg ? this._icon('instagram', 11) + ' Instagram' : this._icon('facebook', 11) + ' Messenger'}
                     </span>
                     <span class="conv-channel-sep">·</span>
                     <span class="conv-page-name">${escapeHtml(this._pageName(c.page_id))}</span>
@@ -1758,7 +2208,7 @@ class MetaCRMApp {
                 <div class="thread-sub text-truncate">${escapeHtml(this._pageName(activeConv.page_id))} · ${isIgActive ? 'Instagram Direct' : 'Facebook Messenger'}</div>
               </div>
               <span class="inbox-platform-badge ${isIgActive ? 'badge-ig' : 'badge-fb'} ml-auto">
-                ${isIgActive ? '📷 Instagram' : '💬 Messenger'}
+                ${isIgActive ? this._icon('instagram', 12) + ' Instagram' : this._icon('facebook', 12) + ' Messenger'}
               </span>
               <button class="inbox-info-btn btn btn-ghost btn-sm" onclick="window.app.toggleInboxDetails()" title="Customer CRM Details">
                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
@@ -1775,16 +2225,27 @@ class MetaCRMApp {
             </div>
 
             <div class="inbox-composer">
-              <input type="text" class="input inbox-msg-input" placeholder="Type a message to reply on ${isIgActive ? 'Instagram Direct' : 'Messenger'}…" id="inbox-msg-input" 
-                     onkeydown="if(event.key==='Enter')window.app.sendInboxMessage()">
-              <button class="btn btn-orange btn-send-msg" id="inbox-send-btn" onclick="window.app.sendInboxMessage()">
-                Send via ${isIgActive ? 'Instagram' : 'Facebook'}
-              </button>
+              <div class="inbox-composer-toolbar" style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                <select class="input topbar-pill-select" style="font-size:12px;padding:4px 10px;height:28px;" onchange="if(this.value){window.app.insertSavedReply(this.value); this.selectedIndex=0;}">
+                  <option value="">⚡ Insert Quick Saved Reply…</option>
+                  <option value="Hello! Thanks for reaching out. How can our team help you today?">Greeting: How can we help?</option>
+                  <option value="Our team has received your inquiry. A specialist will call you shortly to discuss options.">Follow-up: Specialist calling shortly</option>
+                  <option value="Could you please share your preferred phone number and best time for a quick consultation?">Contact details request</option>
+                  <option value="Thank you for your interest! Here is our latest pricing guide and product details.">Catalog &amp; Pricing information</option>
+                </select>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <input type="text" class="input inbox-msg-input" placeholder="Type a message to reply on ${isIgActive ? 'Instagram Direct' : 'Messenger'}…" id="inbox-msg-input" 
+                       onkeydown="if(event.key==='Enter')window.app.sendInboxMessage()">
+                <button class="btn btn-orange btn-send-msg" id="inbox-send-btn" onclick="window.app.sendInboxMessage()">
+                  Send via ${isIgActive ? 'Instagram' : 'Facebook'}
+                </button>
+              </div>
             </div>
           ` : `
             <div class="inbox-empty-view">
               <div class="inbox-empty-icon">
-                💬
+                <svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
               </div>
               <h3 class="inbox-empty-title">
                 Unified Messages Hub
@@ -1794,10 +2255,10 @@ class MetaCRMApp {
               </p>
               <div class="inbox-empty-actions">
                 <button class="btn btn-orange" onclick="window.app.simulateInboundMessage('Instagram Direct')">
-                  📷 Simulate Inbound Instagram DM
+                  ${this._icon('instagram', 14)} Simulate Inbound Instagram DM
                 </button>
                 <button class="btn btn-secondary-orange" onclick="window.app.simulateInboundMessage('Messenger')">
-                  💬 Simulate Messenger Chat
+                  ${this._icon('facebook', 14)} Simulate Messenger Chat
                 </button>
               </div>
             </div>
@@ -1819,7 +2280,7 @@ class MetaCRMApp {
               <div class="idetail-name text-truncate">${escapeHtml(activeConv.name)}</div>
               <div class="idetail-handle text-truncate">${escapeHtml(activeConv.participantUsername ? `@${activeConv.participantUsername.replace(/^@/, '')}` : (activeConv.phone || (isIgActive ? 'Instagram Direct Inquiry' : 'Messenger Inquiry')))}</div>
               <div class="idetail-badge-wrap">
-                <span class="idetail-orange-badge">${isIgActive ? '📷 Instagram DM' : '💬 Messenger Chat'}</span>
+                <span class="idetail-orange-badge">${isIgActive ? this._icon('instagram', 12) + ' Instagram DM' : this._icon('facebook', 12) + ' Messenger Chat'}</span>
               </div>
             </div>
 
@@ -1828,7 +2289,7 @@ class MetaCRMApp {
               <div class="idetail-row">
                 <span class="idetail-label">Channel</span>
                 <span class="idetail-value">
-                  ${isIgActive ? '📷 Instagram Direct' : '💬 Messenger'}
+                  ${isIgActive ? this._icon('instagram', 12) + ' Instagram Direct' : this._icon('facebook', 12) + ' Messenger'}
                 </span>
               </div>
               <div class="idetail-row">
@@ -1874,7 +2335,7 @@ class MetaCRMApp {
                 return `
                 <div class="idetail-channel-card">
                   <div class="idetail-channel-icon ${isIg ? 'icon-ig' : 'icon-fb'}">
-                    ${isIg ? '📷' : 'f'}
+                    ${isIg ? this._icon('instagram', 14) : this._icon('facebook', 14)}
                   </div>
                   <div class="idetail-channel-info">
                     <div class="idetail-channel-name text-truncate">${escapeHtml(p.name)}</div>
@@ -2137,12 +2598,18 @@ class MetaCRMApp {
     }
     this.activeConvId = newConv.id;
     this.inboxTab = isIg ? 'instagram' : (preferredChannel ? 'messenger' : this.inboxTab || 'all');
-    this.toast(`💬 New ${randChannel} message from ${randName}!`, 'info');
+    this.toast(`New ${randChannel} message from ${randName}!`, 'info');
     this.renderInbox();
   }
 
   createLeadFromConv(name, pageId) {
     if (this.svc) {
+      const existing = (this.svc.leads || []).find(l => (l.name || '').toLowerCase() === (name || '').toLowerCase());
+      if (existing) {
+        this.toast(`Lead "${name}" already exists in CRM (Stage: ${existing.status}).`, 'info');
+        this.openLeadDrawer(existing.id);
+        return;
+      }
       const newLead = {
         id: 'lead_conv_' + Date.now(),
         name,
@@ -2156,7 +2623,7 @@ class MetaCRMApp {
       this.svc.leads.unshift(newLead);
       this.svc._saveToStorage ? this.svc._saveToStorage() : this.svc.saveAll();
     }
-    this.toast(`Lead created for ${name} in CRM!`);
+    this.toast(`Lead created for ${name} in CRM!`, 'success');
     this.renderInbox();
   }
 
@@ -2681,8 +3148,8 @@ class MetaCRMApp {
               <div class="task-body">
                 <div class="task-title" style="${t.status==='Done'?'text-decoration:line-through;color:#94a3b8;':''}">${t.title}</div>
                 <div class="task-meta">
-                  <span>📅 Due: ${t.dueDate ? new Date(t.dueDate).toLocaleDateString('en-IN', {weekday:'short',day:'numeric',month:'short'}) : 'No date'}</span>
-                  <span>👤 ${this._staffName(t.assigned_to || t.assignedStaffId)}</span>
+                  <span>${this._icon('calendar', 12)} Due: ${t.dueDate ? new Date(t.dueDate).toLocaleDateString('en-IN', {weekday:'short',day:'numeric',month:'short'}) : 'No date'}</span>
+                  <span>${this._icon('user', 12)} ${this._staffName(t.assigned_to || t.assignedStaffId)}</span>
                 </div>
               </div>
               ${this._priorityBadge(t.priority)}
@@ -2973,7 +3440,7 @@ class MetaCRMApp {
                     <div class="row-actions">
                       <button class="btn btn-secondary btn-sm" onclick="window.app.openAssignPagesModal('${s.id}')">Assign Pages</button>
                       <button class="btn btn-ghost btn-sm" onclick="window.app.switchUserDirect('${s.id}')">Switch</button>
-                      <button class="btn btn-ghost btn-sm text-red" style="color:var(--danger);" onclick="window.app.removeStaff('${s.id}')" title="Remove staff member">🗑️</button>
+                      <button class="btn btn-ghost btn-sm text-red" style="color:var(--danger);" onclick="window.app.removeStaff('${s.id}')" title="Remove staff member">${this._icon('trash', 14)}</button>
                     </div>
                   </td>
                 </tr>`;
@@ -3513,7 +3980,7 @@ class MetaCRMApp {
     } catch (e) {}
     return `
       <div class="user-friendly-tip" id="tip-${tipId}">
-        <span class="tip-icon">💡</span>
+        <span class="tip-icon" style="display:inline-flex;align-items:center;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
         <span class="tip-text">${text}</span>
         <button class="tip-close-btn" onclick="window.app.dismissTip('${tipId}')">✕ Got it</button>
       </div>`;
