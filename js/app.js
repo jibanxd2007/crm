@@ -71,7 +71,8 @@ class MetaCRMApp {
       appLayout: document.getElementById('app-layout'),
     };
 
-    this.metaConnectionState = localStorage.getItem('metacrm_meta_conn_state') || 'connected';
+    const hasPages = this.svc && Array.isArray(this.svc.pages) && this.svc.pages.length > 0;
+    this.metaConnectionState = localStorage.getItem('metacrm_meta_conn_state') || (hasPages ? 'connected' : 'not_connected');
     this.authTab = 'login';
 
     this._bindGlobalEvents();
@@ -1724,15 +1725,15 @@ class MetaCRMApp {
   // ──────────────────────────────────────────────────────────
 
   renderConnections() {
-    this.el.title.textContent = 'Connect Facebook';
-    const isConnected = this.metaConnectionState === 'connected';
-    const isExpired = this.metaConnectionState === 'expired';
+    this.el.title.textContent = 'Connect Facebook Page';
     const pages = this._getAccessiblePages();
+    const isExpired = this.metaConnectionState === 'expired';
+    const isConnected = pages.length > 0 && !isExpired && this.metaConnectionState !== 'not_connected';
 
     this.el.actions.innerHTML = `
       <span class="badge ${isConnected ? 'badge-green' : isExpired ? 'badge-orange' : 'badge-gray'}">
         <span class="status-dot ${isConnected ? 'green' : isExpired ? 'orange' : ''}"></span>
-        ${isConnected ? 'Connected' : isExpired ? 'Needs Reconnect' : 'Not Connected'}
+        ${isConnected ? 'Connected &amp; Active' : isExpired ? 'Needs Reconnect' : 'Not Connected'}
       </span>`;
 
     const primaryPage = pages.length > 0 ? pages[0] : null;
@@ -1746,7 +1747,7 @@ class MetaCRMApp {
         <div style="display:flex;align-items:center;gap:14px;">
           <span style="font-size:26px;">⚠️</span>
           <div>
-            <strong style="color:#92400E;font-size:15px;display:block;">Your page disconnected. Click Reconnect below.</strong>
+            <strong style="color:#92400E;font-size:15px;display:block;">Your Facebook connection expired. Click Reconnect below.</strong>
             <p style="color:#B45309;font-size:13px;margin:2px 0 0;">New Facebook leads are paused until reconnected.</p>
           </div>
         </div>
@@ -1841,13 +1842,7 @@ class MetaCRMApp {
             </div>`).join('')}
         </div>
       </div>` : ''}
-
-      <!-- DISCREET TESTING TOGGLE (Kept at very bottom for developer/demo evaluation) -->
-      <div style="text-align:center;margin-top:32px;padding-top:16px;border-top:1px dashed var(--border);">
-        <button class="btn btn-ghost text-xs text-gray" onclick="window.app.toggleExpireSimulation()" title="Test how the UI prompts when a token expires">
-          ${isExpired ? '✓ Reset to Healthy State' : '⚠️ Test Expired State (Simulate Disconnect)'}
-        </button>
-      </div>`;
+    `;
   }
 
   syncPage(pageId) {
@@ -1872,8 +1867,13 @@ class MetaCRMApp {
         if (this.svc) {
           this.svc.pages = this.svc.pages.filter(p => p.id !== pageId);
           if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
+          if (this.svc.pages.length === 0) {
+            this.metaConnectionState = 'not_connected';
+            try { localStorage.setItem('metacrm_meta_conn_state', 'not_connected'); } catch (e) {}
+          }
         }
         this.toast(`Page "${name}" disconnected.`, 'info');
+        this.renderSidebar();
         this.renderConnections();
       }
     });
@@ -2076,7 +2076,7 @@ class MetaCRMApp {
   // ──────────────────────────────────────────────────────────
 
   renderReports() {
-    this.el.title.textContent = 'Executive Analytics & 6-Page Reporting';
+    this.el.title.textContent = 'Performance & Reports';
     this.el.actions.innerHTML = `
       <button class="btn btn-secondary" onclick="window.app.toast('Exporting report...')">Export CSV</button>`;
 
@@ -2096,14 +2096,14 @@ class MetaCRMApp {
 
     this.el.content.innerHTML = `
       <div class="kpi-row">
-        <div class="kpi-card"><div class="kpi-title">TOTAL LEADS</div><div class="kpi-value">${leads.length}</div></div>
-        <div class="kpi-card"><div class="kpi-title">QUALIFIED</div><div class="kpi-value" style="color:#7C3AED">${qual.length}</div></div>
-        <div class="kpi-card"><div class="kpi-title">CONVERTED / WON</div><div class="kpi-value" style="color:var(--success)">${won.length}</div></div>
-        <div class="kpi-card"><div class="kpi-title">CONVERSION RATE</div><div class="kpi-value">${leads.length ? ((won.length/leads.length)*100).toFixed(1) : 0}%</div></div>
+        <div class="kpi-card"><div class="kpi-title">TOTAL INQUIRIES</div><div class="kpi-value">${leads.length}</div><div class="kpi-trend">All captured leads</div></div>
+        <div class="kpi-card"><div class="kpi-title">QUALIFIED PROSPECTS</div><div class="kpi-value" style="color:#7C3AED">${qual.length}</div><div class="kpi-trend">High purchase intent</div></div>
+        <div class="kpi-card"><div class="kpi-title">CLOSED CUSTOMERS</div><div class="kpi-value" style="color:var(--success)">${won.length}</div><div class="kpi-trend">Won deals</div></div>
+        <div class="kpi-card"><div class="kpi-title">CONVERSION RATE</div><div class="kpi-value">${leads.length ? ((won.length/leads.length)*100).toFixed(1) : 0}%</div><div class="kpi-trend">Leads to customers</div></div>
       </div>
 
       <div class="card">
-        <div class="card-header"><div class="card-title">Leads Breakdown by Page</div></div>
+        <div class="card-header"><div class="card-title">Leads Breakdown by Page (Facebook &amp; Instagram)</div></div>
         <div class="chart-bars">
           ${pageStats.length > 0 ? pageStats.map(p => `
             <div class="chart-bar-row">
@@ -2118,10 +2118,10 @@ class MetaCRMApp {
       </div>
 
       <div class="card">
-        <div class="card-header"><div class="card-title">Staff Conversion Performance</div></div>
+        <div class="card-header"><div class="card-title">Team Conversion Performance</div></div>
         <table>
           <thead>
-            <tr><th>Staff Member</th><th>Role</th><th>Assigned Pages</th><th>Leads</th><th>Won</th><th>Conv.%</th></tr>
+            <tr><th>Team Member</th><th>Role</th><th>Assigned Pages</th><th>Active Leads</th><th>Won Deals</th><th>Conversion Rate</th></tr>
           </thead>
           <tbody>
             ${staff.length > 0 ? staff.map(s => {
@@ -2145,20 +2145,20 @@ class MetaCRMApp {
       <!-- PHASE A: STAFF SPEED-TO-LEAD & SLA LEADERBOARD -->
       <div class="card">
         <div class="card-header">
-          <div class="card-title">Speed-to-Lead Response Time Leaderboard</div>
-          <span class="text-xs text-gray">Target: 5 Min SLA · Late-answered counts as non-compliant</span>
+          <div class="card-title">Response Time &amp; Speed-to-Lead</div>
+          <span class="text-xs text-gray">Target: Contact new leads within 5 minutes</span>
         </div>
         <table>
           <thead>
             <tr>
-              <th>Staff Member</th>
+              <th>Team Member</th>
               <th>Assigned Leads</th>
               <th>Responded</th>
-              <th>Within SLA</th>
-              <th>Responded Late</th>
-              <th>Live Breaches</th>
-              <th>Compliance Rate</th>
-              <th>Median Response</th>
+              <th>Within 5 Mins</th>
+              <th>Replied Late</th>
+              <th>Needs Reply (>5m)</th>
+              <th>Fast Reply Rate</th>
+              <th>Avg. Reply Time</th>
             </tr>
           </thead>
           <tbody>
@@ -2184,10 +2184,10 @@ class MetaCRMApp {
       <div class="card roi-section">
         <div class="card-header">
           <div>
-            <div class="card-title">Ad Spend &amp; True ROI Performance</div>
-            <span class="text-xs text-gray">Live CPL &amp; CPA tracked against actual Meta Graph API spend</span>
+            <div class="card-title">Ad Spend &amp; Return on Advertising</div>
+            <span class="text-xs text-gray">Live cost per lead and customer tracked against Meta ad spend</span>
           </div>
-          <button class="btn btn-secondary btn-sm" onclick="window.app.syncAdSpend()">🔄 Sync Ad Spend Now</button>
+          <button class="btn btn-secondary btn-sm" onclick="window.app.syncAdSpend()">🔄 Refresh Ad Spend</button>
         </div>
 
         ${(() => {
@@ -2198,17 +2198,17 @@ class MetaCRMApp {
             <div class="roi-card">
               <div class="roi-card-label">TOTAL AD SPEND</div>
               <div class="roi-card-value">₹${this._formatNum(roi.totalSpend)}</div>
-              <div class="roi-card-sub">Meta Graph v20.0 Verified</div>
+              <div class="roi-card-sub">Meta Graph Verified</div>
             </div>
             <div class="roi-card">
               <div class="roi-card-label">COST PER LEAD (CPL)</div>
               <div class="roi-card-value" style="color:var(--accent);">₹${roi.cpl}</div>
-              <div class="roi-card-sub">${roi.totalLeads} Total Inbound Leads</div>
+              <div class="roi-card-sub">Spend / ${roi.totalLeads} Total Leads</div>
             </div>
             <div class="roi-card">
-              <div class="roi-card-label">COST PER ACQUISITION (CPA)</div>
+              <div class="roi-card-label">COST PER CUSTOMER (CPA)</div>
               <div class="roi-card-value" style="color:var(--success);">₹${roi.cpa}</div>
-              <div class="roi-card-sub">${roi.totalWonDeals} Won Conversions</div>
+              <div class="roi-card-sub">Spend / ${roi.totalWonDeals} Closed Deals</div>
             </div>
             <div class="roi-card">
               <div class="roi-card-label">RETURN ON AD SPEND (ROAS)</div>
