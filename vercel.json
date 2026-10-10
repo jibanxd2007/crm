@@ -2,18 +2,73 @@
   "version": 2,
   "crons": [
     {
+      "path": "/api/meta/ad-spend-sync",
+      "schedule": "0 * * * *"
+    },
+    {
       "path": "/api/meta/sync",
       "schedule": "*/15 * * * *"
     }
   ],
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
+      "source": "/api/conversations/(.*)",
+      "destination": "/api/messages"
     },
     {
-      "src": "/(.*)",
-      "dest": "/$1"
+      "source": "/api/conversations",
+      "destination": "/api/messages"
+    },
+    {
+      "source": "/api/messages/(.*)",
+      "destination": "/api/messages"
+    },
+    {
+      "source": "/api/leads/(.*)",
+      "destination": "/api/leads"
+    },
+    {
+      "source": "/api/auth/meta/url",
+      "destination": "/api/meta/oauth"
+    },
+    {
+      "source": "/api/auth/meta/callback",
+      "destination": "/api/meta/callback"
+    },
+    {
+      "source": "/api/zernio/connect/:channel",
+      "destination": "/api/zernio/connect"
+    },
+    {
+      "source": "/api/zernio/simulate-lead",
+      "destination": "/api/zernio/simulate-lead"
+    },
+    {
+      "source": "/api/meta/insights",
+      "destination": "/api/meta/ad-spend-sync"
+    },
+    {
+      "source": "/((?!api/|.*\\..*).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Frame-Options",
+          "value": "SAMEORIGIN"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        }
+      ]
     }
   ]
 }

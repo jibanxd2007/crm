@@ -34,10 +34,8 @@ export default async function handler(req, res) {
   const apiVersion = process.env.META_API_VERSION || 'v20.0';
 
   if (!metaToken) {
-    return res.status(200).json({
-      status: 'demo_fallback',
-      message: 'META_ACCESS_TOKEN not configured. Keeping existing database insights.',
-      lastSyncedAt: new Date().toISOString()
+    return res.status(400).json({
+      error: 'META_ACCESS_TOKEN not configured. Please set META_ACCESS_TOKEN or META_SYSTEM_USER_ACCESS_TOKEN in Vercel environment variables.'
     });
   }
 
