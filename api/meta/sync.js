@@ -86,17 +86,17 @@ async function metaSyncUnifiedHandler(req, res) {
   // MODE 1: AD SPEND SYNC (/api/meta/ad-spend-sync)
   // --------------------------------------------------------------------------
   if (isAdSpend) {
-    let mockSpendData = [];
+    let insightsData = [];
     if (req.method === 'POST' && req.body && Array.isArray(req.body.insights)) {
-      mockSpendData = req.body.insights;
+      insightsData = req.body.insights;
     }
 
     const supabase = getSupabaseAdmin();
     let recordsUpserted = 0;
     let totalSpendSynced = 0;
 
-    if (mockSpendData.length > 0) {
-      for (const row of mockSpendData) {
+    if (insightsData.length > 0) {
+      for (const row of insightsData) {
         const parsed = parseInsightsRow(row, row.page_id || 'page_01', row.ad_account_id || 'act_primary');
         totalSpendSynced += parsed.spend;
         recordsUpserted++;

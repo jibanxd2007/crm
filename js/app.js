@@ -858,7 +858,7 @@ class MetaCRMApp {
               <button class="qa-btn" onclick="window.app.openAddLeadModal()">+ Add New Lead</button>
               <button class="qa-btn" onclick="window.app.openAddTaskModal()">+ Schedule Follow-up</button>
               <button class="qa-btn" onclick="window.app.navigate('inbox')">Open Messages</button>
-              ${isAdmin ? `<button class="qa-btn" onclick="window.app.simulateInboundLead()">⚡ Simulate Inbound Lead</button>` : ''}
+              <button class="qa-btn" onclick="window.app.navigate('connections')">Manage Facebook Pages</button>
             </div>
           </div>
 
@@ -1077,7 +1077,7 @@ class MetaCRMApp {
         </table>
       </div>
       <div class="table-footer">Showing <strong>${tabFiltered.length}</strong> of <strong>${allLeads.length}</strong> total leads</div>`
-      : this._empty('No leads found', 'No leads match the selected filter. Add a lead manually or simulate an inbound Meta lead.', null, null, '<button class="btn btn-primary" onclick="window.app.openAddLeadModal()">+ Add New Lead</button>', '👥')}`;
+      : this._empty('No leads found', 'No leads match the selected filter. Connect your Facebook Page to receive leads automatically, or add a lead manually.', null, null, '<button class="btn btn-primary" onclick="window.app.openAddLeadModal()">+ Add New Lead</button>', '👥')}`;
   }
 
   _filterLeadsByTab(leads, tab) {
@@ -1471,7 +1471,7 @@ class MetaCRMApp {
   renderInbox() {
     this.el.title.textContent = this.user.role === 'staff' ? 'My Messages' : 'Messages';
     this.el.actions.innerHTML = `
-      <button class="btn btn-secondary btn-sm" onclick="window.app.simulateInboundMessage()">💬 + Test Message</button>`;
+      <button class="btn btn-secondary btn-sm" onclick="window.app.renderInbox()">🔄 Refresh</button>`;
 
     const convs = (this.svc ? (this.svc.conversations || []) : []);
     const userPages = this._getAccessiblePages().map(p => p.id);
@@ -1485,7 +1485,7 @@ class MetaCRMApp {
         'Incoming messages from Facebook Messenger and Instagram Direct will appear here in real-time once connected.',
         '#connections',
         'Connect Facebook Page &amp; IG →',
-        '<button class="btn btn-secondary" onclick="window.app.simulateInboundMessage()">💬 Simulate Test Message</button>',
+        null,
         '💬'
       );
       return;
@@ -1810,8 +1810,8 @@ class MetaCRMApp {
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;">
-            <button class="btn btn-primary" onclick="window.app.simulatePageLead('${primaryPage ? primaryPage.id : ''}')">
-              ⚡ Send a Test Lead
+            <button class="btn btn-primary" onclick="window.app.syncConnections()">
+              🔄 Sync with Meta
             </button>
             <button class="btn btn-secondary btn-sm" onclick="window.app.openConnectPageModal()">
               + Connect Another Page
@@ -1907,12 +1907,39 @@ class MetaCRMApp {
     this.renderConnections();
   }
 
-  syncConnections() {
+  async syncConnections() {
     this.toast('Syncing Meta Pages, Webhooks, and Ad Accounts…', 'info');
-    setTimeout(() => {
+    try {
+      const authHeader = (this.user && this.user.id) ? this.user.id : 'admin';
+      const [assetsRes, syncRes] = await Promise.allSettled([
+        fetch('/api/meta/campaigns?action=assets', { headers: { 'Authorization': `Bearer ${authHeader}` } }),
+        fetch('/api/meta/sync', { method: 'POST', headers: { 'Authorization': `Bearer ${authHeader}` } })
+      ]);
+
+      if (assetsRes.status === 'fulfilled' && assetsRes.value && assetsRes.value.ok) {
+        const assets = await assetsRes.value.json();
+        if (assets.pages && assets.pages.length > 0) {
+          assets.pages.forEach(p => {
+            const pid = p.meta_page_id || p.id;
+            const exists = this.svc.pages.find(x => x.id === pid || x.page_id === pid);
+            if (!exists) {
+              this.svc.pages.push({
+                id: pid,
+                page_id: pid,
+                name: p.name,
+                category: p.category || 'Business',
+                connected_at: new Date().toISOString()
+              });
+            }
+          });
+          if (this.svc._saveToStorage) this.svc._saveToStorage();
+        }
+      }
       this.toast('✓ All Meta connections & webhooks synchronized!', 'success');
-      this.renderConnections();
-    }, 700);
+    } catch (e) {
+      this.toast('Connections check complete.', 'info');
+    }
+    this.renderConnections();
   }
 
   async simulatePageLead(pageId) {

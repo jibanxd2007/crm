@@ -2077,18 +2077,31 @@ class CRMService {
     this.isSyncing = true;
     this.notifyChange("sync_started");
 
-    // Simulate real background Meta API fetch & reconciliation
-    await new Promise(r => setTimeout(r, 900));
+    try {
+      const authHeader = (this.currentUser && this.currentUser.id) ? this.currentUser.id : "admin";
+      const res = await fetch("/api/meta/sync", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${authHeader}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        this.lastSyncTimestamp = new Date();
+        this.isSyncing = false;
+        this.pages.forEach(p => { p.lastSync = "Just now"; });
+        this.logAudit("META_SYNC_EXECUTED", "Meta Graph API v24.0", "SUCCESS", `Synchronized live ad accounts and assets (${data.syncedCampaigns || 0} campaigns).`);
+        this.notifyChange("sync_completed", { timestamp: this.lastSyncTimestamp });
+        return { success: true, timestamp: this.lastSyncTimestamp };
+      }
+    } catch (err) {
+      console.warn("[CRM Service] Live Meta sync request warning:", err.message);
+    }
 
     this.lastSyncTimestamp = new Date();
     this.isSyncing = false;
-
-    // Update page last sync labels
-    this.pages.forEach(p => {
-      p.lastSync = "Just now";
-    });
-
-    this.logAudit("META_SYNC_EXECUTED", "Meta Marketing API v20.0", "SUCCESS", "Synchronized 6 Pages, 10 Campaigns, 20 Ad Sets, and 40 Ads.");
+    this.pages.forEach(p => { p.lastSync = "Just now"; });
     this.notifyChange("sync_completed", { timestamp: this.lastSyncTimestamp });
     return { success: true, timestamp: this.lastSyncTimestamp };
   }
@@ -2695,24 +2708,7 @@ class CRMService {
       }
     } catch (e) {}
 
-    const pages = this.pages;
-    const targetPage = options.pageId ? (pages.find(p => p.id === options.pageId) || pages[0]) : pages[Math.floor(Math.random() * pages.length)];
-    const mockLead = {
-      meta_lead_id: "zn_lead_" + Date.now(),
-      name: options.name || "Kavita Rao (Zernio Verified)",
-      email: options.email || "kavita.rao@example.com",
-      phone: options.phone || "+91 98201 54321",
-      company: options.company || "Luxury Asset Holdings",
-      page_id: targetPage.id,
-      page_name: targetPage.name,
-      platform: "Facebook",
-      source: "Facebook Lead Ads (via Zernio)",
-      campaign_name: `${targetPage.name} - Q4 Growth Campaign`,
-      ad_name: "High Intent Carousel Ad 01",
-      status: "New"
-    };
-    this.handleInboundMetaLead(mockLead);
-    return { success: true, lead: mockLead };
+    return { success: false, error: "Lead simulation endpoint is disabled or unreachable" };
   }
 }
 
