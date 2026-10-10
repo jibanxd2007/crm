@@ -32,11 +32,13 @@ async function metaOAuthUnifiedHandler(req, res) {
       return res.redirect(`/#connections?meta_auth=error&msg=${encodeURIComponent(errorMsg)}`);
     }
 
-    // Zernio OAuth Redirect Handling
+    // Zernio OAuth Redirect Handling (Both Facebook and Instagram)
     if (query.connected) {
-      const pageName = query.username || query.page_name || 'Facebook Business Page';
+      const isIg = query.connected === 'instagram' || query.channel === 'instagram';
+      const rawName = query.username || query.page_name || '';
+      const pageName = rawName ? (isIg && !rawName.startsWith('@') ? `@${rawName}` : rawName) : (isIg ? 'Instagram Business Account' : 'Facebook Business Page');
       const pageId = query.accountId || query.page_id || `page_${Date.now()}`;
-      return res.redirect(`/#connections?meta_auth=success&page_name=${encodeURIComponent(pageName)}&page_id=${encodeURIComponent(pageId)}&provider=zernio`);
+      return res.redirect(`/#connections?meta_auth=success&page_name=${encodeURIComponent(pageName)}&page_id=${encodeURIComponent(pageId)}&provider=zernio&channel=${isIg ? 'instagram' : 'facebook'}`);
     }
 
     if (!code) {
@@ -161,8 +163,9 @@ async function metaOAuthUnifiedHandler(req, res) {
     const zernioApiKey = process.env.ZERNIO_API_KEY;
     if (zernioApiKey) {
       const profileId = process.env.ZERNIO_PROFILE_ID || '6aca100754c13a71092c1d1c';
+      const channel = (query.channel === 'instagram' || query.platform === 'instagram') ? 'instagram' : 'facebook';
       try {
-        const zernioConnectUrl = `https://zernio.com/api/v1/connect/facebook?profileId=${profileId}&redirect_url=${encodeURIComponent(redirectUri)}`;
+        const zernioConnectUrl = `https://zernio.com/api/v1/connect/${channel}?profileId=${profileId}&redirect_url=${encodeURIComponent(redirectUri)}`;
         const zRes = await httpsRequest(zernioConnectUrl, {
           headers: { 'Authorization': `Bearer ${zernioApiKey}`, 'Accept': 'application/json' }
         });

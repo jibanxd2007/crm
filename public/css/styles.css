@@ -1813,6 +1813,26 @@ tr.clickable-row:hover { background: #F8FAFC; }
   color: #fff;
   transform: translateY(-1px);
 }
+.btn-instagram {
+  background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+  color: #ffffff;
+  border: 1px solid rgba(220, 39, 67, 0.4);
+  font-weight: 600;
+  font-size: 15px;
+  padding: 12px 24px;
+  border-radius: var(--radius);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 4px 6px -1px rgba(220, 39, 67, 0.25);
+  transition: all 150ms ease;
+  cursor: pointer;
+}
+.btn-instagram:hover {
+  filter: brightness(1.08);
+  color: #fff;
+  transform: translateY(-1px);
+}
 .simple-page-item {
   background: #ffffff;
   border: 1px solid var(--border);

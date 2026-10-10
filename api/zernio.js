@@ -89,7 +89,9 @@ async function zernioUnifiedHandler(req, res) {
     res.setHeader('Content-Type', 'application/json');
     const apiKey = process.env.ZERNIO_API_KEY;
     const profileId = process.env.ZERNIO_PROFILE_ID || '6aca100754c13a71092c1d1c';
-    const channel = query.channel || url.split('/').pop() || 'facebook';
+    const cleanUrl = url.split('?')[0];
+    const pathEnd = cleanUrl.split('/').pop();
+    const channel = (query.channel === 'instagram' || pathEnd === 'instagram') ? 'instagram' : 'facebook';
 
     if (!apiKey) {
       return res.status(500).json({

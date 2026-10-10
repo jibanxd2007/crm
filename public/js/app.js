@@ -232,13 +232,18 @@ class MetaCRMApp {
     const hash = window.location.hash || '';
     const fullUrl = search + hash;
 
-    if (fullUrl.includes('meta_auth=success') || fullUrl.includes('connected=true')) {
+    if (fullUrl.includes('meta_auth=success') || fullUrl.includes('connected=true') || fullUrl.includes('connected=facebook') || fullUrl.includes('connected=instagram')) {
       const pageNameMatch = fullUrl.match(/page_name=([^&]+)/);
       const pageIdMatch = fullUrl.match(/page_id=([^&]+)/);
-      const pageName = pageNameMatch ? decodeURIComponent(pageNameMatch[1]) : 'Your Facebook Page';
+      const usernameMatch = fullUrl.match(/username=([^&]+)/);
+      const isIg = fullUrl.includes('channel=instagram') || fullUrl.includes('connected=instagram') || (usernameMatch && fullUrl.includes('instagram'));
+      const rawName = pageNameMatch ? decodeURIComponent(pageNameMatch[1]) : (usernameMatch ? decodeURIComponent(usernameMatch[1]) : (isIg ? 'Instagram Account' : 'Facebook Page'));
+      const pageName = isIg && !rawName.startsWith('@') ? `@${rawName}` : rawName;
       const pageId = pageIdMatch ? decodeURIComponent(pageIdMatch[1]) : `page_${Date.now()}`;
+      const channel = isIg ? 'instagram' : 'facebook';
+      const color = isIg ? '#E1306C' : '#1877F2';
 
-      // Register connected page in CRM state
+      // Register connected page/account in CRM state
       if (this.svc) {
         if (!this.svc.pages) this.svc.pages = [];
         const existing = this.svc.pages.find(p => p.id === pageId || p.page_id === pageId);
@@ -247,7 +252,9 @@ class MetaCRMApp {
             id: pageId,
             page_id: pageId,
             name: pageName,
-            color: '#1877F2',
+            channel: channel,
+            color: color,
+            provider: 'zernio',
             connected_at: new Date().toISOString()
           });
           if (this.svc._saveToStorage) this.svc._saveToStorage();
@@ -257,7 +264,7 @@ class MetaCRMApp {
 
       this.metaConnectionState = 'connected';
       try { localStorage.setItem('metacrm_meta_conn_state', 'connected'); } catch (e) {}
-      this.toast(`✅ "${pageName}" is connected! Leads will now appear automatically.`, 'success');
+      this.toast(`✅ "${pageName}" is connected! Leads & messages will now appear automatically.`, 'success');
       
       if (window.history && window.history.replaceState) {
         window.history.replaceState({}, document.title, window.location.pathname + '#connections');
@@ -1477,24 +1484,34 @@ class MetaCRMApp {
     const userPages = this._getAccessiblePages().map(p => p.id);
     const accessibleConvs = convs.filter(c => !c.page_id || userPages.includes(c.page_id));
 
-    const convList = accessibleConvs;
+    const activeTab = this.inboxTab || 'all';
+    let filteredConvs = accessibleConvs;
+    if (activeTab === 'unread') {
+      filteredConvs = filteredConvs.filter(c => (c.unread || 0) > 0);
+    } else if (activeTab === 'messenger') {
+      filteredConvs = filteredConvs.filter(c => !c.channel || c.channel.toLowerCase().includes('mess') || c.channel.toLowerCase().includes('face'));
+    } else if (activeTab === 'instagram') {
+      filteredConvs = filteredConvs.filter(c => c.channel && c.channel.toLowerCase().includes('insta'));
+    }
 
-    if (convList.length === 0) {
+    const convList = filteredConvs;
+
+    if (accessibleConvs.length === 0) {
       this.el.content.innerHTML = this._empty(
         'No conversations yet',
         'Incoming messages from Facebook Messenger and Instagram Direct will appear here in real-time once connected.',
         '#connections',
-        'Connect Facebook Page &amp; IG →',
+        'Connect Facebook Page &amp; Instagram →',
         null,
         '💬'
       );
       return;
     }
 
-    const activeConv = convList.find(c => c.id === this.activeConvId) || convList[0];
-    const matchingLead = this.svc ? this.svc.leads.find(l => l.name === activeConv.name || (activeConv.phone && l.phone === activeConv.phone)) : null;
-    const messages = activeConv.messages || (activeConv.preview ? [{ text: activeConv.preview, incoming: true, time: activeConv.time }] : []);
-    const unreadInboxCount = convList.filter(c => (c.unread || 0) > 0).length;
+    const activeConv = convList.find(c => c.id === this.activeConvId) || convList[0] || accessibleConvs[0];
+    const matchingLead = (this.svc && activeConv) ? this.svc.leads.find(l => l.name === activeConv.name || (activeConv.phone && l.phone === activeConv.phone)) : null;
+    const messages = activeConv ? (activeConv.messages || (activeConv.preview ? [{ text: activeConv.preview, incoming: true, time: activeConv.time }] : [])) : [];
+    const unreadInboxCount = accessibleConvs.filter(c => (c.unread || 0) > 0).length;
 
     this.el.content.innerHTML = `
       ${this._renderTip('messages', 'When someone messages your Facebook Page or Instagram, you can reply directly from here.')}
@@ -1505,16 +1522,20 @@ class MetaCRMApp {
           <div class="inbox-sidebar-header">
             <input type="text" class="input" placeholder="Search conversations…" style="margin-bottom:8px;">
             <div class="inbox-filter-tabs">
-              <div class="inbox-tab active">All</div>
-              <div class="inbox-tab">Unread (${unreadInboxCount})</div>
-              <div class="inbox-tab">Messenger</div>
-              <div class="inbox-tab">Instagram</div>
+              <div class="inbox-tab ${activeTab === 'all' ? 'active' : ''}" onclick="window.app.setInboxTab('all')">All</div>
+              <div class="inbox-tab ${activeTab === 'unread' ? 'active' : ''}" onclick="window.app.setInboxTab('unread')">Unread (${unreadInboxCount})</div>
+              <div class="inbox-tab ${activeTab === 'messenger' ? 'active' : ''}" onclick="window.app.setInboxTab('messenger')">Messenger</div>
+              <div class="inbox-tab ${activeTab === 'instagram' ? 'active' : ''}" onclick="window.app.setInboxTab('instagram')">Instagram</div>
             </div>
           </div>
           <div class="inbox-conv-list">
-            ${convList.map(c => `
-              <div class="inbox-conv-item ${c.id === activeConv.id ? 'active' : ''}" onclick="window.app.selectInboxConv('${c.id}')">
-                <div class="conv-avatar">${(c.name||'?').charAt(0)}</div>
+            ${convList.length === 0 ? `<div class="text-xs text-gray text-center my-6">No ${activeTab} conversations found.</div>` : convList.map(c => {
+              const isIg = c.channel && c.channel.toLowerCase().includes('insta');
+              return `
+              <div class="inbox-conv-item ${activeConv && c.id === activeConv.id ? 'active' : ''}" onclick="window.app.selectInboxConv('${c.id}')">
+                <div class="conv-avatar" style="${isIg ? 'background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);color:#fff;' : 'background:#1877F2;color:#fff;'}">
+                  ${isIg ? '📷' : (c.name||'?').charAt(0)}
+                </div>
                 <div class="conv-info">
                   <div class="conv-name-row">
                     <span class="conv-name">${c.name}</span>
@@ -1522,12 +1543,15 @@ class MetaCRMApp {
                   </div>
                   <div class="conv-preview">${c.preview || ''}</div>
                   <div class="conv-channel">
-                    <span>${c.channel || 'Messenger'}</span> · 
+                    <span style="${isIg ? 'color:#E1306C;font-weight:600;' : 'color:#1877F2;font-weight:600;'}">
+                      ${isIg ? '📷 Instagram Direct' : '💬 Messenger'}
+                    </span> · 
                     <span class="text-gray">${this._pageName(c.page_id)}</span>
                   </div>
                 </div>
                 ${(c.unread || 0) > 0 ? `<div class="conv-unread">${c.unread}</div>` : ''}
-              </div>`).join('')}
+              </div>`;
+            }).join('')}
           </div>
         </div>
 
@@ -1586,6 +1610,11 @@ class MetaCRMApp {
           `}
         </div>
       </div>`;
+  }
+
+  setInboxTab(tab) {
+    this.inboxTab = tab;
+    this.renderInbox();
   }
 
   selectInboxConv(convId) {
@@ -1756,23 +1785,28 @@ class MetaCRMApp {
         </button>
       </div>` : ''}
 
-      <!-- 2. IF NOT CONNECTED: BIG OBVIOUS 1-CLICK BUTTON -->
+      <!-- 2. IF NOT CONNECTED: DUAL 1-CLICK BUTTONS (FACEBOOK & INSTAGRAM) -->
       ${!isConnected && !isExpired ? `
       <div class="simple-connect-card">
-        <div style="width:64px;height:64px;border-radius:18px;background:#1877F2;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:32px;font-weight:700;margin-bottom:16px;">
-          f
+        <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:16px;">
+          <div style="width:56px;height:56px;border-radius:16px;background:#1877F2;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;">f</div>
+          <div style="width:56px;height:56px;border-radius:16px;background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:26px;">📷</div>
         </div>
         <h2 style="font-size:22px;font-weight:700;color:var(--text-primary);margin-bottom:8px;">
-          Connect your Facebook Page
+          Connect Facebook &amp; Instagram
         </h2>
-        <p style="font-size:14px;color:var(--text-secondary);max-width:480px;margin:0 auto 24px;line-height:1.5;">
-          Connect your business page in one click. Inquiries and lead forms from Facebook and Instagram will appear in your CRM automatically.
+        <p style="font-size:14px;color:var(--text-secondary);max-width:520px;margin:0 auto 24px;line-height:1.5;">
+          Connect your Facebook Business Page or Instagram Business Account. Inquiries, lead ads, Direct Messages, and comments will flow into your CRM automatically.
         </p>
 
-        <div style="margin-bottom:24px;">
+        <div style="margin-bottom:24px;display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;">
           <button class="btn-facebook" id="btn-main-connect-fb" onclick="window.app.connectFacebookOAuth()">
             <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
             <span id="connect-fb-btn-text">Connect Facebook Page</span>
+          </button>
+          <button class="btn-instagram" id="btn-main-connect-ig" onclick="window.app.connectInstagramOAuth()">
+            <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+            <span id="connect-ig-btn-text">Connect Instagram Account</span>
           </button>
         </div>
 
@@ -1781,10 +1815,10 @@ class MetaCRMApp {
             <span style="color:#10B981;font-weight:700;">✓</span> Leads appear in your CRM within seconds
           </div>
           <div style="display:flex;align-items:center;gap:10px;">
-            <span style="color:#10B981;font-weight:700;">✓</span> Call or WhatsApp leads with one click
+            <span style="color:#10B981;font-weight:700;">✓</span> Direct reply to Facebook Messenger &amp; Instagram DMs
           </div>
           <div style="display:flex;align-items:center;gap:10px;">
-            <span style="color:#10B981;font-weight:700;">✓</span> Works with Facebook Lead Ads, Messenger, &amp; Instagram
+            <span style="color:#10B981;font-weight:700;">✓</span> Works with Facebook Lead Ads &amp; Instagram Lead Forms
           </div>
         </div>
       </div>` : ''}
@@ -1800,21 +1834,24 @@ class MetaCRMApp {
             <div>
               <div style="display:flex;align-items:center;gap:10px;">
                 <h2 style="font-size:20px;font-weight:700;color:var(--text-primary);margin:0;">
-                  ${primaryPage ? primaryPage.name : 'Your Facebook Page'} is connected
+                  ${primaryPage ? primaryPage.name : 'Your Accounts'} are connected
                 </h2>
                 <span class="badge badge-green">Active</span>
               </div>
               <p style="font-size:13px;color:var(--text-secondary);margin:4px 0 0;">
-                Leads from your Facebook ads and page messages will now appear in your CRM automatically.
+                Inbound leads and messages from Facebook &amp; Instagram will now appear in your CRM automatically.
               </p>
             </div>
           </div>
-          <div style="display:flex;align-items:center;gap:10px;">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <button class="btn btn-primary" onclick="window.app.syncConnections()">
-              🔄 Sync with Meta
+              🔄 Sync Accounts
             </button>
-            <button class="btn btn-secondary btn-sm" onclick="window.app.openConnectPageModal()">
-              + Connect Another Page
+            <button class="btn btn-secondary btn-sm" onclick="window.app.connectFacebookOAuth()">
+              + Add Facebook Page
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.connectInstagramOAuth()" style="border-color:#E1306C;color:#E1306C;">
+              + Add Instagram Account
             </button>
           </div>
         </div>
@@ -1823,23 +1860,30 @@ class MetaCRMApp {
       <!-- CONNECTED PAGES LIST -->
       <div class="card">
         <div class="card-header">
-          <div class="card-title">Connected Facebook &amp; Instagram Pages (${pages.length})</div>
+          <div class="card-title">Connected Facebook &amp; Instagram Channels (${pages.length})</div>
         </div>
         <div>
-          ${pages.map(p => `
+          ${pages.map(p => {
+            const isIg = p.channel === 'instagram' || p.name.startsWith('@');
+            return `
             <div class="simple-page-item">
               <div style="display:flex;align-items:center;gap:14px;">
-                <div style="width:40px;height:40px;border-radius:10px;background:#1877F2;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;">f</div>
+                <div style="width:40px;height:40px;border-radius:10px;${isIg ? 'background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888)' : 'background:#1877F2'};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;">
+                  ${isIg ? '📷' : 'f'}
+                </div>
                 <div>
                   <strong style="font-size:15px;color:var(--text-primary);">${p.name}</strong>
-                  <div class="text-xs text-gray" style="margin-top:2px;">Facebook Page · Instagram Direct Linked</div>
+                  <div class="text-xs text-gray" style="margin-top:2px;">
+                    ${isIg ? 'Instagram Business Account · Direct Messages Active' : 'Facebook Page · Messenger & Lead Ads Active'}
+                  </div>
                 </div>
               </div>
               <div style="display:flex;align-items:center;gap:10px;">
-                <span class="badge badge-green"><span class="status-dot green"></span> Receiving leads</span>
+                <span class="badge badge-green"><span class="status-dot green"></span> Receiving leads &amp; messages</span>
                 <button class="btn btn-ghost btn-sm text-red" style="color:var(--danger);" onclick="window.app.disconnectPage('${p.id}')">Disconnect</button>
               </div>
-            </div>`).join('')}
+            </div>`;
+          }).join('')}
         </div>
       </div>` : ''}
     `;
@@ -2059,6 +2103,30 @@ class MetaCRMApp {
       if (btnText) btnText.innerHTML = 'Connect Facebook Page';
       if (heroBtn) heroBtn.disabled = false;
       this.toast(`Couldn't connect: ${err.message}`, 'error');
+    }
+  }
+
+  async connectInstagramOAuth() {
+    const btnText = document.getElementById('connect-ig-btn-text');
+    const heroBtn = document.getElementById('btn-main-connect-ig');
+    if (btnText) btnText.innerHTML = '<span class="spinner"></span> Connecting Instagram…';
+    if (heroBtn) heroBtn.disabled = true;
+
+    this.toast('Opening Instagram to connect your business account…', 'info');
+
+    try {
+      const zRes = await fetch('/api/zernio/connect/instagram');
+      const zData = await zRes.json();
+      if (zData && zData.authUrl) {
+        window.location.href = zData.authUrl;
+        return;
+      }
+      throw new Error((zData && zData.error) || 'Please ensure ZERNIO_API_KEY is configured in Vercel.');
+    } catch (err) {
+      console.error('[Instagram Connect Error]:', err);
+      if (btnText) btnText.innerHTML = 'Connect Instagram Account';
+      if (heroBtn) heroBtn.disabled = false;
+      this.toast(`Couldn't connect Instagram: ${err.message}`, 'error');
     }
   }
 
