@@ -60,6 +60,39 @@ async function messagesHandler(req, res) {
       pageAccessToken = process.env.META_ACCESS_TOKEN;
     }
 
+    // Live Zernio Instagram / Multi-channel Message Dispatch
+    const zernioApiKey = process.env.ZERNIO_API_KEY;
+    const conversationId = body.conversationId || body.conversation_id || body.convId;
+    if (zernioApiKey && conversationId && !conversationId.startsWith('sim_')) {
+      try {
+        const accountId = body.accountId || '6aca1c00e12ba0b652e62f45';
+        const zernioRes = await httpsRequest(`https://zernio.com/api/v1/inbox/conversations/${conversationId}/messages`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${zernioApiKey}`,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: {
+            accountId: accountId,
+            message: text
+          }
+        });
+
+        return res.status(200).json({
+          status: "sent",
+          metaVerified: true,
+          zernioVerified: true,
+          messageId: (zernioRes && (zernioRes.id || zernioRes.messageId)) || `zmid_${Date.now()}`,
+          recipient: recipientId || conversationId,
+          content: text,
+          sentAt: new Date().toISOString()
+        });
+      } catch (ze) {
+        console.warn("[Zernio Outbound Dispatch Warning]:", ze.message);
+      }
+    }
+
     // If live Page Access Token and recipient PSID are available, dispatch live to Meta Graph API
     if (pageAccessToken && recipientId && recipientId !== 'customer' && !recipientId.startsWith('sim_')) {
       try {

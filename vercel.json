@@ -84,6 +84,18 @@
       "destination": "/api/zernio?path=accounts"
     },
     {
+      "source": "/api/zernio/inbox/conversations/(.*)/messages",
+      "destination": "/api/zernio?path=inbox-messages&conversationId=$1"
+    },
+    {
+      "source": "/api/zernio/inbox/conversations/(.*)",
+      "destination": "/api/zernio?path=inbox-conv&conversationId=$1"
+    },
+    {
+      "source": "/api/zernio/inbox/conversations",
+      "destination": "/api/zernio?path=inbox-conversations"
+    },
+    {
       "source": "/api/zernio/simulate-lead",
       "destination": "/api/zernio?path=simulate-lead"
     },

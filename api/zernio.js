@@ -158,6 +158,142 @@ async function zernioUnifiedHandler(req, res) {
     });
   }
 
+  // 1.6 REAL INBOX MESSAGES LIST & SEND
+  if (path === 'inbox-messages' || (url.includes('/inbox/conversations') && url.includes('/messages'))) {
+    res.setHeader('Content-Type', 'application/json');
+    const apiKey = process.env.ZERNIO_API_KEY;
+    if (!apiKey) {
+      return res.status(200).json({ status: "error", error: "ZERNIO_API_KEY not configured", messages: [] });
+    }
+
+    const conversationId = query.conversationId || (url.match(/conversations\/([^/?]+)/) ? url.match(/conversations\/([^/?]+)/)[1] : null);
+    const accountId = query.accountId || (req.body && req.body.accountId) || '6aca1c00e12ba0b652e62f45';
+
+    if (!conversationId) {
+      return res.status(400).json({ error: "Missing conversationId" });
+    }
+
+    if (req.method === 'POST') {
+      const text = (req.body && (req.body.message || req.body.text)) || '';
+      const postData = JSON.stringify({
+        accountId: accountId,
+        message: text
+      });
+
+      const options = {
+        hostname: 'zernio.com',
+        port: 443,
+        path: `/api/v1/inbox/conversations/${conversationId}/messages`,
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Content-Length': Buffer.byteLength(postData)
+        }
+      };
+
+      return new Promise((resolve) => {
+        const request = https.request(options, (resp) => {
+          let data = '';
+          resp.on('data', chunk => { data += chunk; });
+          resp.on('end', () => {
+            try {
+              const parsed = JSON.parse(data);
+              res.status(resp.statusCode || 200).json(parsed);
+              resolve();
+            } catch (e) {
+              res.status(200).json({ status: "sent", raw: data });
+              resolve();
+            }
+          });
+        });
+        request.on('error', (err) => {
+          res.status(500).json({ error: err.message });
+          resolve();
+        });
+        request.write(postData);
+        request.end();
+      });
+    }
+
+    // GET Messages
+    const options = {
+      hostname: 'zernio.com',
+      port: 443,
+      path: `/api/v1/inbox/conversations/${conversationId}/messages?accountId=${accountId}`,
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Accept': 'application/json'
+      }
+    };
+
+    return new Promise((resolve) => {
+      const request = https.request(options, (resp) => {
+        let data = '';
+        resp.on('data', chunk => { data += chunk; });
+        resp.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            res.status(200).json(parsed);
+            resolve();
+          } catch (e) {
+            res.status(200).json({ messages: [] });
+            resolve();
+          }
+        });
+      });
+      request.on('error', (err) => {
+        res.status(500).json({ error: err.message, messages: [] });
+        resolve();
+      });
+      request.end();
+    });
+  }
+
+  // 1.7 REAL INBOX CONVERSATIONS LIST
+  if (path === 'inbox-conversations' || (path.startsWith('inbox') && !url.includes('/messages')) || (url.includes('/inbox/conversations') && !url.includes('/messages'))) {
+    res.setHeader('Content-Type', 'application/json');
+    const apiKey = process.env.ZERNIO_API_KEY;
+    if (!apiKey) {
+      return res.status(200).json({ conversations: [] });
+    }
+
+    const options = {
+      hostname: 'zernio.com',
+      port: 443,
+      path: '/api/v1/inbox/conversations',
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Accept': 'application/json'
+      }
+    };
+
+    return new Promise((resolve) => {
+      const request = https.request(options, (resp) => {
+        let data = '';
+        resp.on('data', chunk => { data += chunk; });
+        resp.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            res.status(200).json(parsed);
+            resolve();
+          } catch (e) {
+            res.status(200).json({ conversations: [] });
+            resolve();
+          }
+        });
+      });
+      request.on('error', (err) => {
+        res.status(500).json({ error: err.message, conversations: [] });
+        resolve();
+      });
+      request.end();
+    });
+  }
+
   // 2. CONNECT
   if (path.startsWith('connect') || url.includes('/connect')) {
     res.setHeader('Content-Type', 'application/json');

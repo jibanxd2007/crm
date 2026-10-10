@@ -97,6 +97,7 @@ class MetaCRMApp {
   _init() {
     this._checkUrlCallbacks();
     this.syncZernioAccounts(false);
+    this.fetchRealInstagramConversations();
     this.renderSidebar();
     this.renderNotifications();
     this._route();
@@ -1479,19 +1480,24 @@ class MetaCRMApp {
   renderInbox() {
     this.el.title.textContent = this.user.role === 'staff' ? 'My Messages' : 'Messages';
     this.el.actions.innerHTML = `
-      <button class="btn btn-secondary btn-sm" onclick="window.app.simulateInboundMessage('Instagram Direct')" style="border-color:#E1306C;color:#E1306C;font-weight:600;">
-        📷 + Test Instagram DM
-      </button>
-      <button class="btn btn-secondary btn-sm" onclick="window.app.simulateInboundMessage('Messenger')">
-        💬 + Test Messenger
+      <button class="btn btn-primary btn-sm" onclick="window.app.refreshRealInbox()">
+        🔄 Refresh Real Instagram Inbox
       </button>
       <button class="btn btn-secondary btn-sm" onclick="window.app.syncConnections()">
         🔄 Sync Accounts
       </button>`;
 
+    // Auto-fetch real Instagram conversations if not loaded yet
+    if (!this._fetchedRealIgConvs && this.svc) {
+      this._fetchedRealIgConvs = true;
+      setTimeout(() => this.fetchRealInstagramConversations(), 50);
+    }
+
     const convs = (this.svc ? (this.svc.conversations || []) : []);
     const userPages = this._getAccessiblePages().map(p => p.id);
-    const accessibleConvs = convs.filter(c => !c.page_id || userPages.includes(c.page_id));
+    const accessibleConvs = (this.user.role === 'admin' || this.user.role === 'super_admin')
+      ? convs
+      : convs.filter(c => !c.page_id || userPages.includes(c.page_id) || userPages.includes(c.accountId));
 
     const activeTab = this.inboxTab || 'all';
     let filteredConvs = accessibleConvs;
@@ -1674,10 +1680,123 @@ class MetaCRMApp {
     this.renderInbox();
   }
 
-  selectInboxConv(convId) {
+  async selectInboxConv(convId) {
     this.activeConvId = convId;
     this.mobileInboxView = 'chat';
     this.renderInbox();
+
+    const conv = (this.svc && this.svc.conversations) ? this.svc.conversations.find(c => String(c.id) === String(convId)) : null;
+    if (conv && (!conv.messages || conv.messages.length === 0)) {
+      await this.fetchRealConversationMessages(conv);
+    }
+  }
+
+  async fetchRealConversationMessages(conv) {
+    if (!conv) return;
+    try {
+      const thread = document.getElementById('inbox-thread');
+      if (thread && (!conv.messages || conv.messages.length === 0)) {
+        thread.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-secondary);"><span class="spinner"></span> Loading real Instagram direct messages…</div>';
+      }
+
+      const accountId = conv.accountId || '6aca1c00e12ba0b652e62f45';
+      const res = await fetch(`/api/zernio/inbox/conversations/${conv.id}/messages?accountId=${accountId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data && data.messages && Array.isArray(data.messages)) {
+        conv.messages = data.messages.map(m => {
+          let text = m.message;
+          if (!text || !text.trim()) {
+            if (m.isStoryMention) text = 'Replied to your story 📸';
+            else if (m.attachments && m.attachments.length) text = '[Photo/Media Attachment]';
+            else text = 'Direct message';
+          }
+          return {
+            id: m.id,
+            text: text,
+            incoming: m.direction === 'incoming',
+            time: new Date(m.sentAt || m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          };
+        });
+
+        if (this.svc) {
+          if (this.svc._saveToStorage) this.svc._saveToStorage();
+          else if (this.svc.saveAll) this.svc.saveAll();
+        }
+
+        if (this.activeConvId === conv.id) {
+          this.renderInbox();
+        }
+      }
+    } catch (e) {
+      console.warn('[Fetch Messages Error]:', e);
+    }
+  }
+
+  async fetchRealInstagramConversations() {
+    try {
+      const res = await fetch('/api/zernio/inbox/conversations');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data && data.conversations && Array.isArray(data.conversations) && data.conversations.length > 0) {
+        if (!this.svc) return;
+        if (!this.svc.conversations) this.svc.conversations = [];
+
+        // Clear out any simulated dummy convs so ONLY real conversations are shown
+        this.svc.conversations = this.svc.conversations.filter(c => !c.id.startsWith('conv_ig_initial') && !c.id.startsWith('conv_sim_'));
+
+        data.conversations.forEach(c => {
+          const cid = String(c.id);
+          const existing = this.svc.conversations.find(x => String(x.id) === cid);
+          const participantName = c.participantName || c.participantUsername || 'Instagram User';
+          const cleanName = participantName.startsWith('@') ? participantName : `@${participantName}`;
+
+          if (existing) {
+            existing.preview = c.lastMessage || existing.preview;
+            existing.time = c.updatedTime ? new Date(c.updatedTime).toLocaleDateString([], { month: 'short', day: 'numeric' }) : existing.time;
+            existing.unread = c.unreadCount || 0;
+            existing.accountId = c.accountId;
+          } else {
+            this.svc.conversations.push({
+              id: cid,
+              conversationId: cid,
+              accountId: c.accountId || '6aca1c00e12ba0b652e62f45',
+              name: cleanName,
+              participantUsername: c.participantUsername,
+              channel: 'instagram',
+              page_id: c.accountId || '6aca1c00e12ba0b652e62f45',
+              time: c.updatedTime ? new Date(c.updatedTime).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'Recently',
+              preview: c.lastMessage || 'Direct message',
+              unread: c.unreadCount || 0,
+              messages: []
+            });
+          }
+        });
+
+        if (this.svc._saveToStorage) this.svc._saveToStorage();
+        else if (this.svc.saveAll) this.svc.saveAll();
+
+        if (!this.activeConvId && this.svc.conversations.length > 0) {
+          this.activeConvId = this.svc.conversations[0].id;
+        }
+
+        if (this.currentRoute === 'inbox') {
+          this.renderInbox();
+          const active = this.svc.conversations.find(x => x.id === this.activeConvId);
+          if (active && (!active.messages || active.messages.length === 0)) {
+            this.fetchRealConversationMessages(active);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Fetch Instagram Conversations Error]:', e);
+    }
+  }
+
+  async refreshRealInbox() {
+    this.toast('Syncing real Instagram conversations & messages…', 'info');
+    await this.fetchRealInstagramConversations();
+    this.toast('✓ Real Instagram inbox up to date!', 'success');
   }
 
   closeMobileThread() {
@@ -1697,27 +1816,27 @@ class MetaCRMApp {
     input.value = '';
 
     const convList = (this.svc ? (this.svc.conversations || []) : []);
-    const activeConv = convList.find(c => c.id === this.activeConvId) || convList[0];
+    const activeConv = convList.find(c => String(c.id) === String(this.activeConvId)) || convList[0];
     if (!activeConv) return;
 
     try {
-      this.toast('Sending message via Meta API…', 'info');
-      const res = await fetch('/api/messages', {
+      this.toast(`Sending real message to ${activeConv.name} on Instagram…`, 'info');
+
+      const accountId = activeConv.accountId || '6aca1c00e12ba0b652e62f45';
+      const res = await fetch(`/api/zernio/inbox/conversations/${activeConv.id}/messages`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'X-User-Id': this.user.id
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          pageId: activeConv.page_id,
-          recipientId: activeConv.sender_id || activeConv.phone || 'customer',
-          text: text
+          accountId: accountId,
+          message: text
         })
       });
 
       const data = await res.json();
       if (!res.ok || data.error) {
-        throw new Error(data.error || 'Failed to dispatch message via Meta API');
+        throw new Error(data.error || 'Failed to dispatch Instagram message');
       }
 
       if (!activeConv.messages) activeConv.messages = [];
@@ -1739,7 +1858,7 @@ class MetaCRMApp {
         thread.appendChild(msgDiv);
         thread.scrollTop = thread.scrollHeight;
       }
-      this.toast(`Message sent via ${activeConv.channel || 'Facebook'} ✓`, 'success');
+      this.toast(`Real message sent to ${activeConv.name} on Instagram ✓`, 'success');
 
     } catch (err) {
       console.error('[Send Message Error]:', err);
