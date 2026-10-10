@@ -32,6 +32,13 @@ async function metaOAuthUnifiedHandler(req, res) {
       return res.redirect(`/#connections?meta_auth=error&msg=${encodeURIComponent(errorMsg)}`);
     }
 
+    // Zernio OAuth Redirect Handling
+    if (query.connected) {
+      const pageName = query.username || query.page_name || 'Facebook Business Page';
+      const pageId = query.accountId || query.page_id || `page_${Date.now()}`;
+      return res.redirect(`/#connections?meta_auth=success&page_name=${encodeURIComponent(pageName)}&page_id=${encodeURIComponent(pageId)}&provider=zernio`);
+    }
+
     if (!code) {
       return res.redirect(`/#connections?meta_auth=error&msg=${encodeURIComponent('No authorization code received from Facebook')}`);
     }
@@ -151,9 +158,33 @@ async function metaOAuthUnifiedHandler(req, res) {
   // B. URL GENERATION MODE: Return OAuth Dialog URL
   // --------------------------------------------------------------------------
   if (!clientId) {
+    const zernioApiKey = process.env.ZERNIO_API_KEY;
+    if (zernioApiKey) {
+      const profileId = process.env.ZERNIO_PROFILE_ID || '6aca100754c13a71092c1d1c';
+      try {
+        const zernioConnectUrl = `https://zernio.com/api/v1/connect/facebook?profileId=${profileId}&redirect_url=${encodeURIComponent(redirectUri)}`;
+        const zRes = await httpsRequest(zernioConnectUrl, {
+          headers: { 'Authorization': `Bearer ${zernioApiKey}`, 'Accept': 'application/json' }
+        });
+        if (zRes && zRes.authUrl) {
+          if (query.redirect === 'true') {
+            return res.redirect(zRes.authUrl);
+          }
+          return res.status(200).json({
+            status: "success",
+            url: zRes.authUrl,
+            gateway: "zernio",
+            profileId: profileId
+          });
+        }
+      } catch (ze) {
+        console.warn("[Zernio OAuth Dispatch Error]:", ze.message);
+      }
+    }
+
     return res.status(500).json({
-      error: "META_APP_ID is not configured in environment variables.",
-      help: "Please set META_APP_ID in your Vercel Project Settings -> Environment Variables."
+      error: "META_APP_ID or ZERNIO_API_KEY is not configured in environment variables.",
+      help: "Please set ZERNIO_API_KEY (or META_APP_ID) in your Vercel Project Settings -> Environment Variables."
     });
   }
 

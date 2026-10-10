@@ -87,35 +87,65 @@ async function zernioUnifiedHandler(req, res) {
   // 2. CONNECT
   if (path.startsWith('connect') || url.includes('/connect')) {
     res.setHeader('Content-Type', 'application/json');
-    const profileId = process.env.ZERNIO_PROFILE_ID;
-    const clientId = process.env.META_APP_ID;
+    const apiKey = process.env.ZERNIO_API_KEY;
+    const profileId = process.env.ZERNIO_PROFILE_ID || '6aca100754c13a71092c1d1c';
     const channel = query.channel || url.split('/').pop() || 'facebook';
 
-    if (!profileId || !clientId) {
+    if (!apiKey) {
       return res.status(500).json({
-        error: "ZERNIO_PROFILE_ID and META_APP_ID must be configured in environment variables."
+        error: "ZERNIO_API_KEY must be configured in environment variables."
       });
     }
 
-    const redirectUri = encodeURIComponent("https://zernio.com/api/v1/auth/facebook/callback");
-    const state = encodeURIComponent(JSON.stringify({ profileId: profileId, channel: channel, source: "metacrm_vercel" }));
+    const host = req.headers['x-forwarded-host'] || req.headers.host || process.env.VERCEL_URL || "crm-beta-three-36.vercel.app";
+    const proto = req.headers['x-forwarded-proto'] || (host.includes('localhost') ? 'http' : 'https');
+    const redirectUrl = process.env.META_REDIRECT_URI || `${proto}://${host}/api/meta/callback`;
 
-    let scopes = "pages_show_list,pages_read_engagement,pages_manage_metadata,leads_retrieval,pages_manage_ads";
-    if (channel === 'instagram') {
-      scopes += ",instagram_basic,instagram_manage_messages";
-    } else if (channel === 'ads') {
-      scopes += ",ads_read,ads_management";
-    }
+    const options = {
+      hostname: 'zernio.com',
+      port: 443,
+      path: `/api/v1/connect/${channel}?profileId=${profileId}&redirect_url=${encodeURIComponent(redirectUrl)}`,
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Accept': 'application/json'
+      }
+    };
 
-    const metaAuthUrl = `https://www.facebook.com/v24.0/dialog/oauth?client_id=${clientId}&redirect_uri=${redirectUri}&state=${state}&scope=${encodeURIComponent(scopes)}&response_type=code`;
+    return new Promise((resolve) => {
+      const request = https.request(options, (resp) => {
+        let data = '';
+        resp.on('data', chunk => { data += chunk; });
+        resp.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.authUrl) {
+              res.status(200).json({
+                status: "success",
+                channel: channel,
+                authUrl: parsed.authUrl,
+                url: parsed.authUrl,
+                gateway: "Zernio Meta Verified OAuth",
+                timestamp: new Date().toISOString()
+              });
+              resolve();
+              return;
+            }
+            res.status(resp.statusCode || 200).json(parsed);
+            resolve();
+          } catch (e) {
+            res.status(500).json({ error: "Failed to parse Zernio connect response", raw: data });
+            resolve();
+          }
+        });
+      });
 
-    return res.status(200).json({
-      status: "success",
-      channel: channel,
-      clientId: clientId,
-      authUrl: metaAuthUrl,
-      gateway: "Zernio Meta Verified OAuth",
-      timestamp: new Date().toISOString()
+      request.on('error', (err) => {
+        res.status(502).json({ error: err.message });
+        resolve();
+      });
+
+      request.end();
     });
   }
 
