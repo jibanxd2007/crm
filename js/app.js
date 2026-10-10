@@ -142,6 +142,10 @@ class MetaCRMApp {
       if (this.el.notifPopover && !this.el.notifPopover.contains(e.target) && e.target !== this.el.notifBtn && !this.el.notifBtn?.contains(e.target)) {
         this.el.notifPopover.classList.remove('open');
       }
+      const dd = document.getElementById('ws-dropdown');
+      if (dd && !e.target.closest('.workspace-switcher-wrapper')) {
+        dd.style.display = 'none';
+      }
     });
 
     // Real-time notification handler
@@ -574,53 +578,88 @@ class MetaCRMApp {
     const newLeads = leads.filter(l => l.status === 'New' || l.status === 'New Lead').length;
     const tasks = this._filterUserTasks(this.svc ? this.svc.tasks : []);
     const overdueTasks = tasks.filter(t => t.status !== 'Done' && t.dueDate && new Date(t.dueDate) < new Date()).length;
+    const activeWs = this.selectedWorkspace || 'Acme MetaCRM';
 
     const sections = [
       {
-        title: 'MAIN',
+        title: 'OVERVIEW',
         items: [
-          { id: 'dashboard',   icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>`, label: 'Dashboard' },
-          { id: 'leads',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`, label: 'Leads', badge: newLeads || null },
-          { id: 'inbox',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`, label: 'Messages', badge: (this.svc ? (this.svc.conversations||[]).reduce((s,c)=>s+(c.unread||0),0) : 0) || null },
-          { id: 'tasks',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`, label: 'Follow-ups', badge: overdueTasks || null },
-          { id: 'pipeline',    icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`, label: 'Pipeline' },
-          { id: 'connections', icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>`, label: 'Connect Facebook' },
+          { id: 'dashboard',   icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`, label: 'Dashboard', shortcut: '⌘D' },
+          { id: 'leads',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`, label: 'Leads', badge: newLeads || null, shortcut: '⌘L' },
+          { id: 'inbox',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`, label: 'Messages', badge: (this.svc ? (this.svc.conversations||[]).reduce((s,c)=>s+(c.unread||0),0) : 0) || null, shortcut: '⌘M' },
+          { id: 'tasks',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`, label: 'Follow-ups', badge: overdueTasks || null, shortcut: '⌘T' },
         ]
       },
-      ...(isAdmin ? [{
-        title: 'MANAGEMENT',
+      {
+        title: 'WORKSPACE',
         items: [
-          { id: 'staff',   icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`, label: 'Team' },
-          { id: 'reports', icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`, label: 'Reports' },
+          { id: 'pipeline',    icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`, label: 'Pipeline', shortcut: '⌘P' },
+          { id: 'connections', icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>`, label: 'Connect Facebook', shortcut: '⌘C' },
+          ...(isAdmin ? [
+            { id: 'staff',   icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`, label: 'Team', shortcut: '⌘U' },
+            { id: 'reports', icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`, label: 'Reports', shortcut: '⌘R' },
+          ] : [])
         ]
-      }] : []),
+      }
     ];
 
-    let html = '';
+    let html = `
+      <div class="workspace-switcher-wrapper">
+        <div class="workspace-switcher-btn" onclick="window.app.toggleWorkspaceDropdown(event)" title="Switch Workspace">
+          <div style="display:flex;align-items:center;min-width:0;flex:1;">
+            <div class="ws-avatar">${activeWs.charAt(0).toUpperCase()}</div>
+            <div class="ws-info">
+              <span class="ws-name">${activeWs}</span>
+              <span class="ws-plan">Pro Plan</span>
+            </div>
+          </div>
+          <svg class="ws-chevron" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+        <div id="ws-dropdown" class="ws-dropdown" style="display:none;" onclick="event.stopPropagation()">
+          <div class="ws-dropdown-item ${activeWs === 'Acme MetaCRM' ? 'active' : ''}" onclick="window.app.selectWorkspace('Acme MetaCRM')">Acme MetaCRM</div>
+          <div class="ws-dropdown-item ${activeWs === 'Personal Workspace' ? 'active' : ''}" onclick="window.app.selectWorkspace('Personal Workspace')">Personal Workspace</div>
+          <div class="ws-dropdown-item ${activeWs === 'Client Sandbox' ? 'active' : ''}" onclick="window.app.selectWorkspace('Client Sandbox')">Client Sandbox</div>
+          <div class="ws-divider"></div>
+          <div class="ws-dropdown-item ws-create" onclick="window.app.createWorkspacePrompt()">+ Create Workspace</div>
+        </div>
+      </div>
+    `;
+
     sections.forEach(sec => {
       html += `<div class="nav-section-title">${sec.title}</div>`;
       sec.items.forEach(item => {
         const active = this.currentRoute === item.id ? 'active' : '';
         const badge = item.badge ? `<span class="nav-badge">${item.badge}</span>` : '';
+        const shortcut = item.shortcut ? `<kbd class="nav-shortcut">${item.shortcut}</kbd>` : '';
         html += `
           <a href="#${item.id}" class="nav-item ${active}">
-            <span class="nav-icon">${item.icon}</span>
-            <span class="nav-text">${item.label}</span>
-            ${badge}
+            <div class="nav-item-left">
+              <span class="nav-icon">${item.icon}</span>
+              <span class="nav-text">${item.label}</span>
+            </div>
+            <div class="nav-item-right">
+              ${shortcut}
+              ${badge}
+            </div>
           </a>`;
       });
     });
 
-    // Bottom Navigation with User Profile & Role Switcher
+    // Bottom Navigation with Settings & User Profile
     html += `
       <div class="sidebar-spacer"></div>
       <div class="nav-bottom">
         <a href="#settings" class="nav-item ${this.currentRoute === 'settings' ? 'active' : ''}">
-          <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
-          <span class="nav-text">Settings</span>
+          <div class="nav-item-left">
+            <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+            <span class="nav-text">Settings</span>
+          </div>
+          <div class="nav-item-right">
+            <kbd class="nav-shortcut">⌘,</kbd>
+          </div>
         </a>
         <div class="user-profile-item" onclick="window.app.openUserSwitchModal()">
-          <div class="user-avatar" style="background:${this.user.role === 'admin' ? 'var(--accent)' : '#10B981'}">
+          <div class="user-avatar" style="background:${this.user.role === 'admin' ? 'var(--accent, #FF5A1F)' : '#10B981'}">
             ${(this.user.name || 'A').charAt(0).toUpperCase()}
           </div>
           <div class="nav-text user-info">
@@ -628,13 +667,42 @@ class MetaCRMApp {
             <div class="user-role">${this._roleLabel(this.user.role)} · Switch ▾</div>
           </div>
         </div>
-        <div class="user-profile-item" style="padding:6px 10px;margin-top:2px;cursor:pointer;border-radius:var(--radius-sm);" onclick="window.app.logout()">
-          <span style="font-size:13px;margin-right:8px;">🚪</span>
-          <span class="text-xs text-gray font-semibold">Sign Out</span>
+        <div class="nav-item" style="margin-top:2px;" onclick="window.app.logout()">
+          <div class="nav-item-left">
+            <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg></span>
+            <span class="nav-text">Log out</span>
+          </div>
         </div>
       </div>`;
 
     this.el.nav.innerHTML = html;
+  }
+
+  toggleWorkspaceDropdown(e) {
+    if (e) e.stopPropagation();
+    const dd = document.getElementById('ws-dropdown');
+    if (dd) {
+      dd.style.display = dd.style.display === 'none' ? 'flex' : 'none';
+    }
+  }
+
+  selectWorkspace(name) {
+    this.selectedWorkspace = name;
+    const dd = document.getElementById('ws-dropdown');
+    if (dd) dd.style.display = 'none';
+    this.renderSidebar();
+    if (typeof this.toast === 'function') {
+      this.toast(`Active workspace: ${name}`, 'info');
+    }
+  }
+
+  createWorkspacePrompt() {
+    const dd = document.getElementById('ws-dropdown');
+    if (dd) dd.style.display = 'none';
+    const name = prompt('Create new workspace:');
+    if (name && name.trim()) {
+      this.selectWorkspace(name.trim());
+    }
   }
 
   _roleLabel(role) {
