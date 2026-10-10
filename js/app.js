@@ -1700,11 +1700,12 @@ class MetaCRMApp {
       }
 
       const accountId = conv.accountId || '6aca1c00e12ba0b652e62f45';
-      const res = await fetch(`/api/zernio/inbox/conversations/${conv.id}/messages?accountId=${accountId}`);
+      const res = await fetch(`/api/zernio?path=inbox-messages&conversationId=${conv.id}&accountId=${accountId}`);
       if (!res.ok) return;
       const data = await res.json();
-      if (data && data.messages && Array.isArray(data.messages)) {
-        conv.messages = data.messages.map(m => {
+      const rawMsgs = data.messages || data.data || [];
+      if (Array.isArray(rawMsgs)) {
+        conv.messages = rawMsgs.map(m => {
           let text = m.message;
           if (!text || !text.trim()) {
             if (m.isStoryMention) text = 'Replied to your story 📸';
@@ -1735,17 +1736,18 @@ class MetaCRMApp {
 
   async fetchRealInstagramConversations() {
     try {
-      const res = await fetch('/api/zernio/inbox/conversations');
+      const res = await fetch('/api/zernio?path=inbox-conversations');
       if (!res.ok) return;
       const data = await res.json();
-      if (data && data.conversations && Array.isArray(data.conversations) && data.conversations.length > 0) {
+      const rawList = (data && (data.data || data.conversations)) || [];
+      if (Array.isArray(rawList) && rawList.length > 0) {
         if (!this.svc) return;
         if (!this.svc.conversations) this.svc.conversations = [];
 
         // Clear out any simulated dummy convs so ONLY real conversations are shown
         this.svc.conversations = this.svc.conversations.filter(c => !c.id.startsWith('conv_ig_initial') && !c.id.startsWith('conv_sim_'));
 
-        data.conversations.forEach(c => {
+        rawList.forEach(c => {
           const cid = String(c.id);
           const existing = this.svc.conversations.find(x => String(x.id) === cid);
           const participantName = c.participantName || c.participantUsername || 'Instagram User';
@@ -1823,7 +1825,7 @@ class MetaCRMApp {
       this.toast(`Sending real message to ${activeConv.name} on Instagram…`, 'info');
 
       const accountId = activeConv.accountId || '6aca1c00e12ba0b652e62f45';
-      const res = await fetch(`/api/zernio/inbox/conversations/${activeConv.id}/messages`, {
+      const res = await fetch(`/api/zernio?path=inbox-messages&conversationId=${activeConv.id}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
