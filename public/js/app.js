@@ -1911,9 +1911,10 @@ class MetaCRMApp {
     this.toast('Syncing Meta Pages, Webhooks, and Ad Accounts…', 'info');
     try {
       const authHeader = (this.user && this.user.id) ? this.user.id : 'admin';
-      const [assetsRes, syncRes] = await Promise.allSettled([
+      const [assetsRes, syncRes, zernioRes] = await Promise.allSettled([
         fetch('/api/meta/campaigns?action=assets', { headers: { 'Authorization': `Bearer ${authHeader}` } }),
-        fetch('/api/meta/sync', { method: 'POST', headers: { 'Authorization': `Bearer ${authHeader}` } })
+        fetch('/api/meta/sync', { method: 'POST', headers: { 'Authorization': `Bearer ${authHeader}` } }),
+        fetch('/api/zernio/status')
       ]);
 
       if (assetsRes.status === 'fulfilled' && assetsRes.value && assetsRes.value.ok) {
@@ -1932,10 +1933,33 @@ class MetaCRMApp {
               });
             }
           });
-          if (this.svc._saveToStorage) this.svc._saveToStorage();
         }
       }
-      this.toast('✓ All Meta connections & webhooks synchronized!', 'success');
+
+      if (zernioRes.status === 'fulfilled' && zernioRes.value && zernioRes.value.ok) {
+        const zData = await zernioRes.value.json();
+        if (zData.status === 'connected') {
+          const profile = zData.profile || {};
+          const pageName = profile.name || profile.username || 'Connected Facebook Page';
+          const pageId = profile.id || profile._id || 'zernio_fb_page';
+          const exists = this.svc.pages.find(x => x.id === pageId || x.page_id === pageId);
+          if (!exists) {
+            this.svc.pages.push({
+              id: pageId,
+              page_id: pageId,
+              name: pageName,
+              color: '#1877F2',
+              provider: 'zernio',
+              connected_at: new Date().toISOString()
+            });
+          }
+          this.metaConnectionState = 'connected';
+          try { localStorage.setItem('metacrm_meta_conn_state', 'connected'); } catch (e) {}
+        }
+      }
+
+      if (this.svc._saveToStorage) this.svc._saveToStorage();
+      this.toast('✓ All Meta & Zernio connections synchronized!', 'success');
     } catch (e) {
       this.toast('Connections check complete.', 'info');
     }
@@ -1976,24 +2000,62 @@ class MetaCRMApp {
   async connectFacebookOAuth() {
     const btnText = document.getElementById('connect-fb-btn-text');
     const heroBtn = document.getElementById('btn-main-connect-fb');
-    if (btnText) btnText.innerHTML = '<span class="spinner"></span> Opening Facebook…';
+    if (btnText) btnText.innerHTML = '<span class="spinner"></span> Connecting…';
     if (heroBtn) heroBtn.disabled = true;
 
-    this.toast('Opening Facebook to connect your Page…', 'info');
+    this.toast('Connecting your Facebook Page…', 'info');
 
     try {
+      // 1. Try Direct Meta OAuth first
       const res = await fetch('/api/meta/oauth');
       const data = await res.json();
 
-      if (!res.ok || !data.url) {
-        throw new Error(data.error || 'Meta OAuth URL could not be generated. Please ensure META_APP_ID is set in Netlify.');
+      if (res.ok && data.url) {
+        window.location.href = data.url;
+        return;
       }
 
-      // Direct window redirect ensures compatibility on all devices and mobile browsers
-      window.location.href = data.url;
+      // 2. Check Zernio Gateway if direct Meta App ID is not set
+      const zernioRes = await fetch('/api/zernio/status');
+      if (zernioRes.ok) {
+        const zData = await zernioRes.json();
+        if (zData.status === 'connected') {
+          const profile = zData.profile || {};
+          const pageName = profile.name || profile.username || 'Connected Facebook Page';
+          const pageId = profile.id || profile._id || 'zernio_fb_page';
+
+          if (this.svc) {
+            if (!this.svc.pages) this.svc.pages = [];
+            const exists = this.svc.pages.find(p => p.id === pageId || p.page_id === pageId);
+            if (!exists) {
+              this.svc.pages.push({
+                id: pageId,
+                page_id: pageId,
+                name: pageName,
+                color: '#1877F2',
+                provider: 'zernio',
+                connected_at: new Date().toISOString()
+              });
+              if (this.svc._saveToStorage) this.svc._saveToStorage();
+              else if (this.svc.saveAll) this.svc.saveAll();
+            }
+          }
+
+          this.metaConnectionState = 'connected';
+          try { localStorage.setItem('metacrm_meta_conn_state', 'connected'); } catch (e) {}
+          this.toast(`✅ "${pageName}" is connected via Zernio Gateway!`, 'success');
+          this.renderSidebar();
+          this.renderConnections();
+          return;
+        } else if (zData.status === 'not_configured') {
+          throw new Error('Please set ZERNIO_API_KEY (or META_APP_ID) in your Vercel Environment Variables.');
+        }
+      }
+
+      throw new Error((data && data.error) || 'Please set ZERNIO_API_KEY in Vercel.');
 
     } catch (err) {
-      console.error('[Meta Connect Error]:', err);
+      console.error('[Connect Error]:', err);
       if (btnText) btnText.innerHTML = 'Connect Facebook Page';
       if (heroBtn) heroBtn.disabled = false;
       this.toast(`Couldn't connect: ${err.message}`, 'error');
