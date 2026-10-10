@@ -682,22 +682,25 @@ class MetaCRMApp {
 
     this.el.title.innerHTML = `
       <div style="display:flex;align-items:center;gap:12px;">
-        <span>${greeting}, ${(this.user.displayName || this.user.name || '').split(' ')[0]} 👋</span>
-        <span class="badge ${isAdmin ? 'badge-purple' : 'badge-green'}" style="font-size:11px;">${this._roleLabel(this.user.role)}</span>
+        <span style="font-weight:700;font-size:18px;color:#0F172A;">${greeting}, ${(this.user.displayName || this.user.name || 'Administrator').split(' ')[0]} 👋</span>
+        <span style="background:#FFF3EC;color:#FF5A1F;border-radius:20px;font-size:11px;font-weight:600;padding:4px 12px;">${this._roleLabel(this.user.role)}</span>
       </div>`;
 
     this.el.actions.innerHTML = `
-      <select class="input" style="width:auto;" onchange="window.app.onPageFilterChange(this.value)">
+      <select class="input topbar-pill-select" onchange="window.app.onPageFilterChange(this.value)">
         ${pageSelectOptions}
       </select>
-      <select class="input" style="width:auto;" onchange="window.app.onDateRangeChange(this.value)">
+      <select class="input topbar-pill-select" onchange="window.app.onDateRangeChange(this.value)">
         <option value="today" ${this.selectedDateRange==='today'?'selected':''}>Today</option>
         <option value="yesterday" ${this.selectedDateRange==='yesterday'?'selected':''}>Yesterday</option>
         <option value="last_7d" ${this.selectedDateRange==='last_7d'?'selected':''}>Last 7 days</option>
         <option value="last_30d" ${this.selectedDateRange==='last_30d'?'selected':''}>Last 30 days</option>
         <option value="this_month" ${this.selectedDateRange==='this_month'?'selected':''}>This month</option>
       </select>
-      <button class="btn btn-secondary btn-sm" onclick="window.app.openUserSwitchModal()">Switch User</button>`;
+      <button class="btn btn-secondary btn-sm topbar-switch-btn" onclick="window.app.openUserSwitchModal()">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        Switch User
+      </button>`;
 
     const leads = this._getFilteredLeads();
     const newL = leads.filter(l => l.status === 'New' || l.status === 'New Lead');
@@ -754,34 +757,129 @@ class MetaCRMApp {
     // Tasks
     const tasks = this._filterUserTasks(this.svc ? this.svc.tasks : []).filter(t => t.status !== 'Done').slice(0, 4);
 
-    // FIRST-TIME ZERO-DATA WELCOME: When no pages connected, show warm clean welcome screen
+    // FIRST-TIME ZERO-DATA WELCOME: When no pages connected, show warm clean welcome screen matching screenshot
     if (availablePages.length === 0) {
       this.el.content.innerHTML = `
-        <div class="simple-connect-card" style="max-width:640px;margin:32px auto;text-align:left;padding:36px 32px;">
-          <div style="font-size:36px;margin-bottom:12px;">👋</div>
-          <h2 style="font-size:24px;font-weight:700;color:var(--text-primary);margin-bottom:10px;">
-            Welcome! Let's get your leads flowing in 2 minutes.
-          </h2>
-          <p style="font-size:15px;color:var(--text-secondary);margin-bottom:24px;line-height:1.5;">
-            Connect your Facebook Page once to automatically capture leads from Facebook &amp; Instagram ads and Messenger chats.
-          </p>
-          <div style="margin-bottom:28px;">
-            <button class="btn btn-primary" style="font-size:15px;padding:12px 24px;font-weight:600;" onclick="window.app.navigate('connections')">
-              Connect Your Facebook Page →
-            </button>
-          </div>
-          <div style="background:#F8FAFC;border:1px solid var(--border);border-radius:var(--radius-sm);padding:20px;display:flex;flex-direction:column;gap:12px;font-size:14px;color:var(--text-secondary);">
-            <div style="display:flex;align-items:flex-start;gap:10px;">
-              <span style="color:#10B981;font-weight:700;font-size:16px;">•</span>
-              <span><strong>Connect your Page once</strong> (Facebook will ask permission to link your leads).</span>
+        <div class="home-hero-container">
+          <div class="home-hero-grid">
+            <!-- Left Column: Copy & Actions -->
+            <div class="home-hero-left">
+              <div class="welcome-badge">
+                <span>👋</span>
+                <span>Welcome!</span>
+              </div>
+              
+              <h1 class="home-hero-title">
+                Let’s get your leads<br>flowing in <span class="highlight-orange">2 minutes.</span>
+              </h1>
+              
+              <p class="home-hero-desc">
+                Connect your Facebook Page once to automatically capture leads from Facebook &amp; Instagram ads and Messenger chats.
+              </p>
+              
+              <div class="home-hero-cta-wrap">
+                <button class="btn-hero-connect" onclick="window.app.navigate('connections')">
+                  <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2C6.477 2 2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.879V14.89h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.989C18.343 21.129 22 16.99 22 12c0-5.523-4.477-10-10-10z"/>
+                  </svg>
+                  <span>Connect Your Facebook Page →</span>
+                </button>
+              </div>
+
+              <!-- 3 Feature Pillars -->
+              <div class="home-features-row">
+                <div class="home-feature-col">
+                  <div class="feature-icon-circle">
+                    <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                    </svg>
+                  </div>
+                  <div class="feature-title">Connect Once</div>
+                  <div class="feature-desc">Facebook will ask permission to link your leads.</div>
+                </div>
+
+                <div class="home-feature-col">
+                  <div class="feature-icon-circle">
+                    <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    </svg>
+                  </div>
+                  <div class="feature-title">Get Instant Leads</div>
+                  <div class="feature-desc">When someone fills out your Lead Ad or messages you, they appear here instantly.</div>
+                </div>
+
+                <div class="home-feature-col">
+                  <div class="feature-icon-circle">
+                    <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+                    </svg>
+                  </div>
+                  <div class="feature-title">Call or WhatsApp</div>
+                  <div class="feature-desc">Contact them with one click directly from your dashboard.</div>
+                </div>
+              </div>
             </div>
-            <div style="display:flex;align-items:flex-start;gap:10px;">
-              <span style="color:#10B981;font-weight:700;font-size:16px;">•</span>
-              <span>When someone fills out your Lead Ad or messages you, <strong>they appear here instantly</strong>.</span>
-            </div>
-            <div style="display:flex;align-items:flex-start;gap:10px;">
-              <span style="color:#10B981;font-weight:700;font-size:16px;">•</span>
-              <span><strong>Call or WhatsApp them with one click</strong> directly from your dashboard.</span>
+
+            <!-- Right Column: 3D Floating Graphic Card Stack -->
+            <div class="home-hero-right">
+              <div class="hero-card-stack">
+                <!-- Back Card: Integration Hub -->
+                <div class="stack-back-card">
+                  <div class="hub-icons-row">
+                    <div class="hub-icon-fb">
+                      <svg width="22" height="22" fill="#fff" viewBox="0 0 24 24">
+                        <path d="M12 2C6.477 2 2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.879V14.89h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.989C18.343 21.129 22 16.99 22 12c0-5.523-4.477-10-10-10z"/>
+                      </svg>
+                    </div>
+                    <div class="hub-connector-dots"></div>
+                    <div class="hub-icon-ig">
+                      <svg width="20" height="20" fill="#fff" viewBox="0 0 24 24">
+                        <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+                      </svg>
+                    </div>
+                  </div>
+
+                  <div class="hub-center-badge">
+                    <svg width="26" height="26" viewBox="0 0 32 32" fill="none">
+                      <rect width="32" height="32" rx="8" fill="#FF5A1F"/>
+                      <path d="M8 23V9h3.6l4.4 7.2L20.4 9H24v14h-3.2v-8.8l-4.1 6.6h-1.4l-4.1-6.6V23H8z" fill="#fff"/>
+                    </svg>
+                  </div>
+                </div>
+
+                <!-- Front Card: Live Incoming Lead Card -->
+                <div class="stack-front-card">
+                  <div class="front-card-header">
+                    <div class="lead-avatar-img">
+                      <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=100&h=100&fit=crop&crop=faces" alt="Priya Sharma" onerror="this.onerror=null;this.src='';this.parentElement.innerHTML='PS';">
+                    </div>
+                    <div class="lead-info-wrap">
+                      <div class="lead-name-row">
+                        <span class="lead-name-text">Priya Sharma</span>
+                        <span class="lead-pill-tag">Lead</span>
+                        <span class="lead-time-text">2m ago</span>
+                      </div>
+                      <div class="lead-interest-text">Interested in your product</div>
+                    </div>
+                  </div>
+
+                  <div class="front-card-actions">
+                    <a href="tel:+919876543210" class="btn-card-action btn-card-call">
+                      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+                      </svg>
+                      <span>Call</span>
+                    </a>
+                    <a href="https://wa.me/919876543210" target="_blank" rel="noopener" class="btn-card-action btn-card-wa">
+                      <svg width="13" height="13" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.694.072-2.127-.521-1.727-.714-2.839-2.477-2.926-2.593-.086-.115-.705-.939-.705-1.789 0-.85.447-1.267.606-1.44.159-.174.347-.217.462-.217.116 0 .232.001.332.006.107.005.25-.041.39.296.145.348.492 1.202.535 1.289.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.261.304c-.087.086-.177.18-.076.353.101.174.45 1.06 1.488 1.984.779.695 1.436.909 1.639.996.202.087.322.072.441-.065.119-.137.509-.594.646-.797.137-.202.274-.173.462-.101.188.072 1.185.558 1.387.66.202.101.337.151.386.236.049.085.049.493-.095.898z"/>
+                      </svg>
+                      <span>WhatsApp</span>
+                    </a>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>`;
