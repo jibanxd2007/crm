@@ -1581,10 +1581,10 @@ class MetaCRMApp {
   renderInbox() {
     this.el.title.textContent = this.user.role === 'staff' ? 'My Messages' : 'Messages';
     this.el.actions.innerHTML = `
-      <button class="btn btn-lime btn-sm btn-inbox-refresh" onclick="window.app.refreshRealInbox()">
+      <button class="btn btn-orange btn-sm btn-inbox-refresh" onclick="window.app.refreshRealInbox()">
         🔄 Refresh Real Instagram Inbox
       </button>
-      <button class="btn btn-secondary-lime btn-sm btn-inbox-sync" onclick="window.app.syncConnections()">
+      <button class="btn btn-secondary-orange btn-sm btn-inbox-sync" onclick="window.app.syncConnections()">
         🔄 Sync Accounts
       </button>`;
 
@@ -1643,7 +1643,7 @@ class MetaCRMApp {
                 <p class="inbox-conv-empty-desc">
                   Incoming messages from your connected ${activeTab === 'instagram' ? 'Instagram' : 'Facebook & Instagram'} account will appear here automatically.
                 </p>
-                <button class="btn btn-lime btn-sm" onclick="window.app.simulateInboundMessage('${activeTab === 'instagram' ? 'Instagram Direct' : 'Messenger'}')">
+                <button class="btn btn-orange btn-sm" onclick="window.app.simulateInboundMessage('${activeTab === 'instagram' ? 'Instagram Direct' : 'Messenger'}')">
                   + Test ${activeTab === 'instagram' ? 'Instagram DM' : 'Message'}
                 </button>
               </div>
@@ -1709,7 +1709,7 @@ class MetaCRMApp {
             <div class="inbox-composer">
               <input type="text" class="input inbox-msg-input" placeholder="Type a message to reply on ${isIgActive ? 'Instagram Direct' : 'Messenger'}…" id="inbox-msg-input" 
                      onkeydown="if(event.key==='Enter')window.app.sendInboxMessage()">
-              <button class="btn btn-lime btn-send-msg" id="inbox-send-btn" onclick="window.app.sendInboxMessage()">
+              <button class="btn btn-orange btn-send-msg" id="inbox-send-btn" onclick="window.app.sendInboxMessage()">
                 Send via ${isIgActive ? 'Instagram' : 'Facebook'}
               </button>
             </div>
@@ -1725,10 +1725,10 @@ class MetaCRMApp {
                 Live direct messages from connected Facebook Pages and Instagram accounts appear here in real-time. Select a conversation on the left to start chatting.
               </p>
               <div class="inbox-empty-actions">
-                <button class="btn btn-lime" onclick="window.app.simulateInboundMessage('Instagram Direct')">
+                <button class="btn btn-orange" onclick="window.app.simulateInboundMessage('Instagram Direct')">
                   📷 Simulate Inbound Instagram DM
                 </button>
-                <button class="btn btn-secondary-lime" onclick="window.app.simulateInboundMessage('Messenger')">
+                <button class="btn btn-secondary-orange" onclick="window.app.simulateInboundMessage('Messenger')">
                   💬 Simulate Messenger Chat
                 </button>
               </div>
@@ -1751,7 +1751,7 @@ class MetaCRMApp {
               <div class="idetail-name text-truncate">${escapeHtml(activeConv.name)}</div>
               <div class="idetail-handle text-truncate">${escapeHtml(activeConv.participantUsername ? `@${activeConv.participantUsername.replace(/^@/, '')}` : (activeConv.phone || (isIgActive ? 'Instagram Direct Inquiry' : 'Messenger Inquiry')))}</div>
               <div class="idetail-badge-wrap">
-                <span class="idetail-lime-badge">${isIgActive ? '📷 Instagram DM' : '💬 Messenger Chat'}</span>
+                <span class="idetail-orange-badge">${isIgActive ? '📷 Instagram DM' : '💬 Messenger Chat'}</span>
               </div>
             </div>
 
@@ -1769,7 +1769,7 @@ class MetaCRMApp {
               </div>
               <div class="idetail-row">
                 <span class="idetail-label">Status</span>
-                <span class="idetail-value"><span class="status-dot-lime"></span> Active Channel</span>
+                <span class="idetail-value"><span class="status-dot-orange"></span> Active Channel</span>
               </div>
             </div>
 
@@ -1778,7 +1778,7 @@ class MetaCRMApp {
               <div class="idetail-row">
                 <span class="idetail-label">Lead Stage</span>
                 <span class="idetail-value">
-                  <span class="badge badge-lime">${matchingLead ? (matchingLead.status || 'New Lead') : 'Not in CRM'}</span>
+                  <span class="badge badge-orange">${matchingLead ? (matchingLead.status || 'New Lead') : 'Not in CRM'}</span>
                 </span>
               </div>
               <div class="idetail-row">
@@ -1792,10 +1792,10 @@ class MetaCRMApp {
 
             <div class="idetail-actions">
               ${matchingLead ? `
-                <button class="btn btn-lime w-full mb-2" onclick="window.app.openLeadDrawer('${matchingLead.id}')">Open Full CRM Profile →</button>
-                <button class="btn btn-secondary-lime w-full mb-2" onclick="window.app.updateLeadStage('${matchingLead.id}', 'Qualified')">Mark as Qualified</button>
+                <button class="btn btn-orange w-full mb-2" onclick="window.app.openLeadDrawer('${matchingLead.id}')">Open Full CRM Profile →</button>
+                <button class="btn btn-secondary-orange w-full mb-2" onclick="window.app.updateLeadStage('${matchingLead.id}', 'Qualified')">Mark as Qualified</button>
               ` : `
-                <button class="btn btn-lime btn-create-lead-crm w-full mb-2" onclick="window.app.createLeadFromConv('${escapeHtml(activeConv.name)}', '${activeConv.page_id}')">+ Create Lead in CRM</button>
+                <button class="btn btn-orange btn-create-lead-crm w-full mb-2" onclick="window.app.createLeadFromConv('${escapeHtml(activeConv.name)}', '${activeConv.page_id}')">+ Create Lead in CRM</button>
               `}
             </div>
           ` : `
@@ -1810,7 +1810,7 @@ class MetaCRMApp {
                   </div>
                   <div class="idetail-channel-info">
                     <div class="idetail-channel-name text-truncate">${escapeHtml(p.name)}</div>
-                    <div class="idetail-channel-status"><span class="status-dot-lime"></span> Direct Messages Active</div>
+                    <div class="idetail-channel-status"><span class="status-dot-orange"></span> Direct Messages Active</div>
                   </div>
                 </div>`;
               }).join('') || '<p class="text-xs text-gray">No channels connected yet.</p>'}

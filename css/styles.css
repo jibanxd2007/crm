@@ -857,7 +857,7 @@ tr.clickable-row:hover {
   box-shadow: 0 2px 6px rgba(99, 102, 241, 0.25);
 }
 
-/* ─── MetaCRM Messages Page — Ivory & Lime Brand Palette ──────── */
+/* ─── MetaCRM Messages Page — Ivory & Orange Brand Palette ─────── */
 :root {
   --inbox-ivory-bg: #FAF7F2;
   --inbox-ivory-surface: #FFFFFF;
@@ -865,12 +865,12 @@ tr.clickable-row:hover {
   --inbox-ivory-thread: #F7F5EE;
   --inbox-ivory-border: #E8E3D8;
   --inbox-ivory-border-subtle: #EFECE4;
-  --inbox-lime-primary: #84CC16;
-  --inbox-lime-hover: #74B913;
-  --inbox-lime-active: #ECFCCB;
-  --inbox-lime-bubble: #D9F99D;
-  --inbox-lime-border: #BEF264;
-  --inbox-lime-text: #142800;
+  --inbox-orange-primary: #FF5A1F;
+  --inbox-orange-hover: #E04810;
+  --inbox-orange-active: #FFF1EA;
+  --inbox-orange-bubble: #FF5A1F;
+  --inbox-orange-border: #FFD4C2;
+  --inbox-orange-text: #FF5A1F;
   --inbox-charcoal-primary: #0F172A;
   --inbox-charcoal-secondary: #334155;
   --inbox-charcoal-muted: #64748B;
@@ -881,11 +881,11 @@ tr.clickable-row:hover {
 /* Sidebar navigation item active state on Messages page & Selected item styling */
 .nav-item[href="#inbox"].active,
 body[data-page="inbox"] #sidebar-nav .nav-item.active {
-  background: var(--inbox-lime-active) !important;
-  color: var(--inbox-charcoal-primary) !important;
+  background: var(--inbox-orange-active) !important;
+  color: var(--inbox-orange-primary) !important;
   font-weight: 700 !important;
-  box-shadow: 0 1px 3px rgba(132, 204, 22, 0.22) !important;
-  border-left: 3.5px solid var(--inbox-lime-primary) !important;
+  box-shadow: 0 1px 3px rgba(255, 90, 31, 0.15) !important;
+  border-left: 3.5px solid var(--inbox-orange-primary) !important;
 }
 .nav-item[href="#inbox"].active::before,
 body[data-page="inbox"] #sidebar-nav .nav-item.active::before {
@@ -893,39 +893,42 @@ body[data-page="inbox"] #sidebar-nav .nav-item.active::before {
 }
 .nav-item[href="#inbox"].active .nav-icon,
 body[data-page="inbox"] #sidebar-nav .nav-item.active .nav-icon {
-  color: var(--inbox-charcoal-primary) !important;
+  color: var(--inbox-orange-primary) !important;
 }
 .nav-item[href="#inbox"].active .nav-badge,
 body[data-page="inbox"] #sidebar-nav .nav-item.active .nav-badge {
-  background: var(--inbox-lime-primary) !important;
-  color: var(--inbox-charcoal-primary) !important;
+  background: var(--inbox-orange-primary) !important;
+  color: #FFFFFF !important;
   font-weight: 800 !important;
 }
 
 /* Primary and Secondary Action Buttons on Messages */
+.btn-orange,
 .btn-lime {
-  background: var(--inbox-lime-primary) !important;
-  color: var(--inbox-charcoal-primary) !important;
-  border: 1px solid var(--inbox-lime-primary) !important;
+  background: var(--inbox-orange-primary) !important;
+  color: #FFFFFF !important;
+  border: 1px solid var(--inbox-orange-primary) !important;
   font-weight: 700 !important;
   cursor: pointer;
   transition: all 0.15s ease;
-  box-shadow: 0 1px 3px rgba(132, 204, 22, 0.25);
+  box-shadow: 0 1px 3px rgba(255, 90, 31, 0.25);
   border-radius: var(--radius-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
+.btn-orange:hover,
 .btn-lime:hover {
-  background: var(--inbox-lime-hover) !important;
-  border-color: var(--inbox-lime-hover) !important;
-  color: var(--inbox-charcoal-primary) !important;
+  background: var(--inbox-orange-hover) !important;
+  border-color: var(--inbox-orange-hover) !important;
+  color: #FFFFFF !important;
   transform: translateY(-1px);
 }
+.btn-secondary-orange,
 .btn-secondary-lime {
   background: #FFFFFF !important;
-  color: var(--inbox-charcoal-primary) !important;
-  border: 1px solid var(--inbox-ivory-border) !important;
+  color: var(--inbox-orange-primary) !important;
+  border: 1px solid var(--inbox-orange-border) !important;
   font-weight: 600 !important;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -934,17 +937,18 @@ body[data-page="inbox"] #sidebar-nav .nav-item.active .nav-badge {
   align-items: center;
   justify-content: center;
 }
+.btn-secondary-orange:hover,
 .btn-secondary-lime:hover {
-  background: var(--inbox-lime-active) !important;
-  border-color: var(--inbox-lime-border) !important;
-  color: var(--inbox-charcoal-primary) !important;
+  background: var(--inbox-orange-active) !important;
+  border-color: #FFB799 !important;
+  color: var(--inbox-orange-hover) !important;
 }
 
 /* User Friendly Tip on Messages Page */
 body[data-page="inbox"] .user-friendly-tip {
   background: var(--inbox-ivory-card) !important;
   border: 1px solid var(--inbox-ivory-border) !important;
-  border-left: 4px solid var(--inbox-lime-primary) !important;
+  border-left: 4px solid var(--inbox-orange-primary) !important;
   color: var(--inbox-charcoal-secondary) !important;
   border-radius: 8px !important;
 }
@@ -952,8 +956,8 @@ body[data-page="inbox"] .user-friendly-tip .tip-close-btn {
   color: var(--inbox-charcoal-muted) !important;
 }
 body[data-page="inbox"] .user-friendly-tip .tip-close-btn:hover {
-  background: var(--inbox-lime-active) !important;
-  color: var(--inbox-charcoal-primary) !important;
+  background: var(--inbox-orange-active) !important;
+  color: var(--inbox-orange-primary) !important;
 }
 
 /* 3-Column Layout Container */
@@ -1010,8 +1014,8 @@ body[data-page="inbox"] .user-friendly-tip .tip-close-btn:hover {
 }
 .inbox-search-input:focus {
   background: #FFFFFF !important;
-  border-color: var(--inbox-lime-primary) !important;
-  box-shadow: 0 0 0 3px rgba(132, 204, 22, 0.2) !important;
+  border-color: var(--inbox-orange-primary) !important;
+  box-shadow: 0 0 0 3px rgba(255, 90, 31, 0.2) !important;
   outline: none;
 }
 .inbox-filter-tabs {
@@ -1039,10 +1043,10 @@ body[data-page="inbox"] .user-friendly-tip .tip-close-btn:hover {
   background: rgba(255, 255, 255, 0.6);
 }
 .inbox-tab.active {
-  background: var(--inbox-lime-bubble);
-  color: var(--inbox-charcoal-primary);
+  background: var(--inbox-orange-primary);
+  color: #FFFFFF;
   font-weight: 700;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 1px 3px rgba(255, 90, 31, 0.25);
 }
 
 .inbox-conv-list {
@@ -1065,8 +1069,8 @@ body[data-page="inbox"] .user-friendly-tip .tip-close-btn:hover {
   background: var(--inbox-ivory-card);
 }
 .inbox-conv-item.active {
-  background: var(--inbox-lime-active) !important;
-  border-left: 4px solid var(--inbox-lime-primary);
+  background: var(--inbox-orange-active) !important;
+  border-left: 4px solid var(--inbox-orange-primary);
   padding-left: 12px;
 }
 .inbox-conv-item.active::before {
@@ -1167,8 +1171,8 @@ body[data-page="inbox"] .user-friendly-tip .tip-close-btn:hover {
   text-overflow: ellipsis;
 }
 .conv-unread {
-  background: var(--inbox-lime-primary);
-  color: var(--inbox-charcoal-primary);
+  background: var(--inbox-orange-primary);
+  color: #FFFFFF;
   font-size: 10.5px;
   font-weight: 800;
   min-width: 19px;
@@ -1179,7 +1183,7 @@ body[data-page="inbox"] .user-friendly-tip .tip-close-btn:hover {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  box-shadow: 0 1px 3px rgba(132, 204, 22, 0.4);
+  box-shadow: 0 1px 3px rgba(255, 90, 31, 0.35);
 }
 .inbox-conv-empty {
   padding: 36px 16px;
@@ -1260,9 +1264,9 @@ body[data-page="inbox"] .user-friendly-tip .tip-close-btn:hover {
   border-radius: 20px;
   font-size: 11.5px;
   font-weight: 700;
-  background: var(--inbox-lime-active);
-  color: var(--inbox-charcoal-primary);
-  border: 1px solid var(--inbox-lime-border);
+  background: var(--inbox-orange-active);
+  color: var(--inbox-orange-primary);
+  border: 1px solid var(--inbox-orange-border);
 }
 .inbox-back-btn,
 .inbox-info-btn {
@@ -1331,12 +1335,12 @@ body[data-page="inbox"] .user-friendly-tip .tip-close-btn:hover {
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
 }
 .msg-out .msg-bubble {
-  background: var(--inbox-lime-bubble);
-  border: 1px solid var(--inbox-lime-border);
-  color: var(--inbox-charcoal-primary);
+  background: var(--inbox-orange-bubble);
+  border: 1px solid var(--inbox-orange-bubble);
+  color: #FFFFFF;
   border-radius: 18px 18px 4px 18px;
   font-weight: 500;
-  box-shadow: 0 1px 3px rgba(132, 204, 22, 0.2);
+  box-shadow: 0 2px 8px rgba(255, 90, 31, 0.25);
 }
 .msg-time {
   font-size: 10px;
@@ -1367,8 +1371,8 @@ body[data-page="inbox"] .user-friendly-tip .tip-close-btn:hover {
 }
 .inbox-msg-input:focus {
   background: #FFFFFF !important;
-  border-color: var(--inbox-lime-primary) !important;
-  box-shadow: 0 0 0 3px rgba(132, 204, 22, 0.2) !important;
+  border-color: var(--inbox-orange-primary) !important;
+  box-shadow: 0 0 0 3px rgba(255, 90, 31, 0.2) !important;
   outline: none;
 }
 .btn-send-msg {
@@ -1423,9 +1427,9 @@ body[data-page="inbox"] .user-friendly-tip .tip-close-btn:hover {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: var(--inbox-lime-active);
-  border: 2px solid var(--inbox-lime-border);
-  color: var(--inbox-charcoal-primary);
+  background: var(--inbox-orange-active);
+  border: 2px solid var(--inbox-orange-border);
+  color: var(--inbox-orange-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1448,15 +1452,16 @@ body[data-page="inbox"] .user-friendly-tip .tip-close-btn:hover {
   display: flex;
   justify-content: center;
 }
+.idetail-orange-badge,
 .idetail-lime-badge {
   display: inline-block;
   padding: 3px 10px;
   border-radius: 12px;
   font-size: 11px;
   font-weight: 700;
-  background: var(--inbox-lime-active);
-  color: var(--inbox-charcoal-primary);
-  border: 1px solid var(--inbox-lime-border);
+  background: var(--inbox-orange-active);
+  color: var(--inbox-orange-primary);
+  border: 1px solid var(--inbox-orange-border);
 }
 
 .idetail-section-heading {
@@ -1490,19 +1495,20 @@ body[data-page="inbox"] .user-friendly-tip .tip-close-btn:hover {
   align-items: center;
   gap: 6px;
 }
+.status-dot-orange,
 .status-dot-lime {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--inbox-lime-primary);
+  background: var(--inbox-orange-primary);
   display: inline-block;
 }
 .assignee-avatar {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--inbox-lime-active);
-  color: var(--inbox-charcoal-primary);
+  background: var(--inbox-orange-active);
+  color: var(--inbox-orange-primary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1510,30 +1516,31 @@ body[data-page="inbox"] .user-friendly-tip .tip-close-btn:hover {
   font-weight: 700;
 }
 
-/* Prominent Lime Create Lead in CRM button */
+/* Prominent Orange Create Lead in CRM button */
 .btn-create-lead-crm {
-  background: var(--inbox-lime-primary) !important;
-  color: var(--inbox-charcoal-primary) !important;
+  background: var(--inbox-orange-primary) !important;
+  color: #FFFFFF !important;
   border: none !important;
   font-weight: 800 !important;
   font-size: 13.5px !important;
   padding: 13px 16px !important;
   border-radius: 9px !important;
-  box-shadow: 0 2px 8px rgba(132, 204, 22, 0.35) !important;
+  box-shadow: 0 2px 8px rgba(255, 90, 31, 0.35) !important;
   transition: all 0.2s ease !important;
   width: 100%;
 }
 .btn-create-lead-crm:hover {
-  background: var(--inbox-lime-hover) !important;
+  background: var(--inbox-orange-hover) !important;
   transform: translateY(-1px) !important;
-  box-shadow: 0 4px 12px rgba(132, 204, 22, 0.45) !important;
+  box-shadow: 0 4px 12px rgba(255, 90, 31, 0.45) !important;
 }
 
-/* Badge Lime */
+/* Badge Orange */
+.badge-orange,
 .badge-lime {
-  background: var(--inbox-lime-active) !important;
-  color: var(--inbox-charcoal-primary) !important;
-  border: 1px solid var(--inbox-lime-border) !important;
+  background: var(--inbox-orange-active) !important;
+  color: var(--inbox-orange-primary) !important;
+  border: 1px solid var(--inbox-orange-border) !important;
   font-weight: 700 !important;
   padding: 3px 8px !important;
   border-radius: 12px !important;
@@ -1556,9 +1563,9 @@ body[data-page="inbox"] .user-friendly-tip .tip-close-btn:hover {
   width: 64px;
   height: 64px;
   border-radius: 18px;
-  background: var(--inbox-lime-active);
-  border: 1.5px solid var(--inbox-lime-border);
-  color: var(--inbox-charcoal-primary);
+  background: var(--inbox-orange-active);
+  border: 1.5px solid var(--inbox-orange-border);
+  color: var(--inbox-orange-primary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
