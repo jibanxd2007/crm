@@ -56,18 +56,48 @@ async function zernioUnifiedHandler(req, res) {
             const parsed = JSON.parse(data);
             const targetId = process.env.ZERNIO_PROFILE_ID;
             const profile = (parsed.profiles && targetId ? parsed.profiles.find(p => p._id === targetId || p.id === targetId) : null) || (parsed.profiles && parsed.profiles[0]) || (parsed.profile || parsed);
-            res.status(200).json({
-              status: "connected",
-              provider: "zernio",
-              verifiedGateway: true,
-              hasAnalyticsAccess: true,
-              appReviewBypassed: true,
-              apiKey: `${apiKey.substring(0, 12)}...${apiKey.substring(apiKey.length - 6)}`,
-              profile: profile,
-              accounts: profile.accountUsernames || [],
-              timestamp: new Date().toISOString()
+            const accountsReq = https.request({
+              hostname: 'zernio.com',
+              port: 443,
+              path: '/api/v1/accounts',
+              method: 'GET',
+              headers: { 'Authorization': `Bearer ${apiKey}`, 'Accept': 'application/json' }
+            }, (accResp) => {
+              let accData = '';
+              accResp.on('data', c => { accData += c; });
+              accResp.on('end', () => {
+                let liveAccounts = [];
+                try {
+                  const parsedAcc = JSON.parse(accData);
+                  liveAccounts = parsedAcc.accounts || [];
+                } catch (err) {}
+                res.status(200).json({
+                  status: "connected",
+                  provider: "zernio",
+                  verifiedGateway: true,
+                  hasAnalyticsAccess: true,
+                  appReviewBypassed: true,
+                  apiKey: `${apiKey.substring(0, 12)}...${apiKey.substring(apiKey.length - 6)}`,
+                  profile: profile,
+                  accounts: liveAccounts,
+                  timestamp: new Date().toISOString()
+                });
+                resolve();
+              });
             });
-            resolve();
+            accountsReq.on('error', () => {
+              res.status(200).json({
+                status: "connected",
+                provider: "zernio",
+                verifiedGateway: true,
+                profile: profile,
+                accounts: [],
+                timestamp: new Date().toISOString()
+              });
+              resolve();
+            });
+            accountsReq.end();
+            return;
           } catch (e) {
             res.status(200).json({ status: "connected", raw: data });
             resolve();
@@ -77,6 +107,50 @@ async function zernioUnifiedHandler(req, res) {
 
       request.on('error', (err) => {
         res.status(502).json({ status: "error", error: err.message });
+        resolve();
+      });
+
+      request.end();
+    });
+  }
+
+  // 1.5. ACCOUNTS LIST
+  if (path === 'accounts' || url.includes('/accounts')) {
+    res.setHeader('Content-Type', 'application/json');
+    const apiKey = process.env.ZERNIO_API_KEY;
+    if (!apiKey) {
+      return res.status(200).json({ accounts: [] });
+    }
+
+    const options = {
+      hostname: 'zernio.com',
+      port: 443,
+      path: '/api/v1/accounts',
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Accept': 'application/json'
+      }
+    };
+
+    return new Promise((resolve) => {
+      const request = https.request(options, (resp) => {
+        let data = '';
+        resp.on('data', chunk => { data += chunk; });
+        resp.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            res.status(200).json(parsed);
+            resolve();
+          } catch (e) {
+            res.status(200).json({ accounts: [] });
+            resolve();
+          }
+        });
+      });
+
+      request.on('error', (err) => {
+        res.status(500).json({ error: err.message, accounts: [] });
         resolve();
       });
 
