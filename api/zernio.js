@@ -54,7 +54,8 @@ async function zernioUnifiedHandler(req, res) {
         resp.on('end', () => {
           try {
             const parsed = JSON.parse(data);
-            const profile = parsed.profiles && parsed.profiles[0] ? parsed.profiles[0] : (parsed.profile || parsed);
+            const targetId = process.env.ZERNIO_PROFILE_ID;
+            const profile = (parsed.profiles && targetId ? parsed.profiles.find(p => p._id === targetId || p.id === targetId) : null) || (parsed.profiles && parsed.profiles[0]) || (parsed.profile || parsed);
             res.status(200).json({
               status: "connected",
               provider: "zernio",
