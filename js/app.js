@@ -1750,10 +1750,14 @@ class MetaCRMApp {
         rawList.forEach(c => {
           const cid = String(c.id);
           const existing = this.svc.conversations.find(x => String(x.id) === cid);
-          const participantName = c.participantName || c.participantUsername || 'Instagram User';
-          const cleanName = participantName.startsWith('@') ? participantName : `@${participantName}`;
+          const isFb = c.platform === 'facebook' || c.platform === 'messenger';
+          const participantName = c.participantName || c.participantUsername || (isFb ? 'Facebook User' : 'Instagram User');
+          const cleanName = isFb ? participantName : (participantName.startsWith('@') ? participantName : `@${participantName}`);
+          const channel = isFb ? 'messenger' : 'instagram';
 
           if (existing) {
+            existing.name = cleanName;
+            existing.channel = channel;
             existing.preview = c.lastMessage || existing.preview;
             existing.time = c.updatedTime ? new Date(c.updatedTime).toLocaleDateString([], { month: 'short', day: 'numeric' }) : existing.time;
             existing.unread = c.unreadCount || 0;
@@ -1765,7 +1769,7 @@ class MetaCRMApp {
               accountId: c.accountId || '6aca1c00e12ba0b652e62f45',
               name: cleanName,
               participantUsername: c.participantUsername,
-              channel: 'instagram',
+              channel: channel,
               page_id: c.accountId || '6aca1c00e12ba0b652e62f45',
               time: c.updatedTime ? new Date(c.updatedTime).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'Recently',
               preview: c.lastMessage || 'Direct message',
@@ -2333,65 +2337,34 @@ class MetaCRMApp {
   async connectFacebookOAuth() {
     const btnText = document.getElementById('connect-fb-btn-text');
     const heroBtn = document.getElementById('btn-main-connect-fb');
-    if (btnText) btnText.innerHTML = '<span class="spinner"></span> Connecting…';
+    if (btnText) btnText.innerHTML = '<span class="spinner"></span> Connecting Facebook…';
     if (heroBtn) heroBtn.disabled = true;
 
-    this.toast('Connecting your Facebook Page…', 'info');
+    this.toast('Opening Facebook to connect your business page…', 'info');
 
     try {
-      // 1. Try Direct Meta OAuth first
+      // 1. Real Facebook Enterprise OAuth via Zernio Gateway
+      const zRes = await fetch('/api/zernio/connect/facebook');
+      const zData = await zRes.json();
+      if (zData && zData.authUrl) {
+        window.location.href = zData.authUrl;
+        return;
+      }
+
+      // 2. Direct Meta OAuth fallback if configured
       const res = await fetch('/api/meta/oauth');
       const data = await res.json();
-
       if (res.ok && data.url) {
         window.location.href = data.url;
         return;
       }
 
-      // 2. Check Zernio Gateway if direct Meta App ID is not set
-      const zernioRes = await fetch('/api/zernio/status');
-      if (zernioRes.ok) {
-        const zData = await zernioRes.json();
-        if (zData.status === 'connected') {
-          const profile = zData.profile || {};
-          const pageName = profile.name || profile.username || 'Connected Facebook Page';
-          const pageId = profile.id || profile._id || 'zernio_fb_page';
-
-          if (this.svc) {
-            if (!this.svc.pages) this.svc.pages = [];
-            const exists = this.svc.pages.find(p => p.id === pageId || p.page_id === pageId);
-            if (!exists) {
-              this.svc.pages.push({
-                id: pageId,
-                page_id: pageId,
-                name: pageName,
-                color: '#1877F2',
-                provider: 'zernio',
-                connected_at: new Date().toISOString()
-              });
-              if (this.svc._saveToStorage) this.svc._saveToStorage();
-              else if (this.svc.saveAll) this.svc.saveAll();
-            }
-          }
-
-          this.metaConnectionState = 'connected';
-          try { localStorage.setItem('metacrm_meta_conn_state', 'connected'); } catch (e) {}
-          this.toast(`✅ "${pageName}" is connected via Zernio Gateway!`, 'success');
-          this.renderSidebar();
-          this.renderConnections();
-          return;
-        } else if (zData.status === 'not_configured') {
-          throw new Error('Please set ZERNIO_API_KEY (or META_APP_ID) in your Vercel Environment Variables.');
-        }
-      }
-
-      throw new Error((data && data.error) || 'Please set ZERNIO_API_KEY in Vercel.');
-
+      throw new Error((zData && zData.error) || (data && data.error) || 'Please configure ZERNIO_API_KEY in Vercel.');
     } catch (err) {
-      console.error('[Connect Error]:', err);
+      console.error('[Facebook Connect Error]:', err);
       if (btnText) btnText.innerHTML = 'Connect Facebook Page';
       if (heroBtn) heroBtn.disabled = false;
-      this.toast(`Couldn't connect: ${err.message}`, 'error');
+      this.toast(`Couldn't connect Facebook: ${err.message}`, 'error');
     }
   }
 
