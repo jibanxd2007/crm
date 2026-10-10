@@ -4,6 +4,7 @@
   "private": true,
   "description": "Production Meta Lead + Messaging CRM on Vercel (6-Page Multi-Tenant)",
   "scripts": {
+    "build": "node build.js",
     "start": "node server.js"
   },
   "dependencies": {

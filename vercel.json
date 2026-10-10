@@ -1,6 +1,5 @@
 {
   "version": 2,
-  "outputDirectory": ".",
   "crons": [
     {
       "path": "/api/meta/ad-spend-sync",
