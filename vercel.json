@@ -33,19 +33,63 @@
     },
     {
       "source": "/api/auth/meta/callback",
-      "destination": "/api/meta/callback"
+      "destination": "/api/meta/oauth"
     },
     {
-      "source": "/api/zernio/connect/:channel",
-      "destination": "/api/zernio/connect"
+      "source": "/api/meta/callback",
+      "destination": "/api/meta/oauth"
     },
     {
-      "source": "/api/zernio/simulate-lead",
-      "destination": "/api/zernio/simulate-lead"
+      "source": "/api/webhooks/meta",
+      "destination": "/api/meta/webhook"
+    },
+    {
+      "source": "/api/meta/ad-spend-sync",
+      "destination": "/api/meta/sync?type=ad-spend"
+    },
+    {
+      "source": "/api/ad-spend-sync",
+      "destination": "/api/meta/sync?type=ad-spend"
+    },
+    {
+      "source": "/api/campaigns",
+      "destination": "/api/meta/campaigns"
     },
     {
       "source": "/api/meta/insights",
-      "destination": "/api/meta/ad-spend-sync"
+      "destination": "/api/meta/campaigns?action=insights"
+    },
+    {
+      "source": "/api/meta/assets/(.*)",
+      "destination": "/api/meta/campaigns?action=assets"
+    },
+    {
+      "source": "/api/meta/assets",
+      "destination": "/api/meta/campaigns?action=assets"
+    },
+    {
+      "source": "/api/zernio/connect/(.*)",
+      "destination": "/api/zernio?path=connect&channel=$1"
+    },
+    {
+      "source": "/api/zernio/connect",
+      "destination": "/api/zernio?path=connect"
+    },
+    {
+      "source": "/api/zernio/status",
+      "destination": "/api/zernio?path=status"
+    },
+    {
+      "source": "/api/zernio/accounts",
+      "destination": "/api/zernio?path=accounts"
+    },
+    {
+      "source": "/api/zernio/simulate-lead",
+      "destination": "/api/zernio?path=simulate-lead"
+    },
+    {
+      "source": "/api/webhooks/zernio",
+      "destination": "/api/zernio?path=webhook"
     },
     {
       "source": "/((?!api/|.*\\..*).*)",
