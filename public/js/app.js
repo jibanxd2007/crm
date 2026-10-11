@@ -1013,8 +1013,7 @@ class MetaCRMApp {
     const tasks = this._filterUserTasks(this.svc ? this.svc.tasks : []).filter(t => t.status !== 'Done').slice(0, 4);
 
     // FIRST-TIME ZERO-DATA WELCOME: When no pages connected, show warm clean welcome screen matching screenshot
-    if (availablePages.length === 0) {
-      this.el.content.innerHTML = `
+    const onboardingHeroHtml = availablePages.length === 0 ? `
         <div class="home-hero-container">
           <div class="home-hero-grid">
             <!-- Left Column: Copy & Actions -->
@@ -1137,14 +1136,115 @@ class MetaCRMApp {
               </div>
             </div>
           </div>
-        </div>`;
-      return;
-    }
+        </div>` : '';
+
+    // ACTION-ORIENTED URGENT WORK QUEUE (Principle 2)
+    const uncontactedLeads = leads.filter(l => !l.first_response_at && (l.status === 'New' || l.status === 'New Lead')).slice(0, 4);
+    const unassignedLeads = leads.filter(l => !l.assigned_staff_id && !l.assignedStaffId).slice(0, 3);
+    const overdueTasks = this._filterUserTasks(this.svc ? this.svc.tasks : []).filter(t => t.status !== 'Done' && t.dueDate && new Date(t.dueDate) < now).slice(0, 3);
+    const staffList = this.svc ? (this.svc.staff || []) : [];
+    const urgentItemsCount = uncontactedLeads.length + unassignedLeads.length + overdueTasks.length;
+
+    const actionQueueHtml = `
+      <div class="action-queue-container">
+        <div class="action-queue-header">
+          <div class="action-queue-title">
+            <span style="font-size:16px;">⚡</span>
+            <span>Priority Work Queue</span>
+            <span class="action-queue-badge">${urgentItemsCount > 0 ? `${urgentItemsCount} urgent actions` : 'Queue Clear'}</span>
+          </div>
+          <div style="font-size:12px;color:#64748B;">
+            Prioritized actions to move leads forward immediately
+          </div>
+        </div>
+        
+        ${urgentItemsCount === 0 ? `
+          <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span style="font-size:18px;">✅</span>
+              <div>
+                <strong style="color:#166534;font-size:13px;">All urgent leads contacted &amp; follow-ups up to date!</strong>
+                <div style="color:#15803D;font-size:12px;">No uncontacted leads or overdue tasks requiring immediate attention.</div>
+              </div>
+            </div>
+            <button class="btn btn-sm btn-secondary" onclick="window.app.navigate('leads')">View All Leads →</button>
+          </div>
+        ` : `
+          <div class="action-queue-grid">
+            ${uncontactedLeads.map(l => {
+              const isIg = (l.source || '').toLowerCase().includes('insta');
+              return `
+              <div class="action-card">
+                <div class="action-card-header">
+                  <div class="action-card-name" onclick="window.app.openLeadDrawer('${l.id}')">${escapeHtml(l.name)}</div>
+                  <span class="badge badge-yellow">Awaiting 1st Contact</span>
+                </div>
+                <div class="action-card-meta">
+                  <span>${isIg ? '📸 Instagram' : '📘 Facebook'} · ${escapeHtml(this._pageName(l.page_id || l.pageId))}</span>
+                  <span>${l.phone || l.email || 'No phone'}</span>
+                </div>
+                <div class="action-card-btns">
+                  <button class="btn-direct-call flex-1" onclick="window.app.quickCall('${l.id}')">
+                    ${this._icon('phone', 12)} Call
+                  </button>
+                  ${l.phone ? `
+                  <button class="btn-direct-wa flex-1" onclick="window.crmService.recordFirstResponse('${l.id}','whatsapp');window.open('https://wa.me/'+'${l.phone.replace(/\\D/g,'')}','_blank')">
+                    ${this._icon('whatsapp', 12)} WhatsApp
+                  </button>` : ''}
+                  <button class="btn btn-ghost btn-sm" onclick="window.app.openLeadDrawer('${l.id}')">Open</button>
+                </div>
+              </div>`;
+            }).join('')}
+
+            ${unassignedLeads.map(l => `
+              <div class="action-card">
+                <div class="action-card-header">
+                  <div class="action-card-name" onclick="window.app.openLeadDrawer('${l.id}')">${escapeHtml(l.name)}</div>
+                  <span class="badge-unassigned">Needs Assignment</span>
+                </div>
+                <div class="action-card-meta">
+                  <span>${escapeHtml(this._pageName(l.page_id || l.pageId))}</span>
+                  <span>${this._timeAgo(l.created_at || l.createdAt)}</span>
+                </div>
+                <div class="action-card-btns">
+                  <select class="input input-sm flex-1" onchange="window.app.reassignLead('${l.id}', this.value); window.app.renderDashboard();" style="font-size:12px;padding:4px 8px;">
+                    <option value="">⚡ Assign Staff…</option>
+                    ${staffList.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
+                  </select>
+                  <button class="btn btn-ghost btn-sm" onclick="window.app.openLeadDrawer('${l.id}')">View</button>
+                </div>
+              </div>
+            `).join('')}
+
+            ${overdueTasks.map(t => `
+              <div class="action-card">
+                <div class="action-card-header">
+                  <div class="action-card-name">${escapeHtml(t.title)}</div>
+                  <span class="badge badge-red">Overdue Follow-up</span>
+                </div>
+                <div class="action-card-meta">
+                  <span>${t.leadName ? `For: ${escapeHtml(t.leadName)}` : 'Task callback'}</span>
+                  <span style="color:#DC2626;font-weight:600;">Due: ${t.dueDate || 'Past due'}</span>
+                </div>
+                <div class="action-card-btns">
+                  <button class="btn btn-sm btn-primary flex-1" onclick="window.app.completeTask('${t.id}', this)">
+                    ✓ Mark Done
+                  </button>
+                  ${t.leadId ? `<button class="btn btn-ghost btn-sm" onclick="window.app.openLeadDrawer('${t.leadId}')">Lead</button>` : ''}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `}
+      </div>
+    `;
 
     const roi = this.svc ? this.svc.getRoiMetrics() : { totalSpend: 0, cpl: 0, cpa: 0, roas: 0, totalLeads: leads.length, totalWonDeals: wonL.length, totalWonValue: 0 };
     const speed = this.svc ? this.svc.getSpeedToLeadMetrics(leads) : { medianText: '—', complianceRate: '100%', liveBreachCount: 0 };
 
     this.el.content.innerHTML = `
+      ${onboardingHeroHtml}
+      ${actionQueueHtml}
       <!-- TOP PRIMARY OPERATIONAL KPIS (CLICKABLE) -->
       <div class="kpi-row" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
         <div class="kpi-card" style="cursor:pointer;" onclick="window.app.navigate('leads'); setTimeout(() => window.app.renderLeads('new'), 60);" title="View new leads awaiting contact">
@@ -1828,6 +1928,25 @@ class MetaCRMApp {
               ${staff.map(s => `<option value="${s.id}" ${(lead.assigned_staff_id||lead.assignedStaffId)===s.id?'selected':''}>${s.name}</option>`).join('')}
             </select>
           </div>
+          <div class="attr-row">
+            <span class="attr-label">Deal Value</span>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span class="text-xs text-gray">₹</span>
+              <input type="number" class="input input-sm" style="width:110px;font-weight:600;" value="${lead.lead_value || lead.value || 0}" onchange="window.app.updateLeadValue('${lead.id}', this.value)" placeholder="0">
+            </div>
+          </div>
+          ${lead.status === 'Lost' ? `
+          <div class="attr-row" style="background:#FEF2F2;padding:6px 10px;border-radius:6px;border:1px solid #FEE2E2;margin-top:6px;">
+            <span class="attr-label" style="color:#991B1B;">Loss Reason</span>
+            <select class="input input-sm" style="font-size:12px;" onchange="window.app.updateLossReason('${lead.id}', this.value)">
+              <option value="Unresponsive" ${(lead.loss_reason||'')==='Unresponsive'?'selected':''}>Unresponsive</option>
+              <option value="Price too high" ${(lead.loss_reason||'')==='Price too high'?'selected':''}>Price too high</option>
+              <option value="Competitor chosen" ${(lead.loss_reason||'')==='Competitor chosen'?'selected':''}>Competitor chosen</option>
+              <option value="Wrong inquiry / Not interested" ${(lead.loss_reason||'')==='Wrong inquiry / Not interested'?'selected':''}>Wrong inquiry / Not interested</option>
+              <option value="Budget constraint" ${(lead.loss_reason||'')==='Budget constraint'?'selected':''}>Budget constraint</option>
+              <option value="Other" ${(lead.loss_reason||'')==='Other'?'selected':''}>Other</option>
+            </select>
+          </div>` : ''}
         </div>
 
         <!-- Collapsible Technical Ad IDs -->
@@ -1850,6 +1969,11 @@ class MetaCRMApp {
           <input type="date" class="input input-sm" value="${lead.follow_up_date || lead.followUpDate || ''}" 
                  onchange="window.app.updateFollowUp('${lead.id}', this.value)">
           <button class="btn btn-secondary btn-sm" onclick="window.app.setTomorrowFollowUp('${lead.id}')">Tomorrow</button>
+          <button class="btn btn-secondary btn-sm" onclick="window.app.setPlusDaysFollowUp('${lead.id}', 3)">+3 Days</button>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:8px;">
+          <input type="text" class="input input-sm flex-1" id="task-quick-input-${lead.id}" placeholder="Schedule follow-up task callback…" onkeydown="if(event.key==='Enter'){window.app.createLeadFollowupTask('${lead.id}', this.value); this.value='';}">
+          <button class="btn btn-secondary btn-sm" onclick="const el=document.getElementById('task-quick-input-${lead.id}'); if(el){window.app.createLeadFollowupTask('${lead.id}', el.value); el.value='';}">+ Task</button>
         </div>
       </div>
 
@@ -2002,6 +2126,124 @@ class MetaCRMApp {
     }
   }
 
+  updateLeadValue(leadId, val) {
+    if (this.svc) {
+      const lead = this.svc.leads.find(l => l.id === leadId);
+      if (lead) {
+        const numVal = Math.max(0, parseInt(val, 10) || 0);
+        lead.lead_value = numVal;
+        lead.value = numVal;
+        if (!lead.activities) lead.activities = [];
+        lead.activities.push({
+          type: 'VALUE_UPDATED',
+          description: `Deal value set to ₹${this._formatNum(numVal)}`,
+          timestamp: new Date().toISOString()
+        });
+        if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
+        this.toast(`Deal value updated to ₹${this._formatNum(numVal)}`);
+      }
+    }
+  }
+
+  updateLossReason(leadId, reason) {
+    if (this.svc) {
+      const lead = this.svc.leads.find(l => l.id === leadId);
+      if (lead) {
+        lead.loss_reason = reason;
+        if (!lead.activities) lead.activities = [];
+        lead.activities.push({
+          type: 'LOSS_RECORDED',
+          description: `Loss reason: ${reason}`,
+          timestamp: new Date().toISOString()
+        });
+        if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
+        this.toast(`Loss reason saved: ${reason}`);
+      }
+    }
+  }
+
+  setPlusDaysFollowUp(leadId, days) {
+    const d = new Date(); d.setDate(d.getDate() + (days || 1));
+    const ds = d.toISOString().split('T')[0];
+    this.updateFollowUp(leadId, ds);
+  }
+
+  createLeadFollowupTask(leadId, title) {
+    if (!title || !title.trim()) return;
+    const lead = this.svc ? this.svc.leads.find(l => l.id === leadId) : null;
+    const d = new Date(); d.setDate(d.getDate() + 1);
+    const dueDate = d.toISOString().split('T')[0];
+    const newTask = {
+      id: 'task_' + Math.random().toString(36).substr(2, 9),
+      title: title.trim(),
+      dueDate: dueDate,
+      leadId: leadId,
+      leadName: lead ? lead.name : '',
+      status: 'Pending',
+      priority: 'high',
+      assignedTo: lead ? (lead.assigned_staff_id || lead.assignedStaffId || this.user.id) : this.user.id,
+      assigned_to: lead ? (lead.assigned_staff_id || lead.assignedStaffId || this.user.id) : this.user.id,
+      created_at: new Date().toISOString()
+    };
+    if (this.svc) {
+      if (!this.svc.tasks) this.svc.tasks = [];
+      this.svc.tasks.unshift(newTask);
+      if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
+    }
+    this.toast(`Follow-up task "${title.trim()}" created ✓`);
+    this.openLeadDrawer(leadId);
+  }
+
+  openConvInInbox(convId) {
+    this.activeConvId = convId;
+    this.navigate('inbox');
+    this.renderInbox();
+  }
+
+  assignConversation(convId, staffId) {
+    if (this.svc && this.svc.conversations) {
+      const conv = this.svc.conversations.find(c => c.id === convId);
+      if (conv) {
+        conv.assigned_staff_id = staffId;
+        conv.assignedStaffId = staffId;
+        const matchingLead = this.svc.leads.find(l => l.name === conv.name || (conv.phone && l.phone === conv.phone));
+        if (matchingLead) {
+          matchingLead.assigned_staff_id = staffId;
+          matchingLead.assignedStaffId = staffId;
+        }
+        if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
+        this.toast(`Conversation assigned to ${this._staffName(staffId)}`);
+        this.renderInbox();
+      }
+    }
+  }
+
+  addConversationNote(convId, noteText) {
+    if (!noteText || !noteText.trim()) return;
+    if (this.svc && this.svc.conversations) {
+      const conv = this.svc.conversations.find(c => c.id === convId);
+      if (conv) {
+        if (!conv.notes) conv.notes = [];
+        conv.notes.push({
+          content: noteText.trim(),
+          author: this.user.displayName || this.user.name || 'User',
+          created_at: new Date().toISOString()
+        });
+        const matchingLead = this.svc.leads.find(l => l.name === conv.name || (conv.phone && l.phone === conv.phone));
+        if (matchingLead) {
+          if (!matchingLead.notes) matchingLead.notes = [];
+          matchingLead.notes.push({
+            content: `[Inbox Note] ${noteText.trim()}`,
+            createdAt: new Date().toISOString()
+          });
+        }
+        if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
+        this.toast('Internal note saved');
+        this.renderInbox();
+      }
+    }
+  }
+
   // ──────────────────────────────────────────────────────────
   // KANBAN CRM PIPELINE WITH DRAG & DROP (Section 13)
   // ──────────────────────────────────────────────────────────
@@ -2021,7 +2263,7 @@ class MetaCRMApp {
     if (this.pipelineView === 'kanban') {
       const colsHtml = stages.map(stage => {
         const cards = leads.filter(d => d.status === stage || (stage === 'New Lead' && d.status === 'New'));
-        const total = cards.reduce((s, c) => s + (c.value || c.dealValue || 0), 0);
+        const total = cards.reduce((s, c) => s + (c.value || c.dealValue || c.lead_value || 0), 0);
         return `
           <div class="kanban-col" data-stage="${stage}" ondragover="event.preventDefault()" ondrop="window.app.onKanbanDrop(event, '${stage}')">
             <div class="kanban-col-header">
@@ -2035,16 +2277,26 @@ class MetaCRMApp {
               </div>
             </div>
             <div class="kanban-col-body">
-              ${cards.length ? cards.map(c => `
+              ${cards.length ? cards.map(c => {
+                const nowMs = Date.now();
+                const createdMs = new Date(c.created_at || c.createdAt || nowMs).getTime();
+                const daysInStage = Math.max(0, Math.floor((nowMs - createdMs) / (1000 * 60 * 60 * 24)));
+                const isStale = daysInStage >= 3 && (stage === 'New Lead' || stage === 'Contacted' || stage === 'New');
+                return `
                 <div class="kanban-card" draggable="true" ondragstart="window.app.onKanbanDragStart(event, '${c.id}')" onclick="window.app.openLeadDrawer('${c.id}')">
-                  <div class="kanban-card-name">${c.name}</div>
-                  <div class="kanban-card-meta text-xs text-gray">${this._pageName(c.page_id || c.pageId)}</div>
+                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;">
+                    <div class="kanban-card-name">${escapeHtml(c.name)}</div>
+                    ${isStale ? `<span class="badge-stale" title="Lead has been in this stage for ${daysInStage} days">⏱ ${daysInStage}d</span>` : ''}
+                  </div>
+                  <div class="kanban-card-meta text-xs text-gray">${escapeHtml(this._pageName(c.page_id || c.pageId))}</div>
+                  ${c.loss_reason && stage === 'Lost' ? `<div class="text-xs" style="color:#DC2626;margin-top:2px;">Lost: ${escapeHtml(c.loss_reason)}</div>` : ''}
                   <div class="kanban-card-footer">
                     <div class="staff-chip" title="${this._staffName(c.assigned_staff_id || c.assignedStaffId)}">${(this._staffName(c.assigned_staff_id || c.assignedStaffId)||'?').charAt(0)}</div>
-                    ${(c.value || c.dealValue) ? `<span class="text-xs font-semibold">₹${this._formatNum(c.value || c.dealValue)}</span>` : ''}
+                    ${(c.value || c.dealValue || c.lead_value) ? `<span class="text-xs font-semibold">₹${this._formatNum(c.value || c.dealValue || c.lead_value)}</span>` : ''}
                     <span class="text-xs text-gray ml-auto">${c.follow_up_date || c.followUpDate ? new Date(c.follow_up_date || c.followUpDate).toLocaleDateString('en-IN', {day:'numeric',month:'short'}) : 'No date'}</span>
                   </div>
-                </div>`).join('')
+                </div>`;
+              }).join('')
               : `<div class="kanban-empty">Drag leads here</div>`}
             </div>
           </div>`;
@@ -2313,9 +2565,28 @@ class MetaCRMApp {
               <div class="idetail-row">
                 <span class="idetail-label">Assignee</span>
                 <span class="idetail-value">
-                  <span class="assignee-avatar">${(this._staffName(matchingLead ? matchingLead.assigned_staff_id : this.user.id) || 'A').charAt(0)}</span>
-                  ${escapeHtml(this._staffName(matchingLead ? matchingLead.assigned_staff_id : this.user.id))}
+                  <select class="input input-sm" style="font-size:12px;padding:2px 6px;" onchange="window.app.assignConversation('${activeConv.id}', this.value)">
+                    <option value="">Unassigned</option>
+                    ${(this.svc ? (this.svc.staff || []) : []).map(s => `<option value="${s.id}" ${(activeConv.assigned_staff_id||activeConv.assignedStaffId||(matchingLead&&(matchingLead.assigned_staff_id||matchingLead.assignedStaffId)))===s.id?'selected':''}>${s.name}</option>`).join('')}
+                  </select>
                 </span>
+              </div>
+            </div>
+
+            <!-- Internal Team Notes -->
+            <div class="idetail-card">
+              <div class="idetail-section-heading">Internal Team Notes</div>
+              <div style="max-height:100px;overflow-y:auto;margin-bottom:8px;">
+                ${(activeConv.notes && activeConv.notes.length) ? activeConv.notes.map(n => `
+                  <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;padding:6px 8px;margin-bottom:5px;font-size:11.5px;">
+                    <div style="color:#0F172A;">${escapeHtml(n.content)}</div>
+                    <div style="font-size:10px;color:#94A3B8;margin-top:2px;">${escapeHtml(n.author || 'Team')} · ${this._timeAgo(n.created_at)}</div>
+                  </div>
+                `).join('') : '<div style="font-size:11.5px;color:#94A3B8;">No internal notes yet.</div>'}
+              </div>
+              <div style="display:flex;gap:6px;">
+                <input type="text" class="input input-sm flex-1" id="inbox-note-input" placeholder="Add private note for team…" style="font-size:11.5px;" onkeydown="if(event.key==='Enter'){window.app.addConversationNote('${activeConv.id}', this.value); this.value='';}">
+                <button class="btn btn-secondary-orange btn-sm" onclick="const el=document.getElementById('inbox-note-input'); if(el){window.app.addConversationNote('${activeConv.id}', el.value); el.value='';}">Save</button>
               </div>
             </div>
 
@@ -2323,6 +2594,7 @@ class MetaCRMApp {
               ${matchingLead ? `
                 <button class="btn btn-orange w-full mb-2" onclick="window.app.openLeadDrawer('${matchingLead.id}')">Open Full CRM Profile →</button>
                 <button class="btn btn-secondary-orange w-full mb-2" onclick="window.app.updateLeadStage('${matchingLead.id}', 'Qualified')">Mark as Qualified</button>
+                <button class="btn btn-ghost btn-sm w-full" onclick="window.app.openAddTaskModal(); setTimeout(() => { const el = document.getElementById('task-lead-id'); if(el) el.value = '${matchingLead.id}'; }, 100);">+ Schedule Follow-up Task</button>
               ` : `
                 <button class="btn btn-orange btn-create-lead-crm w-full mb-2" onclick="window.app.createLeadFromConv('${escapeHtml(activeConv.name)}', '${activeConv.page_id}')">+ Create Lead in CRM</button>
               `}

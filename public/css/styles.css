@@ -3792,5 +3792,126 @@ th {
   box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
 }
 
+/* Urgent Work Queue & Action Center (Principle 2) */
+.action-queue-container {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.action-queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.action-queue-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0F172A;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.action-queue-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: #FEE2E2;
+  color: #DC2626;
+}
+.action-queue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+.action-card {
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #F8FAFC;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: all 120ms ease;
+}
+.action-card:hover {
+  background: #FFFFFF;
+  border-color: #CBD5E1;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+}
+.action-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.action-card-name {
+  font-weight: 600;
+  font-size: 13.5px;
+  color: #0F172A;
+}
+.action-card-sub {
+  font-size: 11.5px;
+  color: #64748B;
+}
+.action-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.badge-stale {
+  background: #FEF3C7;
+  color: #B45309;
+  border: 1px solid rgba(217, 119, 6, 0.2);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.badge-unassigned {
+  background: #FEE2E2;
+  color: #B91C1C;
+  border: 1px solid rgba(185, 28, 28, 0.2);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.timeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+.timeline-item {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+}
+.timeline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #FF5A1F;
+  margin-top: 5px;
+  flex-shrink: 0;
+}
+.timeline-content {
+  flex: 1;
+}
+.timeline-title {
+  color: #0F172A;
+  font-weight: 500;
+}
+.timeline-time {
+  color: #94A3B8;
+  font-size: 11px;
+}
+
 
 
