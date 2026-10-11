@@ -17,13 +17,14 @@
   --text-muted:     #94A3B8;
   --border:         #E2E8F0;
   --border-subtle:  rgba(226, 232, 240, 0.8);
-  --border-focus:   #6366F1;
+  --border-focus:   #FF5A1F;
   --border-hover:   #CBD5E1;
 
-  --accent:         #6366F1;
-  --accent-hover:   #4F46E5;
-  --accent-light:   #EEF2FF;
-  --accent-gradient: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%);
+  --accent:         #FF5A1F;
+  --accent-hover:   #E04810;
+  --accent-light:   #FFF3EC;
+  --accent-border:  #FED7AA;
+  --accent-gradient: linear-gradient(135deg, #FF5A1F 0%, #FF7A45 100%);
   --ig-gradient:    linear-gradient(135deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
   --fb-gradient:    linear-gradient(135deg, #1877F2 0%, #0C63D4 100%);
   --wa-gradient:    linear-gradient(135deg, #25D366 0%, #128C7E 100%);
@@ -53,7 +54,7 @@
   --shadow-md: 0 8px 24px -4px rgba(15, 23, 42, 0.08), 0 4px 10px -2px rgba(15, 23, 42, 0.04);
   --shadow-lg: 0 16px 36px -6px rgba(15, 23, 42, 0.12), 0 8px 18px -4px rgba(15, 23, 42, 0.05);
   --shadow-xl: 0 25px 50px -12px rgba(15, 23, 42, 0.18);
-  --shadow-glow: 0 0 20px -2px rgba(99, 102, 241, 0.35);
+  --shadow-glow: 0 0 20px -2px rgba(255, 90, 31, 0.35);
   --shadow-glow-ig: 0 0 22px -2px rgba(220, 39, 67, 0.4);
 
   --sidebar-w: 260px;
@@ -94,10 +95,10 @@
 html { height: 100%; }
 body {
   font-family: var(--font-sans);
-  background: radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.05) 0px, transparent 50%),
-              radial-gradient(at 100% 0%, rgba(236, 72, 153, 0.03) 0px, transparent 40%),
-              radial-gradient(at 50% 100%, rgba(16, 185, 129, 0.03) 0px, transparent 50%),
-              var(--bg-page);
+  background: radial-gradient(at 0% 0%, rgba(255, 90, 31, 0.035) 0px, transparent 45%),
+              radial-gradient(at 100% 0%, rgba(245, 158, 11, 0.025) 0px, transparent 40%),
+              radial-gradient(at 50% 100%, rgba(16, 185, 129, 0.02) 0px, transparent 50%),
+              #FAF9F6;
   color: var(--text-primary);
   font-size: 14px;
   line-height: 1.5;
@@ -512,7 +513,7 @@ h1, h2, h3, h4, .brand-title, .topbar-title, .card-title, .kpi-value, .modal-tit
 }
 .card:hover {
   box-shadow: var(--shadow-md);
-  border-color: rgba(99, 102, 241, 0.25);
+  border-color: rgba(255, 90, 31, 0.25);
 }
 .card-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -554,7 +555,7 @@ h1, h2, h3, h4, .brand-title, .topbar-title, .card-title, .kpi-value, .modal-tit
 .kpi-card:hover {
   transform: translateY(-3px);
   box-shadow: var(--shadow-md);
-  border-color: rgba(99, 102, 241, 0.3);
+  border-color: rgba(255, 90, 31, 0.3);
 }
 .kpi-title {
   font-size: 11px;
@@ -631,16 +632,16 @@ h1, h2, h3, h4, .brand-title, .topbar-title, .card-title, .kpi-value, .modal-tit
   background: var(--accent-gradient);
   color: #fff;
   border-color: transparent;
-  box-shadow: 0 4px 14px -2px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 4px 14px -2px rgba(255, 90, 31, 0.35);
 }
 .btn-primary:hover {
-  background: linear-gradient(135deg, #4F46E5 0%, #4338CA 100%);
+  background: linear-gradient(135deg, #E04810 0%, #C83C08 100%);
   transform: translateY(-1.5px);
-  box-shadow: 0 6px 18px -2px rgba(99, 102, 241, 0.5);
+  box-shadow: 0 6px 18px -2px rgba(255, 90, 31, 0.45);
 }
 .btn-primary:active {
   transform: translateY(0);
-  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.3);
+  box-shadow: 0 2px 6px rgba(255, 90, 31, 0.25);
 }
 
 .btn-secondary {
@@ -839,13 +840,15 @@ tr.clickable-row:hover {
 #drawer-overlay.open { opacity: 1; pointer-events: auto; }
 
 #drawer {
-  position: fixed; top: 0; right: -460px;
-  width: 440px; height: 100vh;
+  position: fixed; top: 0; right: -490px;
+  width: 460px; height: 100vh;
   background: #FFFFFF;
-  box-shadow: -10px 0 36px rgba(15, 23, 42, 0.15);
+  box-shadow: -12px 0 40px rgba(15, 23, 42, 0.16);
   z-index: 101;
   transition: right 280ms cubic-bezier(0.16, 1, 0.3, 1);
   display: flex; flex-direction: column;
+  border-top-left-radius: 16px;
+  border-bottom-left-radius: 16px;
 }
 #drawer.open { right: 0; }
 
@@ -867,7 +870,7 @@ tr.clickable-row:hover {
   background: var(--accent-gradient); color: #fff;
   display: flex; align-items: center; justify-content: center;
   font-size: 20px; font-weight: 800; flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  box-shadow: 0 4px 12px rgba(255, 90, 31, 0.28);
 }
 .lead-header-name { font-size: 17px; font-weight: 700; margin-bottom: 4px; color: var(--text-primary); }
 .lead-actions-bar { display: flex; gap: 8px; margin-bottom: 22px; }
@@ -1032,11 +1035,11 @@ tr.clickable-row:hover {
   transition: box-shadow var(--transition), transform var(--transition-bounce), border-color var(--transition);
 }
 .kanban-card:hover {
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 10px 24px -4px rgba(15, 23, 42, 0.08), 0 4px 8px -2px rgba(15, 23, 42, 0.04);
   transform: translateY(-2.5px);
-  border-color: rgba(99, 102, 241, 0.35);
+  border-color: rgba(255, 90, 31, 0.4);
 }
-.kanban-card-name { font-size: 13px; font-weight: 700; margin-bottom: 4px; color: var(--text-primary); }
+.kanban-card-name { font-size: 13.5px; font-weight: 700; margin-bottom: 4px; color: var(--text-primary); }
 .kanban-card-meta { margin-bottom: 8px; }
 .kanban-card-footer { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .kanban-empty { font-size: 12px; color: var(--text-secondary); text-align: center; padding: 24px 0; }
@@ -1045,7 +1048,7 @@ tr.clickable-row:hover {
   background: var(--accent-gradient); color: #fff;
   display: flex; align-items: center; justify-content: center;
   font-size: 10px; font-weight: 700;
-  box-shadow: 0 2px 6px rgba(99, 102, 241, 0.25);
+  box-shadow: 0 2px 6px rgba(255, 90, 31, 0.25);
 }
 
 /* ─── MetaCRM Messages Page — Ivory & Orange Brand Palette ─────── */
@@ -3696,26 +3699,35 @@ body[data-page="inbox"] .user-friendly-tip .tip-close-btn:hover {
 .platform-chip-fb {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   font-size: 11px;
   font-weight: 600;
   color: #1877F2;
+  background: #EFF6FF;
+  padding: 2.5px 8px;
+  border-radius: 9999px;
+  border: 1px solid #BFDBFE;
 }
 .platform-chip-ig {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   font-size: 11px;
   font-weight: 600;
-  color: #E1306C;
+  color: #BE185D;
+  background: #FDF2F8;
+  padding: 2.5px 8px;
+  border-radius: 9999px;
+  border: 1px solid #FBCFE8;
 }
 
 /* Table Enhancements */
 .clickable-row {
-  transition: background 120ms ease;
+  transition: all 150ms ease;
 }
 .clickable-row:hover {
-  background: #F8FAFC !important;
+  background: #FAF7F2 !important;
+  box-shadow: inset 3px 0 0 #FF5A1F;
 }
 th {
   font-size: 11px !important;
@@ -3793,35 +3805,49 @@ th {
 }
 
 /* Urgent Work Queue & Action Center (Principle 2) */
+/* ─── Priority Work Queue & Action Cards (Principle 2) ────── */
 .action-queue-container {
   background: #FFFFFF;
-  border: 1px solid #E2E8F0;
-  border-radius: 12px;
-  padding: 16px 20px;
-  margin-bottom: 20px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: var(--radius);
+  padding: 18px 22px;
+  margin-bottom: 22px;
+  box-shadow: 0 2px 6px -1px rgba(15, 23, 42, 0.04), 0 1px 3px -1px rgba(15, 23, 42, 0.03);
+  position: relative;
+  overflow: hidden;
+}
+.action-queue-container::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #FF5A1F 0%, #F59E0B 50%, #10B981 100%);
 }
 .action-queue-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(241, 245, 249, 0.9);
 }
 .action-queue-title {
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 700;
   color: #0F172A;
   display: flex;
   align-items: center;
   gap: 8px;
+  font-family: var(--font-display);
 }
 .action-queue-badge {
   font-size: 11px;
   font-weight: 700;
-  padding: 2px 8px;
+  padding: 2.5px 9px;
   border-radius: 9999px;
-  background: #FEE2E2;
-  color: #DC2626;
+  background: #FFF1EA;
+  color: #FF5A1F;
+  border: 1px solid rgba(255, 90, 31, 0.25);
 }
 .action-queue-grid {
   display: grid;
@@ -3830,57 +3856,72 @@ th {
 }
 .action-card {
   border: 1px solid #E2E8F0;
-  border-radius: 8px;
-  padding: 12px 14px;
-  background: #F8FAFC;
+  border-radius: 10px;
+  padding: 14px 16px;
+  background: #FAF7F2;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  transition: all 120ms ease;
+  transition: all 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
 }
 .action-card:hover {
   background: #FFFFFF;
   border-color: #CBD5E1;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -4px rgba(15, 23, 42, 0.08);
 }
-.action-card-top {
+.action-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 .action-card-name {
-  font-weight: 600;
+  font-weight: 700;
   font-size: 13.5px;
   color: #0F172A;
+  cursor: pointer;
+  transition: color 120ms ease;
 }
-.action-card-sub {
+.action-card-name:hover {
+  color: #FF5A1F;
+}
+.action-card-meta {
   font-size: 11.5px;
   color: #64748B;
+  display: flex;
+  justify-content: space-between;
 }
-.action-card-actions {
+.action-card-btns {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin-top: 4px;
 }
 .badge-stale {
   background: #FEF3C7;
   color: #B45309;
-  border: 1px solid rgba(217, 119, 6, 0.2);
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 4px;
+  border: 1px solid rgba(217, 119, 6, 0.25);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }
 .badge-unassigned {
   background: #FEE2E2;
   color: #B91C1C;
-  border: 1px solid rgba(185, 28, 28, 0.2);
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 4px;
+  border: 1px solid rgba(185, 28, 28, 0.25);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }
 .timeline-list {
   display: flex;
