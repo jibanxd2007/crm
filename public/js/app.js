@@ -1042,7 +1042,15 @@ class MetaCRMApp {
     const campaignsList = (this.svc && this.svc.campaigns) ? this.svc.campaigns : [];
     const totalSpend = isAdmin ? campaignsList.reduce((sum, c) => sum + (c.spend || 0), 0) : null;
     const cpl = totalSpend && leads.length ? Math.round(totalSpend / leads.length) : 0;
-    const unreadMessagesCount = (this.svc ? (this.svc.conversations || []) : []).reduce((sum, c) => sum + (c.unread || 0), 0);
+    const accessibleConvs = (this.user.role === 'admin' || this.user.role === 'super_admin')
+      ? (this.svc ? (this.svc.conversations || []) : [])
+      : (this.svc ? (this.svc.conversations || []) : []).filter(c => !c.page_id || availablePages.some(p => p.id === c.page_id));
+    const unreadMessagesCount = accessibleConvs.reduce((sum, c) => sum + (c.unread || c.unread_count || 0), 0);
+
+    const followUpLeads = leads.filter(l => l.status === 'Follow-up' || l.status === 'followup' || (l.follow_up_date && new Date(l.follow_up_date) <= new Date()));
+    const allPendingTasks = this._filterUserTasks(this.svc ? this.svc.tasks : []).filter(t => t.status !== 'Done');
+    const followUpTasks = allPendingTasks.filter(t => (t.type && t.type.toLowerCase().includes('follow')) || (t.title && t.title.toLowerCase().includes('follow')));
+    const followUpsDueCount = followUpLeads.length > 0 ? (followUpLeads.length + followUpTasks.length) : allPendingTasks.length;
 
     // Page Performance Rows (for Leads Breakdown by Page)
     const pageRows = availablePages.map(p => {
@@ -1203,8 +1211,8 @@ class MetaCRMApp {
       </div>
     ` : '';
 
-    const roi = this.svc ? this.svc.getRoiMetrics() : { totalSpend: 0, cpl: 0, cpa: 0, roas: 0, totalLeads: leads.length, totalWonDeals: wonL.length, totalWonValue: 0 };
-    const speed = this.svc ? this.svc.getSpeedToLeadMetrics(leads) : { medianText: '—', complianceRate: '100%', liveBreachCount: 0 };
+    const roi = this.svc ? this.svc.getRoiMetrics(this.selectedDateRange, this.selectedPageFilter) : { totalSpend: 0, cpl: 0, cpa: 0, roas: 0, totalLeads: leads.length, totalWonDeals: wonL.length, totalWonValue: 0, activeCampaignsCount: 0 };
+    const speed = this.svc ? this.svc.getSpeedToLeadMetrics(leads) : { medianText: '—', complianceRate: '100%', liveBreachCount: 0, respondedCount: 0 };
 
     this.el.content.innerHTML = `
       ${fbOnboardingHtml}
@@ -1288,13 +1296,13 @@ class MetaCRMApp {
               <div class="submetric-sub">${unreadMessagesCount > 0 ? `${unreadMessagesCount} unread` : 'No new messages'}</div>
             </div>
 
-            <div class="submetric-col" onclick="window.app.navigate('tasks')">
+            <div class="submetric-col" onclick="${followUpLeads.length > 0 ? `window.app.navigate('leads'); setTimeout(() => window.app.renderLeads('follow-up'), 60);` : `window.app.navigate('tasks');`}">
               <div class="submetric-label-row">
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                 <span>Follow-ups Due</span>
               </div>
-              <div class="submetric-val">${tasks.length}</div>
-              <div class="submetric-sub">${tasks.length > 0 ? `${tasks.length} pending` : 'No pending follow-ups'}</div>
+              <div class="submetric-val">${followUpsDueCount}</div>
+              <div class="submetric-sub">${followUpsDueCount > 0 ? `${followUpsDueCount} pending` : 'No pending follow-ups'}</div>
             </div>
 
             <div class="submetric-col">
@@ -1312,7 +1320,7 @@ class MetaCRMApp {
                 <span>SLA Compliance</span>
               </div>
               <div class="submetric-val">${speed.complianceRate || '100%'}</div>
-              <div class="submetric-sub">Within SLA</div>
+              <div class="submetric-sub">${speed.liveBreachCount > 0 ? `${speed.liveBreachCount} breach${speed.liveBreachCount > 1 ? 'es' : ''}` : 'Within SLA'}</div>
             </div>
           </div>
         </div>
@@ -1327,28 +1335,28 @@ class MetaCRMApp {
                 <span>Ad Spend</span><!-- AD SPEND -->
               </div>
               <div class="submetric-val">₹${this._formatNum(roi.totalSpend || 0)}</div>
-              <div class="submetric-sub">${roi.totalSpend > 0 ? (campaigns.length + ' Active Campaigns') : 'No spend yet'}</div>
+              <div class="submetric-sub">${roi.totalSpend > 0 ? `${roi.activeCampaignsCount || (campaigns.length || 1)} Active Campaign${(roi.activeCampaignsCount || campaigns.length || 1) === 1 ? '' : 's'}` : 'No spend yet'}</div>
             </div>
 
-            <div class="submetric-col">
+            <div class="submetric-col" onclick="window.app.navigate('reports')">
               <div class="submetric-label-row">
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                 <span>Cost Per Lead (CPL)</span><!-- COST PER LEAD (CPL) -->
               </div>
-              <div class="submetric-val">₹${roi.cpl || 0}</div>
+              <div class="submetric-val">₹${(roi.cpl || 0).toLocaleString('en-IN')}</div>
               <div class="submetric-sub">Live CPL</div>
             </div>
 
-            <div class="submetric-col">
+            <div class="submetric-col" onclick="window.app.navigate('reports')">
               <div class="submetric-label-row">
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
                 <span>Cost Per Acquisition (CPA)</span><!-- COST PER ACQUISITION (CPA) -->
               </div>
-              <div class="submetric-val">₹${roi.cpa || 0}</div>
+              <div class="submetric-val">₹${(roi.cpa || 0).toLocaleString('en-IN')}</div>
               <div class="submetric-sub">Spend / Won Deal</div>
             </div>
 
-            <div class="submetric-col">
+            <div class="submetric-col" onclick="window.app.navigate('reports')">
               <div class="submetric-label-row">
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
                 <span>Return on Ad Spend (ROAS)</span>

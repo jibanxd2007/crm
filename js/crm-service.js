@@ -108,25 +108,171 @@ class CRMService {
   loadPages() {
     try {
       const saved = localStorage.getItem(this.pagesKey);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.length > 0) return parsed;
+      }
     } catch (e) {}
-    return (window.INITIAL_DATA && window.INITIAL_DATA.pages) ? [...window.INITIAL_DATA.pages] : [];
+    if (window.INITIAL_DATA && window.INITIAL_DATA.pages && window.INITIAL_DATA.pages.length > 0) {
+      return [...window.INITIAL_DATA.pages];
+    }
+    return this.getDefaultPages();
+  }
+
+  getDefaultPages() {
+    return [
+      {
+        id: "page_01",
+        meta_page_id: "104829104812",
+        name: "TechNova Solutions",
+        category: "Technology & Cloud Services",
+        platform: "facebook",
+        status: "connected",
+        spend: 45000,
+        leadsCount: 45,
+        wonDeals: 9,
+        wonValue: 185000,
+        activeCampaigns: 1
+      },
+      {
+        id: "page_02",
+        meta_page_id: "205938102931",
+        name: "Aura Living",
+        category: "Home Decor & Living",
+        platform: "instagram",
+        status: "connected",
+        spend: 32000,
+        leadsCount: 20,
+        wonDeals: 2,
+        wonValue: 48000,
+        activeCampaigns: 1
+      },
+      {
+        id: "page_03",
+        meta_page_id: "309482710294",
+        name: "Prime Healthcare",
+        category: "Clinics & Wellness",
+        platform: "facebook",
+        status: "connected",
+        spend: 0,
+        leadsCount: 0,
+        wonDeals: 0,
+        wonValue: 0,
+        activeCampaigns: 0
+      },
+      {
+        id: "page_04",
+        meta_page_id: "408192830192",
+        name: "Urban Fitness Club",
+        category: "Health & Fitness",
+        platform: "instagram",
+        status: "connected",
+        spend: 0,
+        leadsCount: 0,
+        wonDeals: 0,
+        wonValue: 0,
+        activeCampaigns: 0
+      },
+      {
+        id: "page_05",
+        meta_page_id: "509182730192",
+        name: "Gourmet Kitchen",
+        category: "Hospitality & F&B",
+        platform: "facebook",
+        status: "connected",
+        spend: 0,
+        leadsCount: 0,
+        wonDeals: 0,
+        wonValue: 0,
+        activeCampaigns: 0
+      },
+      {
+        id: "page_06",
+        meta_page_id: "609182730192",
+        name: "Zenith Wealth",
+        category: "Financial Advisory",
+        platform: "facebook",
+        status: "connected",
+        spend: 0,
+        leadsCount: 0,
+        wonDeals: 0,
+        wonValue: 0,
+        activeCampaigns: 0
+      }
+    ];
   }
 
   loadStaff() {
     try {
       const saved = localStorage.getItem(this.staffKey);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.length > 0) return parsed;
+      }
     } catch (e) {}
-    return (window.INITIAL_DATA && window.INITIAL_DATA.staff) ? [...window.INITIAL_DATA.staff] : [];
+    if (window.INITIAL_DATA && window.INITIAL_DATA.staff && window.INITIAL_DATA.staff.length > 0) {
+      return [...window.INITIAL_DATA.staff];
+    }
+    return this.getDefaultStaff();
+  }
+
+  getDefaultStaff() {
+    return [
+      { id: "admin", name: "Administrator", email: "admin@metacrm.io", role: "admin", assignedPages: ["page_01", "page_02", "page_03", "page_04", "page_05", "page_06"] },
+      { id: "user_a", name: "Staff A (Rahul)", email: "rahul@metacrm.io", role: "staff", assignedPages: ["page_01"], assignedPageId: "page_01" },
+      { id: "user_b", name: "Staff B (Sneha)", email: "sneha@metacrm.io", role: "staff", assignedPages: ["page_02"], assignedPageId: "page_02" }
+    ];
   }
 
   loadCampaigns() {
     try {
       const saved = localStorage.getItem(this.campaignsKey);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.length > 0) return parsed;
+      }
     } catch (e) {}
-    return (window.INITIAL_DATA && window.INITIAL_DATA.campaigns) ? [...window.INITIAL_DATA.campaigns] : [];
+    if (window.INITIAL_DATA && window.INITIAL_DATA.campaigns && window.INITIAL_DATA.campaigns.length > 0) {
+      return [...window.INITIAL_DATA.campaigns];
+    }
+    return this.getDefaultCampaigns();
+  }
+
+  getDefaultCampaigns() {
+    return [
+      {
+        id: "cmp_leadgen_01",
+        page_id: "page_01",
+        name: "Enterprise B2B Lead Gen",
+        status: "ACTIVE",
+        objective: "OUTCOME_LEADS",
+        spend: 45000,
+        leads: 45,
+        impressions: 125000,
+        clicks: 3400,
+        ctr: 2.72,
+        cpc: 13.23,
+        cpm: 360,
+        wonDeals: 9,
+        wonValue: 185000
+      },
+      {
+        id: "cmp_leadgen_02",
+        page_id: "page_02",
+        name: "Spring Home Decor",
+        status: "ACTIVE",
+        objective: "OUTCOME_LEADS",
+        spend: 32000,
+        leads: 20,
+        impressions: 98000,
+        clicks: 2100,
+        ctr: 2.14,
+        cpc: 15.24,
+        cpm: 326.53,
+        wonDeals: 2,
+        wonValue: 48000
+      }
+    ];
   }
 
   loadAdSets() {
@@ -153,7 +299,140 @@ class CRMService {
         if (parsed && parsed.length > 0) return parsed;
       }
     } catch (e) {}
-    return (window.INITIAL_DATA && window.INITIAL_DATA.leads) ? [...window.INITIAL_DATA.leads] : [];
+    if (window.INITIAL_DATA && window.INITIAL_DATA.leads && window.INITIAL_DATA.leads.length > 0) {
+      return [...window.INITIAL_DATA.leads];
+    }
+    return this.getDefaultLeads();
+  }
+
+  getDefaultLeads() {
+    const now = Date.now();
+    return [
+      {
+        id: "lead_01",
+        name: "Aarav Mehta",
+        phone: "+91 98201 12345",
+        email: "aarav.mehta@techcorp.in",
+        company: "TechCorp India",
+        page_id: "page_01",
+        campaign_id: "cmp_leadgen_01",
+        campaign_name: "Enterprise B2B Lead Gen",
+        status: "Won",
+        value: 45000,
+        source: "Facebook Lead Ads",
+        created_at: new Date(now - 1000 * 60 * 180).toISOString(),
+        first_response_at: new Date(now - 1000 * 60 * 180 + 1000 * 162).toISOString(),
+        first_response_action: "call",
+        sla_target_minutes: 5,
+        is_sla_compliant: true
+      },
+      {
+        id: "lead_02",
+        name: "Priya Sharma",
+        phone: "+91 98334 56789",
+        email: "priya.sharma@innovate.co",
+        company: "Innovate Solutions",
+        page_id: "page_01",
+        campaign_id: "cmp_leadgen_01",
+        campaign_name: "Enterprise B2B Lead Gen",
+        status: "Follow-up",
+        value: 30000,
+        source: "Facebook Lead Ads",
+        created_at: new Date(now - 1000 * 60 * 240).toISOString(),
+        first_response_at: new Date(now - 1000 * 60 * 240 + 1000 * 195).toISOString(),
+        first_response_action: "message",
+        follow_up_date: new Date(now + 1000 * 60 * 60 * 2).toISOString(),
+        sla_target_minutes: 5,
+        is_sla_compliant: true
+      },
+      {
+        id: "lead_03",
+        name: "Rohit Verma",
+        phone: "+91 98450 98765",
+        email: "rohit.verma@apexcloud.io",
+        company: "Apex Cloud Services",
+        page_id: "page_01",
+        campaign_id: "cmp_leadgen_01",
+        campaign_name: "Enterprise B2B Lead Gen",
+        status: "Contacted",
+        value: 25000,
+        source: "Facebook Lead Ads",
+        created_at: new Date(now - 1000 * 60 * 360).toISOString(),
+        first_response_at: new Date(now - 1000 * 60 * 360 + 1000 * 140).toISOString(),
+        first_response_action: "call",
+        sla_target_minutes: 5,
+        is_sla_compliant: true
+      },
+      {
+        id: "lead_04",
+        name: "Ananya Iyer",
+        phone: "+91 98765 43210",
+        email: "ananya.iyer@zenithsys.com",
+        company: "Zenith Systems",
+        page_id: "page_01",
+        campaign_id: "cmp_leadgen_01",
+        campaign_name: "Enterprise B2B Lead Gen",
+        status: "New",
+        value: 35000,
+        source: "Facebook Lead Ads",
+        created_at: new Date(now - 1000 * 60 * 3).toISOString(),
+        first_response_at: null,
+        sla_target_minutes: 5
+      },
+      {
+        id: "lead_05",
+        name: "Vikram Malhotra",
+        phone: "+91 98112 34567",
+        email: "vikram.m@luxuryhomes.in",
+        company: "Malhotra Living",
+        page_id: "page_02",
+        campaign_id: "cmp_leadgen_02",
+        campaign_name: "Spring Home Decor",
+        status: "Won",
+        value: 28000,
+        source: "Instagram Lead Ads",
+        created_at: new Date(now - 1000 * 60 * 600).toISOString(),
+        first_response_at: new Date(now - 1000 * 60 * 600 + 1000 * 175).toISOString(),
+        first_response_action: "call",
+        sla_target_minutes: 5,
+        is_sla_compliant: true
+      },
+      {
+        id: "lead_06",
+        name: "Sneha Patel",
+        phone: "+91 98920 87654",
+        email: "sneha.p@auradesign.org",
+        company: "Aura Interiors",
+        page_id: "page_02",
+        campaign_id: "cmp_leadgen_02",
+        campaign_name: "Spring Home Decor",
+        status: "Follow-up",
+        value: 20000,
+        source: "Instagram Lead Ads",
+        created_at: new Date(now - 1000 * 60 * 480).toISOString(),
+        first_response_at: new Date(now - 1000 * 60 * 480 + 1000 * 210).toISOString(),
+        first_response_action: "message",
+        follow_up_date: new Date(now + 1000 * 60 * 60 * 4).toISOString(),
+        sla_target_minutes: 5,
+        is_sla_compliant: true
+      },
+      {
+        id: "lead_07",
+        name: "Karan Kapoor",
+        phone: "+91 98711 22334",
+        email: "karan.k@livingspaces.in",
+        company: "Living Spaces Studio",
+        page_id: "page_02",
+        campaign_id: "cmp_leadgen_02",
+        campaign_name: "Spring Home Decor",
+        status: "New",
+        value: 18000,
+        source: "Instagram Lead Ads",
+        created_at: new Date(now - 1000 * 60 * 4).toISOString(),
+        first_response_at: null,
+        sla_target_minutes: 5
+      }
+    ];
   }
 
   loadContacts() {
@@ -197,7 +476,18 @@ class CRMService {
         if (parsed && parsed.length > 0) return parsed;
       }
     } catch (e) {}
-    return (window.INITIAL_DATA && window.INITIAL_DATA.tasks) ? [...window.INITIAL_DATA.tasks] : [];
+    if (window.INITIAL_DATA && window.INITIAL_DATA.tasks && window.INITIAL_DATA.tasks.length > 0) {
+      return [...window.INITIAL_DATA.tasks];
+    }
+    return this.getDefaultTasks();
+  }
+
+  getDefaultTasks() {
+    return [
+      { id: "task_01", title: "Call Priya Sharma for product demo follow-up", status: "Todo", priority: "High", type: "follow_up", due: "Today", assigned_to: "user_a", assignedStaffId: "user_a" },
+      { id: "task_02", title: "Send custom proposal to Sneha Patel", status: "Todo", priority: "Medium", type: "follow_up", due: "Today", assigned_to: "user_b", assignedStaffId: "user_b" },
+      { id: "task_03", title: "Review Enterprise B2B Lead Gen ad performance", status: "In Progress", priority: "Medium", type: "marketing", due: "Tomorrow", assigned_to: "admin", assignedStaffId: "admin" }
+    ];
   }
 
   loadSprints() {
@@ -219,7 +509,58 @@ class CRMService {
         if (parsed && parsed.length > 0) return parsed;
       }
     } catch (e) {}
-    return (window.INITIAL_DATA && window.INITIAL_DATA.conversations) ? [...window.INITIAL_DATA.conversations] : [];
+    if (window.INITIAL_DATA && window.INITIAL_DATA.conversations && window.INITIAL_DATA.conversations.length > 0) {
+      return [...window.INITIAL_DATA.conversations];
+    }
+    return this.getDefaultConversations();
+  }
+
+  getDefaultConversations() {
+    return [
+      {
+        id: "conv_01",
+        name: "Priya Sharma",
+        channel: "messenger",
+        page_id: "page_01",
+        unread: 1,
+        unread_count: 1,
+        time: "10m ago",
+        preview: "Could you share the pricing brochure for Enterprise B2B plan?",
+        messages: [
+          { text: "Hi, I saw your ad on Facebook about Enterprise Cloud.", incoming: true, time: "12m ago", is_read: true },
+          { text: "Could you share the pricing brochure for Enterprise B2B plan?", incoming: true, time: "10m ago", is_read: false }
+        ]
+      },
+      {
+        id: "conv_02",
+        name: "@sneha_designs",
+        participantUsername: "sneha_designs",
+        channel: "instagram",
+        page_id: "page_02",
+        unread: 1,
+        unread_count: 1,
+        time: "25m ago",
+        preview: "Is the Spring Collection available for bulk commercial orders?",
+        messages: [
+          { text: "Hello! Loved your Instagram post about Spring Home Decor.", incoming: true, time: "30m ago", is_read: true },
+          { text: "Is the Spring Collection available for bulk commercial orders?", incoming: true, time: "25m ago", is_read: false }
+        ]
+      },
+      {
+        id: "conv_03",
+        name: "Aarav Mehta",
+        channel: "messenger",
+        page_id: "page_01",
+        unread: 0,
+        unread_count: 0,
+        time: "1h ago",
+        preview: "Thanks, contract signed and payment processed.",
+        messages: [
+          { text: "Here is the final contract draft, Aarav.", incoming: false, time: "1h 15m ago", is_read: true },
+          { text: "Thanks, contract signed and payment processed.", incoming: true, time: "1h ago", is_read: true }
+        ]
+      }
+    ];
   }
 
   loadAutomations() {
@@ -846,9 +1187,9 @@ class CRMService {
       medianSeconds = durations.length % 2 !== 0 ? durations[mid] : Math.round((durations[mid - 1] + durations[mid]) / 2);
     }
 
-    const medianText = medianSeconds === 0 
+    const medianText = responded.length === 0 || medianSeconds === 0 
       ? "—"
-      : (medianSeconds < 60 ? `${medianSeconds}s` : `${Math.floor(medianSeconds / 60)}m ${medianSeconds % 60}s`);
+      : (medianSeconds < 60 ? `${medianSeconds}s` : `${Math.floor(medianSeconds / 60)}m ${medianSeconds % 60 ? (medianSeconds % 60) + 's' : ''}`);
 
     // Late-but-answered counts as non-compliant!
     const complianceRate = responded.length > 0
@@ -1837,9 +2178,10 @@ class CRMService {
     }
 
     // Mark as read
-    if (conv.unread_count > 0) {
+    if (conv.unread_count > 0 || conv.unread > 0) {
       conv.unread_count = 0;
-      conv.messages.forEach(m => m.is_read = true);
+      conv.unread = 0;
+      if (conv.messages) conv.messages.forEach(m => m.is_read = true);
       this.saveAll();
       this.notifyChange("conversation_read", { convId });
     }
@@ -2515,46 +2857,85 @@ class CRMService {
     return scoped;
   }
 
-  getRoiMetrics(period = "last_30d") {
+  getRoiMetrics(period = "last_30d", pageFilter = "all") {
     const user = this.getCurrentUser();
-    const isAdmin = !user || user.role === "admin";
-    const assignedPages = (user && user.assignedPages) ? user.assignedPages : (user && user.assignedPageId ? [user.assignedPageId] : ["page_01"]);
+    const isAdmin = !user || user.role === "admin" || user.role === "super_admin";
+    const assignedPages = (user && user.assignedPages) 
+      ? user.assignedPages 
+      : (user && user.assignedPageId ? [user.assignedPageId] : (user && user.assignedPageIds ? user.assignedPageIds : ["page_01"]));
 
     // Leads strictly scoped to user role & assigned pages
-    const scopedLeads = this.getLeads().filter(lead => {
+    let scopedLeads = this.getLeads().filter(lead => {
       if (isAdmin) return true;
-      return assignedPages.includes(lead.page_id);
+      return assignedPages.includes(lead.page_id || lead.pageId);
     });
 
     // Pages strictly scoped
-    const scopedPages = this.pages.filter(p => {
+    let scopedPages = (this.pages || []).filter(p => {
       if (isAdmin) return true;
       return assignedPages.includes(p.id);
     });
 
+    // Campaigns strictly scoped
+    let scopedCampaigns = (this.campaigns || []).filter(c => {
+      if (isAdmin) return true;
+      return assignedPages.includes(c.page_id || c.pageId);
+    });
+
+    // Insights strictly scoped
+    let scopedInsights = (this.adInsights || []).filter(ins => {
+      if (isAdmin) return true;
+      return assignedPages.includes(ins.pageId || ins.page_id);
+    });
+
+    // If specific page filter is passed (and not 'all')
+    if (pageFilter && pageFilter !== "all") {
+      scopedPages = scopedPages.filter(p => p.id === pageFilter);
+      scopedLeads = scopedLeads.filter(l => l.page_id === pageFilter || l.pageId === pageFilter);
+      scopedCampaigns = scopedCampaigns.filter(c => c.page_id === pageFilter || c.pageId === pageFilter);
+      scopedInsights = scopedInsights.filter(ins => ins.pageId === pageFilter || ins.page_id === pageFilter);
+    }
+
     let totalSpend = 0;
     let totalWonDeals = 0;
     let totalWonValue = 0;
+    let totalLeadsCount = 0;
 
     const roiByPage = scopedPages.map(page => {
-      const pageLeads = scopedLeads.filter(l => l.page_id === page.id);
+      const pageLeads = scopedLeads.filter(l => l.page_id === page.id || l.pageId === page.id);
       const wonLeads = pageLeads.filter(l => l.status === "Converted" || l.status === "Won" || l.status === "won");
-      const leadsCount = pageLeads.length;
-      const wonCount = wonLeads.length;
-      const wonVal = wonLeads.reduce((acc, l) => acc + (parseFloat(l.value || l.lead_value || 0)), 0);
+
+      // Match insight row for this page
+      const insight = scopedInsights.find(ins => ins.pageId === page.id || ins.page_id === page.id);
 
       // Spend matching from insights or campaigns
-      const insight = (this.adInsights || []).find(ins => (ins.pageId === page.id || ins.page_id === page.id));
-      let pageSpend = insight ? insight.spend : 0;
+      let pageSpend = insight ? (insight.spend || 0) : 0;
       if (pageSpend === 0) {
-        const pageCamps = this.campaigns.filter(c => c.page_id === page.id);
+        const pageCamps = scopedCampaigns.filter(c => c.page_id === page.id || c.pageId === page.id);
         pageSpend = pageCamps.reduce((acc, c) => acc + (c.spend || 0), 0);
       }
+      if (pageSpend === 0 && page.spend) {
+        pageSpend = page.spend;
+      }
       if (pageSpend === 0) {
-        pageSpend = page.id === "page_01" ? 45000 : (page.id === "page_02" ? 32000 : 20000);
+        pageSpend = page.id === "page_01" ? 45000 : (page.id === "page_02" ? 32000 : 0);
       }
 
+      // Attributed leads & deals: use real leads if present, or insight aggregated ad metrics
+      const leadsCount = pageLeads.length > 0 
+        ? pageLeads.length 
+        : (insight ? (insight.leads || insight.conversions || 0) : (page.leadsCount || 0));
+
+      const wonCount = wonLeads.length > 0 
+        ? wonLeads.length 
+        : (insight ? (insight.wonDeals || 0) : (page.wonDeals || 0));
+
+      const wonVal = wonLeads.length > 0 
+        ? wonLeads.reduce((acc, l) => acc + (parseFloat(l.value || l.lead_value || 0)), 0)
+        : (insight ? (insight.wonValue || 0) : (page.wonValue || 0));
+
       totalSpend += pageSpend;
+      totalLeadsCount += leadsCount;
       totalWonDeals += wonCount;
       totalWonValue += wonVal;
 
@@ -2588,19 +2969,18 @@ class CRMService {
       };
     });
 
-    // Campaigns strictly scoped
-    const scopedCampaigns = this.campaigns.filter(c => {
-      if (isAdmin) return true;
-      return assignedPages.includes(c.page_id);
-    });
-
     const roiByCampaign = scopedCampaigns.map(camp => {
       const campLeads = scopedLeads.filter(l => l.campaign_id === camp.id || l.campaign_name === camp.name);
       const campWon = campLeads.filter(l => l.status === "Converted" || l.status === "Won" || l.status === "won");
-      const leadsCount = campLeads.length;
-      const wonCount = campWon.length;
-      const wonVal = campWon.reduce((acc, l) => acc + (parseFloat(l.value || l.lead_value || 0)), 0);
-      const campSpend = camp.spend || (leadsCount * 850) || 15000;
+
+      const insight = scopedInsights.find(ins => ins.campaignId === camp.id || ins.campaignName === camp.name || ins.pageId === camp.page_id);
+
+      const campSpend = camp.spend || (insight ? insight.spend : 0);
+      const leadsCount = campLeads.length > 0 ? campLeads.length : (camp.leads || (insight ? insight.leads : 0));
+      const wonCount = campWon.length > 0 ? campWon.length : (camp.wonDeals || (insight ? insight.wonDeals : 0));
+      const wonVal = campWon.length > 0 
+        ? campWon.reduce((acc, l) => acc + (parseFloat(l.value || l.lead_value || 0)), 0)
+        : (camp.wonValue || (insight ? insight.wonValue : 0));
 
       const cpl = leadsCount > 0 ? Math.round(campSpend / leadsCount) : 0;
       const cpa = wonCount > 0 ? Math.round(campSpend / wonCount) : 0;
@@ -2616,7 +2996,7 @@ class CRMService {
         performerLabel = "Review Needed";
       }
 
-      const parentPage = this.pages.find(p => p.id === camp.page_id);
+      const parentPage = (this.pages || []).find(p => p.id === camp.page_id);
 
       return {
         campaignId: camp.id,
@@ -2634,18 +3014,22 @@ class CRMService {
       };
     });
 
-    const overallCpl = scopedLeads.length > 0 ? Math.round(totalSpend / scopedLeads.length) : 0;
+    const activeCamps = scopedCampaigns.filter(c => c.status === "ACTIVE" || !c.status || c.status === "Active");
+    const activeCampaignsCount = activeCamps.length > 0 ? activeCamps.length : scopedCampaigns.length;
+
+    const overallCpl = totalLeadsCount > 0 ? Math.round(totalSpend / totalLeadsCount) : (scopedLeads.length > 0 ? Math.round(totalSpend / scopedLeads.length) : 0);
     const overallCpa = totalWonDeals > 0 ? Math.round(totalSpend / totalWonDeals) : 0;
     const overallRoas = totalSpend > 0 ? parseFloat((totalWonValue / totalSpend).toFixed(2)) : 0;
 
     return {
       totalSpend,
-      totalLeads: scopedLeads.length,
+      totalLeads: totalLeadsCount || scopedLeads.length,
       totalWonDeals,
       totalWonValue,
       cpl: overallCpl,
       cpa: overallCpa,
       roas: overallRoas,
+      activeCampaignsCount,
       roiByPage,
       roiByCampaign,
       period

@@ -170,6 +170,17 @@ while ($listener.IsListening) {
 
         $urlPath = $request.Url.LocalPath
         $queryString = $request.Url.Query
+        $queryParams = @{}
+        if ($request.Url.Query) {
+            $rawQuery = $request.Url.Query.TrimStart('?')
+            foreach ($part in $rawQuery.Split('&')) {
+                if ($part.Contains('=')) {
+                    $kv = $part.Split('=', 2)
+                    $queryParams[$kv[0]] = [System.Uri]::UnescapeDataString($kv[1])
+                }
+            }
+        }
+        $subPath = if ($queryParams.ContainsKey("path")) { $queryParams["path"] } else { "" }
 
         # ----------------------------------------------------------------------
         # API ROUTING: /api/*
@@ -177,7 +188,7 @@ while ($listener.IsListening) {
         if ($urlPath.StartsWith("/api/")) {
 
             # GET /api/zernio/status (Tests live connection to Zernio API)
-            if ($urlPath -eq "/api/zernio/status" -and $request.HttpMethod -eq "GET") {
+            if (($urlPath -eq "/api/zernio/status" -or ($urlPath -eq "/api/zernio" -and $subPath -eq "status")) -and $request.HttpMethod -eq "GET") {
                 try {
                     $zHeaders = @{ "Authorization" = "Bearer $ZERNIO_API_KEY" }
                     $profRes = Invoke-RestMethod -Uri "$ZERNIO_BASE_URL/profiles" -Headers $zHeaders -Method Get -TimeoutSec 6
@@ -220,7 +231,7 @@ while ($listener.IsListening) {
             }
 
             # GET /api/zernio/connect/facebook (Gets live Facebook OAuth Connect URL)
-            if ($urlPath -eq "/api/zernio/connect/facebook" -and $request.HttpMethod -eq "GET") {
+            if (($urlPath -eq "/api/zernio/connect/facebook" -or ($urlPath -eq "/api/zernio" -and ($subPath -eq "connect/facebook" -or $subPath -eq "connect-facebook"))) -and $request.HttpMethod -eq "GET") {
                 try {
                     $zHeaders = @{ "Authorization" = "Bearer $ZERNIO_API_KEY" }
                     $redirectUrl = "http://localhost:$Port/?zernio_connected=facebook"
@@ -240,7 +251,7 @@ while ($listener.IsListening) {
             }
 
             # GET /api/zernio/connect/ads (Gets live Meta Ads Connect URL)
-            if ($urlPath -eq "/api/zernio/connect/ads" -and $request.HttpMethod -eq "GET") {
+            if (($urlPath -eq "/api/zernio/connect/ads" -or ($urlPath -eq "/api/zernio" -and ($subPath -eq "connect/ads" -or $subPath -eq "connect-ads"))) -and $request.HttpMethod -eq "GET") {
                 try {
                     $zHeaders = @{ "Authorization" = "Bearer $ZERNIO_API_KEY" }
                     $redirectUrl = "http://localhost:$Port/?zernio_connected=ads"
@@ -254,7 +265,7 @@ while ($listener.IsListening) {
             }
 
             # GET /api/zernio/connect/instagram (Gets live Instagram Connect URL)
-            if ($urlPath -eq "/api/zernio/connect/instagram" -and $request.HttpMethod -eq "GET") {
+            if (($urlPath -eq "/api/zernio/connect/instagram" -or ($urlPath -eq "/api/zernio" -and ($subPath -eq "connect/instagram" -or $subPath -eq "connect-instagram"))) -and $request.HttpMethod -eq "GET") {
                 try {
                     $zHeaders = @{ "Authorization" = "Bearer $ZERNIO_API_KEY" }
                     $redirectUrl = "http://localhost:$Port/?zernio_connected=instagram"
@@ -268,7 +279,7 @@ while ($listener.IsListening) {
             }
 
             # GET /api/zernio/accounts (Fetch connected accounts)
-            if ($urlPath -eq "/api/zernio/accounts" -and $request.HttpMethod -eq "GET") {
+            if (($urlPath -eq "/api/zernio/accounts" -or ($urlPath -eq "/api/zernio" -and $subPath -eq "accounts")) -and $request.HttpMethod -eq "GET") {
                 try {
                     $zHeaders = @{ "Authorization" = "Bearer $ZERNIO_API_KEY" }
                     $accRes = Invoke-RestMethod -Uri "$ZERNIO_BASE_URL/accounts" -Headers $zHeaders -Method Get -TimeoutSec 8
@@ -280,7 +291,7 @@ while ($listener.IsListening) {
             }
 
             # GET /api/zernio/inbox/conversations (Fetch conversations from Zernio)
-            if ($urlPath -eq "/api/zernio/inbox/conversations" -and $request.HttpMethod -eq "GET") {
+            if (($urlPath -eq "/api/zernio/inbox/conversations" -or ($urlPath -eq "/api/zernio" -and ($subPath -eq "inbox/conversations" -or $subPath -eq "inbox-conversations"))) -and $request.HttpMethod -eq "GET") {
                 try {
                     $zHeaders = @{ "Authorization" = "Bearer $ZERNIO_API_KEY" }
                     $convRes = Invoke-RestMethod -Uri "$ZERNIO_BASE_URL/inbox/conversations" -Headers $zHeaders -Method Get -TimeoutSec 8
@@ -292,7 +303,7 @@ while ($listener.IsListening) {
             }
 
             # POST /api/zernio/simulate-lead (Simulate real inbound lead via Zernio)
-            if ($urlPath -eq "/api/zernio/simulate-lead" -and $request.HttpMethod -eq "POST") {
+            if (($urlPath -eq "/api/zernio/simulate-lead" -or ($urlPath -eq "/api/zernio" -and ($subPath -eq "simulate-lead" -or $subPath -eq "simulate_lead"))) -and $request.HttpMethod -eq "POST") {
                 $bodyStr = Read-RequestBody $request
                 $leadInput = if ($bodyStr) { $bodyStr | ConvertFrom-Json } else { @{} }
 
