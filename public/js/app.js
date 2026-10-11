@@ -2409,7 +2409,7 @@ class MetaCRMApp {
             ${convList.length === 0 ? `
               <div class="inbox-conv-empty">
                 <div class="inbox-conv-empty-icon" style="display:flex;justify-content:center;">${activeTab === 'instagram' ? this._icon('instagram', 32) : this._icon('facebook', 32)}</div>
-                <strong class="inbox-conv-empty-title">No ${activeTab === 'all' ? '' : (activeTab === 'instagram' ? 'Instagram ' : 'Messenger ')}messages yet</strong>
+                <strong class="inbox-conv-empty-title">No conversations yet</strong>
                 <p class="inbox-conv-empty-desc">
                   Incoming messages from your connected ${activeTab === 'instagram' ? 'Instagram' : 'Facebook & Instagram'} account will appear here automatically.
                 </p>
