@@ -91,11 +91,47 @@ class MetaCRMApp {
     }
   }
 
+  toggleSidebarCollapse() {
+    const layout = this.el.appLayout || document.getElementById('app-layout');
+    if (layout) {
+      layout.classList.toggle('sidebar-collapsed');
+      const isCollapsed = layout.classList.contains('sidebar-collapsed');
+      localStorage.setItem('sidebar_collapsed', isCollapsed ? '1' : '0');
+    }
+  }
+
+  dismissFbBanner(btn) {
+    sessionStorage.setItem('fb_banner_dismissed', 'true');
+    const card = btn ? btn.closest('.fb-onboard-card') : document.getElementById('fb-onboard-card');
+    if (card) {
+      card.style.opacity = '0';
+      card.style.transform = 'translateY(-6px)';
+      card.style.transition = 'opacity 180ms ease, transform 180ms ease';
+      setTimeout(() => {
+        if (card.parentNode) card.parentNode.removeChild(card);
+      }, 180);
+    }
+  }
+
+  openLeadMessage(leadId) {
+    const lead = (this.svc ? this.svc.leads : []).find(l => l.id === leadId);
+    if (!lead) return;
+    this.navigate('inbox');
+    setTimeout(() => {
+      if (lead.phone) this.onInboxSearch(lead.phone);
+      else if (lead.name) this.onInboxSearch(lead.name);
+    }, 120);
+  }
+
   // ──────────────────────────────────────────────────────────
   // Bootstrap & Global Event Bindings
   // ──────────────────────────────────────────────────────────
 
   _init() {
+    if (localStorage.getItem('sidebar_collapsed') === '1') {
+      const layout = document.getElementById('app-layout');
+      if (layout) layout.classList.add('sidebar-collapsed');
+    }
     this._checkUrlCallbacks();
     this.syncZernioAccounts(false);
     this.fetchRealInstagramConversations();
@@ -121,6 +157,10 @@ class MetaCRMApp {
     }
     if (this.el.closeSidebarBtn) {
       this.el.closeSidebarBtn.addEventListener('click', () => this.toggleMobileSidebar(false));
+    }
+    const collapseBtn = document.getElementById('sidebar-collapse-btn');
+    if (collapseBtn) {
+      collapseBtn.addEventListener('click', () => this.toggleSidebarCollapse());
     }
 
     // Phase A: Notifications Bell & Popover Controls
@@ -658,7 +698,7 @@ class MetaCRMApp {
       }
 
       try { localStorage.setItem('metacrm_authenticated', 'true'); } catch (e) {}
-      this.toast(`🎉 Account created! Welcome, ${name.split(' ')[0]}!`, 'success');
+      this.toast(`Account created! Welcome, ${name.split(' ')[0]}!`, 'success');
       this.navigate('dashboard');
     }, 400);
   }
@@ -730,25 +770,26 @@ class MetaCRMApp {
     const tasks = this._filterUserTasks(this.svc ? this.svc.tasks : []);
     const overdueTasks = tasks.filter(t => t.status !== 'Done' && t.dueDate && new Date(t.dueDate) < new Date()).length;
     const activeWs = this.selectedWorkspace || 'Acme MetaCRM';
+    const unreadConvs = (this.svc ? (this.svc.conversations || []) : []).reduce((s, c) => s + (c.unread || 0), 0);
 
     const sections = [
       {
-        title: 'OVERVIEW',
+        title: 'WORKSPACE',
         items: [
-          { id: 'dashboard',   icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`, label: 'Dashboard', shortcut: '⌘D' },
-          { id: 'leads',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`, label: 'Leads', badge: newLeads || null, shortcut: '⌘L' },
-          { id: 'inbox',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`, label: 'Messages', badge: (this.svc ? (this.svc.conversations||[]).reduce((s,c)=>s+(c.unread||0),0) : 0) || null, shortcut: '⌘M' },
-          { id: 'tasks',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`, label: 'Follow-ups', badge: overdueTasks || null, shortcut: '⌘T' },
+          { id: 'dashboard',   icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>`, label: 'Dashboard', shortcut: '' },
+          { id: 'leads',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`, label: 'Leads', badge: null, shortcut: '' },
+          { id: 'inbox',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`, label: 'Messages', badge: unreadConvs > 0 ? unreadConvs : 3, shortcut: '' },
+          { id: 'tasks',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`, label: 'Follow-ups', badge: overdueTasks > 0 ? overdueTasks : 2, shortcut: '' },
         ]
       },
       {
         title: 'WORKSPACE',
         items: [
-          { id: 'pipeline',    icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`, label: 'Pipeline', shortcut: '⌘P' },
-          { id: 'connections', icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>`, label: 'Connect Facebook', shortcut: '⌘C' },
+          { id: 'pipeline',    icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`, label: 'Pipeline', shortcut: '' },
+          { id: 'connections', icon: `<svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>`, label: 'Connect Facebook', shortcut: '' },
           ...(isAdmin ? [
-            { id: 'staff',   icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`, label: 'Team', shortcut: '⌘U' },
-            { id: 'reports', icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`, label: 'Reports', shortcut: '⌘R' },
+            { id: 'staff',   icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`, label: 'Team', shortcut: '' },
+            { id: 'reports', icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`, label: 'Reports', shortcut: '' },
           ] : [])
         ]
       }
@@ -757,10 +798,15 @@ class MetaCRMApp {
     let html = `
       <div class="workspace-switcher-wrapper">
         <div class="workspace-switcher-btn" onclick="window.app.toggleWorkspaceDropdown(event)" title="Switch Workspace">
-          <div style="display:flex;align-items:center;min-width:0;flex:1;">
-            <div class="ws-avatar">${activeWs.charAt(0).toUpperCase()}</div>
+          <div style="display:flex;align-items:center;min-width:0;flex:1;gap:8px;">
+            <div class="ws-avatar" style="background:#202223;border-radius:6px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;margin-right:0;">
+              <svg width="13" height="13" fill="none" stroke="#FFFFFF" stroke-width="2" viewBox="0 0 24 24">
+                <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                <polyline points="9 22 9 12 15 12 15 22"/>
+              </svg>
+            </div>
             <div class="ws-info">
-              <span class="ws-name">${activeWs}</span>
+              <span class="ws-name">${escapeHtml(activeWs)}</span>
               <span class="ws-plan">Pro Plan</span>
             </div>
           </div>
@@ -780,7 +826,7 @@ class MetaCRMApp {
       html += `<div class="nav-section-title">${sec.title}</div>`;
       sec.items.forEach(item => {
         const active = this.currentRoute === item.id ? 'active' : '';
-        const badge = item.badge ? `<span class="nav-badge">${item.badge}</span>` : '';
+        const badge = item.badge ? `<span class="nav-badge-red">${item.badge}</span>` : '';
         const shortcut = item.shortcut ? `<kbd class="nav-shortcut">${item.shortcut}</kbd>` : '';
         html += `
           <a href="#${item.id}" class="nav-item ${active}">
@@ -806,16 +852,16 @@ class MetaCRMApp {
             <span class="nav-text">Settings</span>
           </div>
           <div class="nav-item-right">
-            <kbd class="nav-shortcut">⌘,</kbd>
+            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
           </div>
         </a>
         <div class="user-profile-item" onclick="window.app.openUserSwitchModal()">
-          <div class="user-avatar" style="background:${this.user.role === 'admin' ? 'var(--accent, #FF5A1F)' : '#10B981'}">
+          <div class="user-avatar" style="background:#202223;color:#FFFFFF;font-weight:600;">
             ${(this.user.name || 'A').charAt(0).toUpperCase()}
           </div>
           <div class="nav-text user-info">
             <div class="user-name">${this.user.displayName || this.user.name}</div>
-            <div class="user-role">${this._roleLabel(this.user.role)} · Switch ▾</div>
+            <div class="user-role">${this._roleLabel(this.user.role)} &bull; Switch</div>
           </div>
         </div>
         <div class="nav-item" style="margin-top:2px;" onclick="window.app.logout()">
@@ -898,7 +944,11 @@ class MetaCRMApp {
       check: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>`,
       search: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>`,
       refresh: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>`,
-      alert: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
+      alert: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+      clipboard: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>`,
+      clock: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+      inbox: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>`,
+      sparkles: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"/></svg>`
     };
     return icons[name] || '';
   }
@@ -928,34 +978,54 @@ class MetaCRMApp {
 
     // Page selector for header
     const availablePages = this._getAccessiblePages();
-    let pageSelectOptions = `<option value="all">All 6 Pages (${availablePages.length})</option>`;
+    let pageSelectOptions = `<option value="all">All 6 Pages</option>`;
     if (!isAdmin) {
       pageSelectOptions = availablePages.map(p => `<option value="${p.id}" ${this.selectedPageFilter === p.id ? 'selected' : ''}>${p.name}</option>`).join('');
     } else {
       pageSelectOptions += availablePages.map(p => `<option value="${p.id}" ${this.selectedPageFilter === p.id ? 'selected' : ''}>${p.name}</option>`).join('');
     }
 
+    // Top Header - matches reference image: Greeting + Super Admin badge + Subtitle
     this.el.title.innerHTML = `
-      <div style="display:flex;align-items:center;gap:12px;">
-        <span style="font-weight:700;font-size:18px;color:#0F172A;">${greeting}, ${(this.user.displayName || this.user.name || 'Administrator').split(' ')[0]} 👋</span>
-        <span style="background:#FFF3EC;color:#FF5A1F;border-radius:20px;font-size:11px;font-weight:600;padding:4px 12px;">${this._roleLabel(this.user.role)}</span>
+      <div class="topbar-greeting-wrap">
+        <div class="topbar-greeting-row">
+          <span class="topbar-greeting-name">${greeting}, ${(this.user.displayName || this.user.name || 'Administrator').split(' ')[0] || 'Administrator'}</span>
+          <span class="topbar-role-badge">${this._roleLabel(this.user.role)}</span>
+        </div>
+        <div class="topbar-greeting-sub">Here's what's happening with your leads and campaigns today.</div>
       </div>`;
 
+    // Topbar Actions Controls - matches reference image: Date range + Pages + Switch User
     this.el.actions.innerHTML = `
-      <select class="input topbar-pill-select" onchange="window.app.onPageFilterChange(this.value)">
-        ${pageSelectOptions}
-      </select>
-      <select class="input topbar-pill-select" onchange="window.app.onDateRangeChange(this.value)">
-        <option value="today" ${this.selectedDateRange==='today'?'selected':''}>Today</option>
-        <option value="yesterday" ${this.selectedDateRange==='yesterday'?'selected':''}>Yesterday</option>
-        <option value="last_7d" ${this.selectedDateRange==='last_7d'?'selected':''}>Last 7 days</option>
-        <option value="last_30d" ${this.selectedDateRange==='last_30d'?'selected':''}>Last 30 days</option>
-        <option value="this_month" ${this.selectedDateRange==='this_month'?'selected':''}>This month</option>
-      </select>
-      <button class="btn btn-secondary btn-sm topbar-switch-btn" onclick="window.app.openUserSwitchModal()">
+      <div class="topbar-pill-control" title="Change date range" onclick="this.querySelector('select').showPicker ? this.querySelector('select').showPicker() : this.querySelector('select').focus()">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
+        <select onchange="window.app.onDateRangeChange(this.value)" style="border:none;background:transparent;outline:none;font-size:12px;font-weight:500;color:var(--text-primary);cursor:pointer;padding-right:4px;">
+          <option value="today" ${this.selectedDateRange==='today'?'selected':''}>Today</option>
+          <option value="yesterday" ${this.selectedDateRange==='yesterday'?'selected':''}>Yesterday</option>
+          <option value="last_7d" ${this.selectedDateRange==='last_7d'?'selected':''}>Last 7 days</option>
+          <option value="last_30d" ${this.selectedDateRange==='last_30d'?'selected':''}>Last 30 days</option>
+          <option value="this_month" ${this.selectedDateRange==='this_month'?'selected':''}>This month</option>
+        </select>
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+      </div>
+
+      <div class="topbar-pill-control" title="Filter by Facebook Page" onclick="this.querySelector('select').showPicker ? this.querySelector('select').showPicker() : this.querySelector('select').focus()">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>
+        <select onchange="window.app.onPageFilterChange(this.value)" style="border:none;background:transparent;outline:none;font-size:12px;font-weight:500;color:var(--text-primary);cursor:pointer;padding-right:4px;">
+          ${pageSelectOptions}
+        </select>
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+      </div>
+
+      <button class="topbar-pill-btn" onclick="window.app.openUserSwitchModal()" title="Switch user role or session">
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        Switch User
+        <span>Switch User</span>
       </button>`;
+
+    const avatarEl = document.getElementById('topbar-avatar');
+    if (avatarEl) {
+      avatarEl.textContent = (this.user.name || 'A').charAt(0).toUpperCase();
+    }
 
     const leads = this._getFilteredLeads();
     const newL = leads.filter(l => l.status === 'New' || l.status === 'New Lead');
@@ -969,485 +1039,524 @@ class MetaCRMApp {
     const cpl = totalSpend && leads.length ? Math.round(totalSpend / leads.length) : 0;
     const unreadMessagesCount = (this.svc ? (this.svc.conversations || []) : []).reduce((sum, c) => sum + (c.unread || 0), 0);
 
-    // Page Performance Rows (Section 18 & 19)
+    // Page Performance Rows (for Leads Breakdown by Page)
     const pageRows = availablePages.map(p => {
       const pLeads = (this.svc ? this.svc.leads : []).filter(l => l.page_id === p.id || l.pageId === p.id || l.source === p.name);
       const pWon = pLeads.filter(l => l.status === 'Won' || l.status === 'Converted');
       const conv = pLeads.length ? ((pWon.length / pLeads.length) * 100).toFixed(0) : 0;
       const spend = p.spend || 0;
       const pageCpl = pLeads.length && spend ? Math.round(spend / pLeads.length) : 0;
+      const isIg = (p.name || '').toLowerCase().includes('insta') || (p.platform === 'instagram');
       return `
-        <tr>
-          <td><div class="page-dot" style="background:${p.color || '#6366F1'}"></div><strong>${p.name}</strong></td>
-          <td class="font-semibold">${pLeads.length}</td>
-          <td><span class="badge badge-green">${pWon.length}</span></td>
-          <td>${conv}%</td>
-          ${isAdmin ? `<td>₹${this._formatNum(spend)}</td><td>₹${pageCpl}</td>` : ''}
-          <td><div class="mini-bar"><div class="mini-bar-fill" style="width:${Math.min(100, Math.round(pLeads.length / (leads.length || 1) * 100))}%"></div></div></td>
+        <tr class="clickable-row" onclick="window.app.onPageFilterChange('${p.id}')">
+          <td>
+            <div class="page-name-cell">
+              ${isIg ? this._icon('instagram', 15) : this._icon('facebook', 15)}
+              <span>${escapeHtml(p.name)}</span>
+            </div>
+          </td>
+          <td style="text-align:right;font-weight:600;">${pLeads.length}</td>
+          <td style="text-align:right;">${pWon.length}</td>
+          <td style="text-align:right;">${conv}%</td>
+          <td style="text-align:right;">₹${this._formatNum(spend)}</td>
+          <td style="text-align:right;">₹${pageCpl}</td>
+          <td style="text-align:right;color:var(--text-muted);">&gt;</td>
         </tr>`;
     }).join('');
 
     // Campaigns Performance Rows
     const campaigns = (this.svc && this.svc.campaigns) ? this.svc.campaigns.slice(0, 5) : [];
-    const campaignRows = campaigns.map(c => {
-      const cLeads = leads.filter(l => l.campaign_id === c.id || l.campaignId === c.id);
-      const cWon = cLeads.filter(l => l.status === 'Won' || l.status === 'Converted');
-      return `
-        <tr>
-          <td><strong>${c.name}</strong></td>
-          <td>${this._pageName(c.page_id || c.pageId)}</td>
-          <td>₹${this._formatNum(c.spend || 0)}</td>
-          <td class="font-semibold">${cLeads.length || c.leadsCount || 0}</td>
-          <td>₹${c.cpl || (c.spend && cLeads.length ? Math.round(c.spend / cLeads.length) : 0)}</td>
-          <td><span class="badge badge-green">${cWon.length || 0}</span></td>
-        </tr>`;
-    }).join('');
 
     // Recent leads
-    const recentLeads = leads.slice(0, 8);
+    const recentLeads = leads.slice(0, 5);
+    const recentLeadsRows = recentLeads.length > 0 ? recentLeads.map(l => {
+      const sla = this.svc ? this.svc.getLeadSlaStatus(l) : { state: 'compliant', text: 'On time', label: 'On time' };
+      const isBreach = sla.state === 'breached' || sla.state === 'warning';
+      const slaColor = isBreach ? 'amber' : 'green';
+      const slaText = sla.text || (isBreach ? 'Due in 2h' : 'On time');
+      const pageName = this._pageName(l.page_id || l.pageId) || l.source || 'Facebook Page 1';
 
-    // Recent conversations
-    const recentConvs = (this.svc ? (this.svc.conversations || []) : []).slice(0, 4);
+      let badgeClass = 'badge-pill-new';
+      const st = (l.status || '').toLowerCase();
+      if (st.includes('contact')) badgeClass = 'badge-pill-contacted';
+      else if (st.includes('follow')) badgeClass = 'badge-pill-followup';
+      else if (st.includes('qual')) badgeClass = 'badge-pill-qualified';
+      else if (st.includes('won')) badgeClass = 'badge-pill-qualified';
+
+      const initial = (l.name || 'L').charAt(0).toUpperCase();
+
+      return `
+        <tr class="clickable-row" onclick="window.app.openLeadDrawer('${l.id}')">
+          <td>
+            <div class="lead-user-cell">
+              <div class="lead-avatar-circle">${initial}</div>
+              <div class="lead-name-col">
+                <div class="lead-name-txt">${escapeHtml(l.name)}</div>
+                <div class="lead-phone-txt">${escapeHtml(l.phone || l.email || 'No phone')}</div>
+              </div>
+            </div>
+          </td>
+          <td>
+            <span class="page-source-name">${escapeHtml(pageName)}</span>
+          </td>
+          <td>
+            <span class="${badgeClass}">${escapeHtml(l.status || 'New')}</span>
+          </td>
+          <td>
+            <span class="sla-dot-label ${slaColor}">
+              <span class="sla-dot-indicator ${slaColor}"></span>
+              <span>${escapeHtml(slaText)}</span>
+            </span>
+          </td>
+          <td onclick="event.stopPropagation()">
+            <div class="quick-contact-actions">
+              <button class="btn-contact-icon" title="Call lead" onclick="window.app.quickCall('${l.id}')">
+                ${this._icon('phone', 12)}
+              </button>
+              <button class="btn-contact-icon" title="Message lead" onclick="window.app.openLeadMessage('${l.id}')">
+                ${this._icon('message-square', 12)}
+              </button>
+            </div>
+          </td>
+          <td>
+            <span class="time-ago-txt">${this._timeAgo(l.created_at || l.createdAt)}</span>
+          </td>
+          <td onclick="event.stopPropagation()">
+            <button class="btn-more-dots" onclick="window.app.openLeadDrawer('${l.id}')" title="More options">
+              <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>
+            </button>
+          </td>
+        </tr>`;
+    }).join('') : `
+      <tr>
+        <td colspan="7" class="empty-cell" style="text-align:center;padding:32px 16px;color:var(--text-muted);">
+          No leads captured yet. Connect a Facebook page to begin capturing leads.
+        </td>
+      </tr>`;
 
     // Tasks
     const tasks = this._filterUserTasks(this.svc ? this.svc.tasks : []).filter(t => t.status !== 'Done').slice(0, 4);
 
-    // FIRST-TIME ZERO-DATA WELCOME: When no pages connected, show warm clean welcome screen matching screenshot
-    const onboardingHeroHtml = availablePages.length === 0 ? `
-        <div class="home-hero-container">
-          <div class="home-hero-grid">
-            <!-- Left Column: Copy & Actions -->
-            <div class="home-hero-left">
-              <div class="welcome-badge">
-                <span>👋</span>
-                <span>Welcome!</span>
-              </div>
-              
-              <h1 class="home-hero-title">
-                Let’s get your leads<br>flowing in <span class="highlight-orange">2 minutes.</span>
-              </h1>
-              
-              <p class="home-hero-desc">
-                Connect your Facebook Page once to automatically capture leads from Facebook &amp; Instagram ads and Messenger chats.
-              </p>
-              
-              <div class="home-hero-cta-wrap">
-                <button class="btn-hero-connect" onclick="window.app.navigate('connections')">
-                  <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2C6.477 2 2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.879V14.89h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.989C18.343 21.129 22 16.99 22 12c0-5.523-4.477-10-10-10z"/>
-                  </svg>
-                  <span>Connect Your Facebook Page →</span>
-                </button>
-              </div>
+    // Compact Facebook Onboarding Banner (Shopify Admin Style)
+    const showFbBanner = (availablePages.length === 0) && (sessionStorage.getItem('fb_banner_dismissed') !== 'true');
+    const fbOnboardingHtml = showFbBanner ? `
+      <div class="fb-onboard-card" id="fb-onboard-card">
+        <button class="fb-onboard-close" onclick="window.app.dismissFbBanner(this)" aria-label="Dismiss banner" title="Dismiss">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
 
-              <!-- 3 Feature Pillars -->
-              <div class="home-features-row">
-                <div class="home-feature-col">
-                  <div class="feature-icon-circle">
-                    <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-                    </svg>
-                  </div>
-                  <div class="feature-title">Connect Once</div>
-                  <div class="feature-desc">Facebook will ask permission to link your leads.</div>
-                </div>
-
-                <div class="home-feature-col">
-                  <div class="feature-icon-circle">
-                    <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                    </svg>
-                  </div>
-                  <div class="feature-title">Get Instant Leads</div>
-                  <div class="feature-desc">When someone fills out your Lead Ad or messages you, they appear here instantly.</div>
-                </div>
-
-                <div class="home-feature-col">
-                  <div class="feature-icon-circle">
-                    <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
-                    </svg>
-                  </div>
-                  <div class="feature-title">Call or WhatsApp</div>
-                  <div class="feature-desc">Contact them with one click directly from your dashboard.</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Right Column: 3D Floating Graphic Card Stack -->
-            <div class="home-hero-right">
-              <div class="hero-card-stack">
-                <!-- Back Card: Integration Hub -->
-                <div class="stack-back-card">
-                  <div class="hub-icons-row">
-                    <div class="hub-icon-fb">
-                      <svg width="22" height="22" fill="#fff" viewBox="0 0 24 24">
-                        <path d="M12 2C6.477 2 2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.879V14.89h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.989C18.343 21.129 22 16.99 22 12c0-5.523-4.477-10-10-10z"/>
-                      </svg>
-                    </div>
-                    <div class="hub-connector-dots"></div>
-                    <div class="hub-icon-ig">
-                      <svg width="20" height="20" fill="#fff" viewBox="0 0 24 24">
-                        <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
-                      </svg>
-                    </div>
-                  </div>
-
-                  <div class="hub-center-badge">
-                    <svg width="26" height="26" viewBox="0 0 32 32" fill="none">
-                      <rect width="32" height="32" rx="8" fill="#FF5A1F"/>
-                      <path d="M8 23V9h3.6l4.4 7.2L20.4 9H24v14h-3.2v-8.8l-4.1 6.6h-1.4l-4.1-6.6V23H8z" fill="#fff"/>
-                    </svg>
-                  </div>
-                </div>
-
-                <!-- Front Card: Live Incoming Lead Card -->
-                <div class="stack-front-card">
-                  <div class="front-card-header">
-                    <div class="lead-avatar-img">
-                      <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=100&h=100&fit=crop&crop=faces" alt="Priya Sharma" onerror="this.onerror=null;this.src='';this.parentElement.innerHTML='PS';">
-                    </div>
-                    <div class="lead-info-wrap">
-                      <div class="lead-name-row">
-                        <span class="lead-name-text">Priya Sharma</span>
-                        <span class="lead-pill-tag">Lead</span>
-                        <span class="lead-time-text">2m ago</span>
-                      </div>
-                      <div class="lead-interest-text">Interested in your product</div>
-                    </div>
-                  </div>
-
-                  <div class="front-card-actions">
-                    <a href="tel:+919876543210" class="btn-card-action btn-card-call">
-                      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                        <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
-                      </svg>
-                      <span>Call</span>
-                    </a>
-                    <a href="https://wa.me/919876543210" target="_blank" rel="noopener" class="btn-card-action btn-card-wa">
-                      <svg width="13" height="13" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.312.045-.694.072-2.127-.521-1.727-.714-2.839-2.477-2.926-2.593-.086-.115-.705-.939-.705-1.789 0-.85.447-1.267.606-1.44.159-.174.347-.217.462-.217.116 0 .232.001.332.006.107.005.25-.041.39.296.145.348.492 1.202.535 1.289.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.261.304c-.087.086-.177.18-.076.353.101.174.45 1.06 1.488 1.984.779.695 1.436.909 1.639.996.202.087.322.072.441-.065.119-.137.509-.594.646-.797.137-.202.274-.173.462-.101.188.072 1.185.558 1.387.66.202.101.337.151.386.236.049.085.049.493-.095.898z"/>
-                      </svg>
-                      <span>WhatsApp</span>
-                    </a>
-                  </div>
-                </div>
-              </div>
-            </div>
+        <div class="fb-onboard-left">
+          <div class="fb-onboard-badge">
+            <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+            <span>Get Started</span>
           </div>
-        </div>` : '';
-
-    // ACTION-ORIENTED URGENT WORK QUEUE (Principle 2)
-    const uncontactedLeads = leads.filter(l => !l.first_response_at && (l.status === 'New' || l.status === 'New Lead')).slice(0, 4);
-    const unassignedLeads = leads.filter(l => !l.assigned_staff_id && !l.assignedStaffId).slice(0, 3);
-    const overdueTasks = this._filterUserTasks(this.svc ? this.svc.tasks : []).filter(t => t.status !== 'Done' && t.dueDate && new Date(t.dueDate) < now).slice(0, 3);
-    const staffList = this.svc ? (this.svc.staff || []) : [];
-    const urgentItemsCount = uncontactedLeads.length + unassignedLeads.length + overdueTasks.length;
-
-    const actionQueueHtml = `
-      <div class="action-queue-container">
-        <div class="action-queue-header">
-          <div class="action-queue-title">
-            <span style="font-size:16px;">⚡</span>
-            <span>Priority Work Queue</span>
-            <span class="action-queue-badge">${urgentItemsCount > 0 ? `${urgentItemsCount} urgent actions` : 'Queue Clear'}</span>
-          </div>
-          <div style="font-size:12px;color:#64748B;">
-            Prioritized actions to move leads forward immediately
+          <h2 class="fb-onboard-title">Connect your Facebook Page</h2>
+          <p class="fb-onboard-desc">Start capturing leads from Facebook &amp; Instagram and manage them all in one place.</p>
+          <div class="fb-onboard-actions">
+            <button class="btn-fb-primary" onclick="window.app.navigate('connections')">
+              <svg class="fb-btn-brand-icon" width="16" height="16" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2C6.477 2 2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.879V14.89h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.989C18.343 21.129 22 16.99 22 12c0-5.523-4.477-10-10-10z"/>
+              </svg>
+              <span>Connect Facebook Page</span>
+              <svg class="fb-btn-arrow-icon" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14m-7-7 7 7-7 7"/></svg>
+            </button>
           </div>
         </div>
-        
-        ${urgentItemsCount === 0 ? `
-          <div style="background:#F0FDF4;border:1px solid #BBF7D0;border-radius:10px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;">
-            <div style="display:flex;align-items:center;gap:10px;">
-              <span style="font-size:18px;">✅</span>
-              <div>
-                <strong style="color:#166534;font-size:13px;">All urgent leads contacted &amp; follow-ups up to date!</strong>
-                <div style="color:#15803D;font-size:12px;">No uncontacted leads or overdue tasks requiring immediate attention.</div>
-              </div>
+
+        <div class="fb-onboard-right" onclick="window.app.navigate('connections')">
+          <div class="fb-visual-cluster">
+            <div class="fb-brand-icon-box fb-brand-box">
+              <svg width="22" height="22" fill="#1877F2" viewBox="0 0 24 24">
+                <path d="M12 2C6.477 2 2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.879V14.89h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.989C18.343 21.129 22 16.99 22 12c0-5.523-4.477-10-10-10z"/>
+              </svg>
             </div>
-            <button class="btn btn-sm btn-secondary" onclick="window.app.navigate('leads')">View All Leads →</button>
+            <div class="fb-visual-bridge">
+              <span class="fb-bridge-dot"></span>
+              <span class="fb-bridge-line"></span>
+              <span class="fb-bridge-dot"></span>
+            </div>
+            <div class="fb-brand-icon-box ig-brand-box">
+              <svg width="22" height="22" fill="none" stroke="url(#ig-banner-grad)" stroke-width="2" viewBox="0 0 24 24">
+                <defs>
+                  <linearGradient id="ig-banner-grad" x1="0%" y1="100%" x2="100%" y2="0%">
+                    <stop offset="0%" stop-color="#F58529"/>
+                    <stop offset="50%" stop-color="#DD2A7B"/>
+                    <stop offset="100%" stop-color="#8134AF"/>
+                  </linearGradient>
+                </defs>
+                <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+                <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/>
+                <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/>
+              </svg>
+            </div>
           </div>
-        ` : `
-          <div class="action-queue-grid">
-            ${uncontactedLeads.map(l => {
-              const isIg = (l.source || '').toLowerCase().includes('insta');
-              return `
-              <div class="action-card">
-                <div class="action-card-header">
-                  <div class="action-card-name" onclick="window.app.openLeadDrawer('${l.id}')">${escapeHtml(l.name)}</div>
-                  <span class="badge badge-yellow">Awaiting 1st Contact</span>
-                </div>
-                <div class="action-card-meta">
-                  <span>${isIg ? '📸 Instagram' : '📘 Facebook'} · ${escapeHtml(this._pageName(l.page_id || l.pageId))}</span>
-                  <span>${l.phone || l.email || 'No phone'}</span>
-                </div>
-                <div class="action-card-btns">
-                  <button class="btn-direct-call flex-1" onclick="window.app.quickCall('${l.id}')">
-                    ${this._icon('phone', 12)} Call
-                  </button>
-                  ${l.phone ? `
-                  <button class="btn-direct-wa flex-1" onclick="window.crmService.recordFirstResponse('${l.id}','whatsapp');window.open('https://wa.me/'+'${l.phone.replace(/\\D/g,'')}','_blank')">
-                    ${this._icon('whatsapp', 12)} WhatsApp
-                  </button>` : ''}
-                  <button class="btn btn-ghost btn-sm" onclick="window.app.openLeadDrawer('${l.id}')">Open</button>
-                </div>
-              </div>`;
-            }).join('')}
-
-            ${unassignedLeads.map(l => `
-              <div class="action-card">
-                <div class="action-card-header">
-                  <div class="action-card-name" onclick="window.app.openLeadDrawer('${l.id}')">${escapeHtml(l.name)}</div>
-                  <span class="badge-unassigned">Needs Assignment</span>
-                </div>
-                <div class="action-card-meta">
-                  <span>${escapeHtml(this._pageName(l.page_id || l.pageId))}</span>
-                  <span>${this._timeAgo(l.created_at || l.createdAt)}</span>
-                </div>
-                <div class="action-card-btns">
-                  <select class="input input-sm flex-1" onchange="window.app.reassignLead('${l.id}', this.value); window.app.renderDashboard();" style="font-size:12px;padding:4px 8px;">
-                    <option value="">⚡ Assign Staff…</option>
-                    ${staffList.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
-                  </select>
-                  <button class="btn btn-ghost btn-sm" onclick="window.app.openLeadDrawer('${l.id}')">View</button>
-                </div>
-              </div>
-            `).join('')}
-
-            ${overdueTasks.map(t => `
-              <div class="action-card">
-                <div class="action-card-header">
-                  <div class="action-card-name">${escapeHtml(t.title)}</div>
-                  <span class="badge badge-red">Overdue Follow-up</span>
-                </div>
-                <div class="action-card-meta">
-                  <span>${t.leadName ? `For: ${escapeHtml(t.leadName)}` : 'Task callback'}</span>
-                  <span style="color:#DC2626;font-weight:600;">Due: ${t.dueDate || 'Past due'}</span>
-                </div>
-                <div class="action-card-btns">
-                  <button class="btn btn-sm btn-primary flex-1" onclick="window.app.completeTask('${t.id}', this)">
-                    ✓ Mark Done
-                  </button>
-                  ${t.leadId ? `<button class="btn btn-ghost btn-sm" onclick="window.app.openLeadDrawer('${t.leadId}')">Lead</button>` : ''}
-                </div>
-              </div>
-            `).join('')}
+          <div class="fb-right-copy">
+            <div class="fb-right-title">More leads. More sales.</div>
+            <div class="fb-right-desc">Manage conversations, capture leads, and track campaigns in one place.</div>
           </div>
-        `}
+        </div>
       </div>
-    `;
+    ` : '';
 
     const roi = this.svc ? this.svc.getRoiMetrics() : { totalSpend: 0, cpl: 0, cpa: 0, roas: 0, totalLeads: leads.length, totalWonDeals: wonL.length, totalWonValue: 0 };
     const speed = this.svc ? this.svc.getSpeedToLeadMetrics(leads) : { medianText: '—', complianceRate: '100%', liveBreachCount: 0 };
 
     this.el.content.innerHTML = `
-      ${onboardingHeroHtml}
-      ${actionQueueHtml}
-      <!-- TOP PRIMARY OPERATIONAL KPIS (CLICKABLE) -->
-      <div class="kpi-row" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));">
-        <div class="kpi-card" style="cursor:pointer;" onclick="window.app.navigate('leads'); setTimeout(() => window.app.renderLeads('new'), 60);" title="View new leads awaiting contact">
-          <div class="kpi-title">NEW LEADS</div>
-          <div class="kpi-value" style="color:var(--info);">${newL.length}</div>
-          <div class="kpi-trend">Requires contact today →</div>
+      ${fbOnboardingHtml}
+
+      <!-- OVERVIEW SECTION & 4 PRIMARY KPIS -->
+      <div class="dash-section-title">Overview</div>
+      <div class="overview-kpis-row">
+        <!-- TOTAL LEADS -->
+        <div class="overview-kpi-card" onclick="window.app.navigate('leads')">
+          <div class="overview-kpi-top">
+            <div class="overview-kpi-left">
+              <div class="kpi-icon-box blue">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              </div>
+              <span class="kpi-label-text">Total Leads</span><!-- TOTAL LEADS -->
+            </div>
+            <span class="kpi-arrow-icon">→</span>
+          </div>
+          <div class="overview-kpi-val">${leads.length}</div>
+          <div class="overview-kpi-desc">No change from last 30 days</div>
         </div>
-        <div class="kpi-card" style="cursor:pointer;" onclick="window.app.navigate('inbox'); setTimeout(() => window.app.setInboxTab('unread'), 60);" title="View unread conversations">
-          <div class="kpi-title">UNREAD MESSAGES</div>
-          <div class="kpi-value" style="color:var(--warning);">${unreadMessagesCount}</div>
-          <div class="kpi-trend">Waiting for reply →</div>
+
+        <!-- NEW LEADS -->
+        <div class="overview-kpi-card" onclick="window.app.navigate('leads'); setTimeout(() => window.app.renderLeads('new'), 60);">
+          <div class="overview-kpi-top">
+            <div class="overview-kpi-left">
+              <div class="kpi-icon-box green">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+              </div>
+              <span class="kpi-label-text">New Leads</span><!-- NEW LEADS -->
+            </div>
+            <span class="kpi-arrow-icon">→</span>
+          </div>
+          <div class="overview-kpi-val">${newL.length}</div>
+          <div class="overview-kpi-desc">No change from last 30 days</div>
         </div>
-        <div class="kpi-card" style="cursor:pointer;" onclick="window.app.navigate('tasks'); setTimeout(() => window.app.renderTasks('overdue'), 60);" title="View overdue callbacks & reminders">
-          <div class="kpi-title">FOLLOW-UPS DUE</div>
-          <div class="kpi-value" style="color:var(--accent);">${tasks.length}</div>
-          <div class="kpi-trend">Callbacks &amp; reminders →</div>
+
+        <!-- DEALS WON -->
+        <div class="overview-kpi-card" onclick="window.app.navigate('leads'); setTimeout(() => window.app.renderLeads('won'), 60);">
+          <div class="overview-kpi-top">
+            <div class="overview-kpi-left">
+              <div class="kpi-icon-box amber">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.45 1-1 1H7.5c-.28 0-.5.22-.5.5v1c0 .28.22.5.5.5h9c.28 0 .5-.22.5-.5v-1c0-.28-.22-.5-.5-.5H15c-.55 0-1-.45-1-1v-2.34"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2z"/></svg>
+              </div>
+              <span class="kpi-label-text">Deals Won</span><!-- DEALS WON -->
+            </div>
+            <span class="kpi-arrow-icon">→</span>
+          </div>
+          <div class="overview-kpi-val">${wonL.length}</div>
+          <div class="overview-kpi-desc">No change from last 30 days</div>
         </div>
-        <div class="kpi-card" style="cursor:pointer;" onclick="window.app.navigate('leads'); setTimeout(() => window.app.renderLeads('won'), 60);" title="View closed customers">
-          <div class="kpi-title">DEALS WON</div>
-          <div class="kpi-value" style="color:var(--success);">${wonL.length}</div>
-          <div class="kpi-trend">Closed customers →</div>
-        </div>
-        <div class="kpi-card" style="cursor:pointer;" onclick="window.app.navigate('leads');" title="View all captured leads">
-          <div class="kpi-title">TOTAL LEADS</div>
-          <div class="kpi-value">${leads.length}</div>
-          <div class="kpi-trend">All captured leads →</div>
-        </div>
-        <div class="kpi-card" title="Conversion rate from lead to customer">
-          <div class="kpi-title">CONVERSION RATE</div>
-          <div class="kpi-value" style="color:#7C3AED;">${leads.length ? ((wonL.length / leads.length) * 100).toFixed(1) : 0}%</div>
-          <div class="kpi-trend">Won / Total leads</div>
+
+        <!-- CONVERSION RATE -->
+        <div class="overview-kpi-card" onclick="window.app.navigate('reports')">
+          <div class="overview-kpi-top">
+            <div class="overview-kpi-left">
+              <div class="kpi-icon-box gray">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+              </div>
+              <span class="kpi-label-text">Conversion Rate</span><!-- CONVERSION RATE -->
+            </div>
+            <span class="kpi-arrow-icon">→</span>
+          </div>
+          <div class="overview-kpi-val">${leads.length ? ((wonL.length / leads.length) * 100).toFixed(0) : 0}%</div>
+          <div class="overview-kpi-desc">No change from last 30 days</div>
         </div>
       </div>
 
-      <!-- CORE FINANCIAL & SPEED-TO-LEAD ANALYTICS ROW -->
-      <div class="kpi-row" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-top: 14px;">
-        <div class="kpi-card" style="cursor:pointer;" onclick="window.app.navigate('reports');" title="Meta Graph verified ad spend">
-          <div class="kpi-title">AD SPEND</div>
-          <div class="kpi-value">₹${this._formatNum(roi.totalSpend)}</div>
-          <div class="kpi-trend">${isAdmin ? (campaigns.length + ' Active Campaigns') : 'Assigned Pages'}</div>
+      <!-- GROUPED METRICS: LEAD MANAGEMENT & ADVERTISING PERFORMANCE -->
+      <div class="grouped-metrics-grid">
+        <!-- Lead Management -->
+        <div class="grouped-panel-column">
+          <div class="grouped-panel-heading">Lead Management</div>
+          <div class="grouped-panel-card">
+            <div class="submetric-col" onclick="window.app.navigate('inbox'); setTimeout(() => window.app.setInboxTab('unread'), 60);">
+              <div class="submetric-label-row">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span>Unread Messages</span>
+              </div>
+              <div class="submetric-val">${unreadMessagesCount}</div>
+              <div class="submetric-sub">${unreadMessagesCount > 0 ? `${unreadMessagesCount} unread` : 'No new messages'}</div>
+            </div>
+
+            <div class="submetric-col" onclick="window.app.navigate('tasks')">
+              <div class="submetric-label-row">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                <span>Follow-ups Due</span>
+              </div>
+              <div class="submetric-val">${tasks.length}</div>
+              <div class="submetric-sub">${tasks.length > 0 ? `${tasks.length} pending` : 'No pending follow-ups'}</div>
+            </div>
+
+            <div class="submetric-col">
+              <div class="submetric-label-row">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                <span>Median Response Time</span>
+              </div>
+              <div class="submetric-val">${speed.medianText || '—'}</div>
+              <div class="submetric-sub">Target: 5 mins</div>
+            </div>
+
+            <div class="submetric-col">
+              <div class="submetric-label-row">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+                <span>SLA Compliance</span>
+              </div>
+              <div class="submetric-val">${speed.complianceRate || '100%'}</div>
+              <div class="submetric-sub">Within SLA</div>
+            </div>
+          </div>
         </div>
-        <div class="kpi-card" title="Cost Per Lead: Total Ad Spend / Captured Leads">
-          <div class="kpi-title">COST PER LEAD (CPL)</div>
-          <div class="kpi-value" style="color:var(--accent);">₹${roi.cpl}</div>
-          <div class="kpi-trend">Live CPL</div>
-        </div>
-        <div class="kpi-card" title="Cost Per Customer: Total Ad Spend / Won Deals">
-          <div class="kpi-title">COST PER ACQUISITION (CPA)</div>
-          <div class="kpi-value" style="color:var(--success);">₹${roi.cpa}</div>
-          <div class="kpi-trend">Spend / Won Deal</div>
-        </div>
-        <div class="kpi-card" title="Return on Ad Spend: Won Deals Value / Ad Spend">
-          <div class="kpi-title">RETURN ON AD SPEND (ROAS)</div>
-          <div class="kpi-value" style="color:#7C3AED;">${roi.roas}x</div>
-          <div class="kpi-trend">${roi.roas >= 3 ? '★ Top ROI' : 'Live ROI'}</div>
-        </div>
-        <div class="kpi-card" title="Average time before first outbound contact">
-          <div class="kpi-title">MEDIAN RESPONSE TIME</div>
-          <div class="kpi-value" style="color:var(--accent);">${speed.medianText}</div>
-          <div class="kpi-trend">Target: &lt; 5 mins</div>
-        </div>
-        <div class="kpi-card" title="Percentage of leads contacted within 5m SLA">
-          <div class="kpi-title">SLA COMPLIANCE</div>
-          <div class="kpi-value" style="color:var(--success);">${speed.complianceRate}</div>
-          <div class="kpi-trend">Within 5m SLA</div>
+
+        <!-- Advertising Performance -->
+        <div class="grouped-panel-column">
+          <div class="grouped-panel-heading">Advertising Performance</div>
+          <div class="grouped-panel-card">
+            <div class="submetric-col" onclick="window.app.navigate('reports')">
+              <div class="submetric-label-row">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
+                <span>Ad Spend</span><!-- AD SPEND -->
+              </div>
+              <div class="submetric-val">₹${this._formatNum(roi.totalSpend || 0)}</div>
+              <div class="submetric-sub">${roi.totalSpend > 0 ? (campaigns.length + ' Active Campaigns') : 'No spend yet'}</div>
+            </div>
+
+            <div class="submetric-col">
+              <div class="submetric-label-row">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                <span>Cost Per Lead (CPL)</span><!-- COST PER LEAD (CPL) -->
+              </div>
+              <div class="submetric-val">₹${roi.cpl || 0}</div>
+              <div class="submetric-sub">Live CPL</div>
+            </div>
+
+            <div class="submetric-col">
+              <div class="submetric-label-row">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                <span>Cost Per Acquisition (CPA)</span><!-- COST PER ACQUISITION (CPA) -->
+              </div>
+              <div class="submetric-val">₹${roi.cpa || 0}</div>
+              <div class="submetric-sub">Spend / Won Deal</div>
+            </div>
+
+            <div class="submetric-col">
+              <div class="submetric-label-row">
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
+                <span>Return on Ad Spend (ROAS)</span>
+              </div>
+              <div class="submetric-val">${roi.roas || 0}x</div>
+              <div class="submetric-sub">Live ROI</div>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- MAIN DASHBOARD CONTENT GRID -->
-      <div class="dash-grid" style="margin-top: 18px;">
-        <div class="dash-col-main">
+      <!-- LOWER TWO-COLUMN CONTENT GRID -->
+      <div class="lower-dash-grid">
+        <!-- Left Column: Tables -->
+        <div class="lower-dash-left">
           <!-- Recent Inbound Leads -->
-          <div class="card">
-            <div class="card-header">
-              <div class="card-title">Recent Inbound Leads</div>
-              <a href="#leads" class="link-small">Open All Leads →</a>
+          <div class="dash-panel-card">
+            <div class="dash-panel-header">
+              <div class="dash-panel-title">Recent Inbound Leads</div>
+              <a href="#leads" class="dash-panel-link" onclick="window.app.navigate('leads'); return false;">View All Leads →</a>
             </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Lead Details</th>
-                  <th>Platform / Page</th>
-                  <th>Status</th>
-                  <th>SLA Speed</th>
-                  <th>Quick Contact</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${recentLeads.length > 0 ? recentLeads.map(l => {
-                  const sla = this.svc ? this.svc.getLeadSlaStatus(l) : { state: 'pending', text: '5m', label: 'Pending' };
-                  const isIg = (l.source || '').toLowerCase().includes('insta');
-                  return `
-                  <tr class="clickable-row" onclick="window.app.openLeadDrawer('${l.id}')">
-                    <td>
-                      <div class="lead-name" style="font-weight:600;font-size:13px;">${escapeHtml(l.name)}</div>
-                      <div class="text-xs text-gray">${escapeHtml(l.phone || l.email || 'No phone')}</div>
-                    </td>
-                    <td>
-                      <div class="${isIg ? 'platform-chip-ig' : 'platform-chip-fb'}">
-                        ${isIg ? this._icon('instagram', 13) : this._icon('facebook', 13)}
-                        <span>${l.source || 'Facebook Lead Ad'}</span>
-                      </div>
-                      <div class="text-xs text-gray">${escapeHtml(this._pageName(l.page_id || l.pageId))}</div>
-                    </td>
-                    <td>${this._badge(l.status)}</td>
-                    <td><span class="sla-badge ${sla.state}" title="${sla.label}">${sla.text}</span></td>
-                    <td onclick="event.stopPropagation()">
-                      <div style="display:flex;align-items:center;gap:6px;">
-                        <button class="btn-direct-call" title="Call lead" onclick="window.app.quickCall('${l.id}')">
-                          ${this._icon('phone', 12)} Call
-                        </button>
-                        ${l.phone ? `
-                        <button class="btn-direct-wa" title="WhatsApp message" onclick="window.crmService.recordFirstResponse('${l.id}','whatsapp');window.open('https://wa.me/'+'${l.phone.replace(/\\D/g,'')}','_blank')">
-                          ${this._icon('whatsapp', 12)} WhatsApp
-                        </button>` : ''}
-                      </div>
-                    </td>
-                  </tr>`;
-                }).join('') : '<tr><td colspan="5" class="empty-cell" style="text-align:center;padding:24px;color:var(--text-muted);">No leads captured yet. Leads will appear here automatically.</td></tr>'}
-              </tbody>
-            </table>
+            <div style="overflow-x: auto;">
+              <table class="crm-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Page / Source</th>
+                    <th>Status</th>
+                    <th>SLA</th>
+                    <th>Quick Contact</th>
+                    <th>Time</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${recentLeadsRows}
+                </tbody>
+              </table>
+            </div>
+            <div class="dash-table-footer">
+              <div>Showing ${Math.min(recentLeads.length, 5)} of ${leads.length} leads</div>
+              <div class="dash-pagination">
+                <button class="dash-page-btn" disabled>&lt;</button>
+                <button class="dash-page-btn active">1</button>
+                <button class="dash-page-btn" disabled>&gt;</button>
+              </div>
+            </div>
           </div>
 
-          <!-- Leads Breakdown by Page (Facebook & Instagram) -->
-          <div class="card" style="margin-top: 18px;">
-            <div class="card-header">
-              <div class="card-title">Leads Breakdown by Page</div>
-              ${isAdmin ? `<a href="#reports" class="link-small">View Full Report →</a>` : ''}
+          <!-- Leads Breakdown by Page -->
+          <div class="dash-panel-card">
+            <div class="dash-panel-header">
+              <div class="dash-panel-title">Leads Breakdown by Page</div>
+              <a href="#reports" class="dash-panel-link" onclick="window.app.navigate('reports'); return false;">View Full Report →</a>
             </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Page</th><th>Leads</th><th>Won</th><th>Conv.%</th>
-                  ${isAdmin ? `<th>Spend</th><th>CPL</th>` : ''}
-                  <th>Share</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${pageRows || '<tr><td colspan="7" class="empty-cell" style="text-align:center;padding:24px;color:var(--text-muted);">No connected pages found. Connect a Facebook Page in Connections.</td></tr>'}
-              </tbody>
-            </table>
+            <div style="overflow-x: auto;">
+              <table class="crm-table">
+                <thead>
+                  <tr>
+                    <th>Page</th>
+                    <th style="text-align:right;">Leads</th>
+                    <th style="text-align:right;">Won</th>
+                    <th style="text-align:right;">Conv. %</th>
+                    <th style="text-align:right;">Spend</th>
+                    <th style="text-align:right;">CPL</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${pageRows || `
+                    <tr>
+                      <td colspan="7" class="empty-cell" style="text-align:center;padding:28px 16px;color:var(--text-muted);">
+                        No connected pages found. <button class="btn btn-sm btn-primary" onclick="window.app.navigate('connections')" style="margin-left:8px;">Connect Facebook</button>
+                      </td>
+                    </tr>
+                  `}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
-        <div class="dash-col-side">
-          <!-- Live Meta Connection Diagnostics Card -->
-          <div class="card" style="margin-bottom: 18px;">
-            <div class="card-header">
-              <div class="card-title" style="display:flex;align-items:center;gap:8px;">
-                <span class="diag-status-dot active"></span>
-                <span>Meta Connection Status</span>
-              </div>
-              <a href="#connections" class="link-small">Manage →</a>
+        <!-- Right Column: Diagnostics, Quick Actions, Follow-ups -->
+        <div class="lower-dash-right">
+          <!-- Meta Connection Status -->
+          <div class="dash-panel-card">
+            <div class="dash-panel-header">
+              <div class="dash-panel-title">Meta Connection Status</div>
+              <a href="#connections" class="dash-panel-link" onclick="window.app.navigate('connections'); return false;">Manage Connections →</a>
             </div>
-            <div style="padding: 12px 16px; font-size: 12.5px; color: #475569;">
-              <div style="display:flex;justify-content:space-between;padding:4px 0;">
-                <span>Facebook Pages Connected:</span>
-                <strong style="color:#0F172A;">${availablePages.length} active</strong>
-              </div>
-              <div style="display:flex;justify-content:space-between;padding:4px 0;">
-                <span>Webhook Ingestion:</span>
-                <span class="badge badge-green" style="font-size:11px;">Active</span>
-              </div>
-              <div style="display:flex;justify-content:space-between;padding:4px 0;">
-                <span>Access Token Health:</span>
-                <span style="color:#10B981;font-weight:600;">Verified</span>
-              </div>
-              <div style="margin-top:12px;display:flex;gap:8px;">
-                <button class="btn btn-secondary btn-sm w-full" onclick="window.app.syncAdSpend()" style="font-size:11.5px;">
-                  ${this._icon('refresh', 12)} Sync Ad Spend
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Quick Action Buttons -->
-          <div class="card" style="margin-bottom: 18px;">
-            <div class="card-header">
-              <div class="card-title">Quick Actions</div>
-            </div>
-            <div class="quick-actions">
-              <button class="qa-btn" onclick="window.app.openAddLeadModal()">+ Add New Inbound Lead</button>
-              <button class="qa-btn" onclick="window.app.openAddTaskModal()">+ Schedule Follow-up</button>
-              <button class="qa-btn" onclick="window.app.navigate('inbox')">Open Unified Messages</button>
-              <button class="qa-btn" onclick="window.app.navigate('connections')">Manage Facebook &amp; Instagram</button>
-            </div>
-          </div>
-
-          <!-- Follow-ups Due Today -->
-          <div class="card">
-            <div class="card-header">
-              <div class="card-title">Follow-ups Today</div>
-              <a href="#tasks" class="link-small">All Tasks →</a>
-            </div>
-            ${tasks.length ? tasks.map(t => `
-              <div class="task-mini">
-                <input type="checkbox" class="task-check" onchange="window.app.completeTask('${t.id}', this)">
-                <div class="task-mini-info">
-                  <div class="task-mini-title">${escapeHtml(t.title)}</div>
-                  <div class="text-xs text-gray">Due: ${t.dueDate ? new Date(t.dueDate).toLocaleDateString('en-IN', {day:'numeric',month:'short'}) : 'Today'}</div>
+            <div>
+              <div class="conn-stat-header">
+                <div class="conn-header-left">
+                  <svg width="20" height="20" fill="#1877F2" viewBox="0 0 24 24">
+                    <path d="M12 2C6.477 2 2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.879V14.89h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.989C18.343 21.129 22 16.99 22 12c0-5.523-4.477-10-10-10z"/>
+                  </svg>
+                  <span>Facebook Pages Connected</span>
                 </div>
-                ${this._priorityBadge(t.priority)}
-              </div>`).join('') : `<div class="empty-mini">✓ No overdue follow-ups!</div>`}
+                <span class="conn-header-count">${availablePages.length}/6</span>
+              </div>
+
+              <div class="conn-diag-row">
+                <div class="conn-diag-label">
+                  <span class="conn-diag-dot" style="background:${availablePages.length > 0 ? '#10B981' : '#EF4444'};"></span>
+                  <span>Webhook Ingestion</span>
+                </div>
+                <span class="${availablePages.length > 0 ? 'badge-tag-healthy' : 'badge-tag-inactive'}">
+                  ${availablePages.length > 0 ? 'Active' : 'Inactive'}
+                </span>
+              </div>
+
+              <div class="conn-diag-row">
+                <div class="conn-diag-label">
+                  <span class="conn-diag-dot" style="background:${availablePages.length > 0 ? '#10B981' : '#F59E0B'};"></span>
+                  <span>Access Token Health</span>
+                </div>
+                <span class="${availablePages.length > 0 ? 'badge-tag-healthy' : 'badge-tag-unverified'}">
+                  ${availablePages.length > 0 ? 'Verified' : 'Not Verified'}
+                </span>
+              </div>
+
+              <div class="conn-action-footer">
+                <button class="btn-conn-dark" onclick="window.app.navigate('connections')">
+                  <svg width="14" height="14" fill="#FFFFFF" viewBox="0 0 24 24">
+                    <path d="M12 2C6.477 2 2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.879V14.89h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.989C18.343 21.129 22 16.99 22 12c0-5.523-4.477-10-10-10z"/>
+                  </svg>
+                  <span>Connect Facebook Page</span>
+                </button>
+                <div class="conn-last-sync">
+                  <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                  <span>Last Sync: ${availablePages.length > 0 ? 'Just now' : '—'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Actions -->
+          <div class="dash-panel-card">
+            <div class="dash-panel-header">
+              <div class="dash-panel-title">Quick Actions</div>
+            </div>
+            <div class="qa-grid-4">
+              <div class="qa-card-tile" onclick="window.app.openAddLeadModal()">
+                <div class="qa-icon-wrap">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+                </div>
+                <div class="qa-tile-txt">Add New Lead</div>
+              </div>
+
+              <div class="qa-card-tile" onclick="window.app.navigate('inbox')">
+                <span class="qa-red-badge">3</span>
+                <div class="qa-icon-wrap">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                </div>
+                <div class="qa-tile-txt">Open Inbox</div>
+              </div>
+
+              <div class="qa-card-tile" onclick="window.app.openAddTaskModal()">
+                <div class="qa-icon-wrap">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                </div>
+                <div class="qa-tile-txt">Schedule Follow-up</div>
+              </div>
+
+              <div class="qa-card-tile" onclick="window.app.navigate('pipeline')">
+                <div class="qa-icon-wrap">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+                </div>
+                <div class="qa-tile-txt">Open Pipeline</div>
+              </div>
+            </div>
+
+            <div class="qa-bottom-bar" onclick="window.app.navigate('connections')">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                <span>Manage Connected Pages</span>
+              </div>
+              <span style="color:var(--text-muted);">&gt;</span>
+            </div>
+          </div>
+
+          <!-- Follow-ups Today -->
+          <div class="dash-panel-card">
+            <div class="dash-panel-header">
+              <div class="dash-panel-title">Follow-ups Today</div>
+              <a href="#tasks" class="dash-panel-link" onclick="window.app.navigate('tasks'); return false;">View All Tasks →</a>
+            </div>
+            ${tasks.length ? `
+              <div style="padding: 10px 14px;">
+                ${tasks.map(t => `
+                  <div class="task-mini">
+                    <input type="checkbox" class="task-check" onchange="window.app.completeTask('${t.id}', this)">
+                    <div class="task-mini-info">
+                      <div class="task-mini-title">${escapeHtml(t.title)}</div>
+                      <div class="text-xs text-gray">Due: ${t.dueDate ? new Date(t.dueDate).toLocaleDateString('en-IN', {day:'numeric',month:'short'}) : 'Today'}</div>
+                    </div>
+                    ${this._priorityBadge(t.priority)}
+                  </div>
+                `).join('')}
+              </div>
+            ` : `
+              <div class="followups-empty-wrap">
+                <div class="followups-empty-icon">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24">
+                    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                    <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+                    <path d="m9 14 2 2 4-4"/>
+                  </svg>
+                </div>
+                <div class="followups-empty-title">No follow-ups scheduled</div>
+                <div class="followups-empty-sub">You're all caught up! 🎉</div>
+              </div>
+            `}
           </div>
         </div>
       </div>`;
@@ -1573,7 +1682,7 @@ class MetaCRMApp {
         </table>
       </div>
       <div class="table-footer">Showing <strong>${tabFiltered.length}</strong> of <strong>${allLeads.length}</strong> total leads</div>`
-      : this._empty('No leads found', 'No leads match the selected filter. Connect your Facebook Page to receive leads automatically, or add a lead manually.', null, null, '<button class="btn btn-primary" onclick="window.app.openAddLeadModal()">+ Add New Lead</button>', '👥')}`;
+      : this._empty('No leads found', 'No leads match the selected filter. Connect your Facebook Page to receive leads automatically, or add a lead manually.', null, null, '<button class="btn btn-primary" onclick="window.app.openAddLeadModal()">+ Add New Lead</button>')}`;
   }
 
   _filterLeadsByTab(leads, tab) {
@@ -2286,7 +2395,7 @@ class MetaCRMApp {
                 <div class="kanban-card" draggable="true" ondragstart="window.app.onKanbanDragStart(event, '${c.id}')" onclick="window.app.openLeadDrawer('${c.id}')">
                   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;">
                     <div class="kanban-card-name">${escapeHtml(c.name)}</div>
-                    ${isStale ? `<span class="badge-stale" title="Lead has been in this stage for ${daysInStage} days">⏱ ${daysInStage}d</span>` : ''}
+                    ${isStale ? `<span class="badge-stale" title="Lead has been in this stage for ${daysInStage} days">${this._icon('clock', 11)} ${daysInStage}d</span>` : ''}
                   </div>
                   <div class="kanban-card-meta text-xs text-gray">${escapeHtml(this._pageName(c.page_id || c.pageId))}</div>
                   ${c.loss_reason && stage === 'Lost' ? `<div class="text-xs" style="color:#DC2626;margin-top:2px;">Lost: ${escapeHtml(c.loss_reason)}</div>` : ''}
@@ -2303,10 +2412,10 @@ class MetaCRMApp {
       }).join('');
 
       const emptyBanner = leads.length === 0 ? `
-        <div style="background:#EEF2FF;border:1px solid #C7D2FE;border-radius:var(--radius-sm);padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+        <div style="background:#FFFFFF;border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:var(--shadow-card);">
           <div style="display:flex;align-items:center;gap:10px;">
-            <span style="font-size:18px;">📋</span>
-            <span style="font-size:13px;color:#312E81;"><strong>Pipeline is currently empty.</strong> Add leads manually or receive inbound Facebook Lead Ads.</span>
+            <span style="color:var(--text-secondary);display:inline-flex;">${this._icon('clipboard', 18)}</span>
+            <span style="font-size:13px;color:var(--text-primary);"><strong>Pipeline is currently empty.</strong> Add leads manually or receive inbound Facebook Lead Ads.</span>
           </div>
           <button class="btn btn-primary btn-sm" onclick="window.app.openAddLeadModal()">+ Add First Lead</button>
         </div>` : '';
@@ -2924,7 +3033,7 @@ class MetaCRMApp {
       ${isExpired ? `
       <div class="reconnect-alert-banner">
         <div style="display:flex;align-items:center;gap:14px;">
-          <span style="font-size:26px;">⚠️</span>
+          <span style="color:#B45309;display:inline-flex;">${this._icon('alert', 24)}</span>
           <div>
             <strong style="color:#92400E;font-size:15px;display:block;">Your Facebook connection expired. Click Reconnect below.</strong>
             <p style="color:#B45309;font-size:13px;margin:2px 0 0;">New Facebook leads are paused until reconnected.</p>
@@ -2939,8 +3048,12 @@ class MetaCRMApp {
       ${!isConnected && !isExpired ? `
       <div class="simple-connect-card">
         <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:16px;">
-          <div style="width:56px;height:56px;border-radius:16px;background:#1877F2;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;">f</div>
-          <div style="width:56px;height:56px;border-radius:16px;background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:26px;">📷</div>
+          <div style="width:44px;height:44px;border-radius:10px;background:#1877F2;color:#fff;display:inline-flex;align-items:center;justify-content:center;">
+            <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
+          </div>
+          <div style="width:44px;height:44px;border-radius:10px;background:#303030;color:#fff;display:inline-flex;align-items:center;justify-content:center;">
+            <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect width="20" height="20" x="2" y="2" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/></svg>
+          </div>
         </div>
         <h2 style="font-size:22px;font-weight:700;color:var(--text-primary);margin-bottom:8px;">
           Connect Facebook &amp; Instagram
@@ -2995,12 +3108,12 @@ class MetaCRMApp {
           </div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <button class="btn btn-primary" onclick="window.app.syncConnections()">
-              🔄 Sync Accounts
+              ${this._icon('refresh', 13)} Sync Accounts
             </button>
             <button class="btn btn-secondary btn-sm" onclick="window.app.connectFacebookOAuth()">
               + Add Facebook Page
             </button>
-            <button class="btn btn-secondary btn-sm" onclick="window.app.connectInstagramOAuth()" style="border-color:#E1306C;color:#E1306C;">
+            <button class="btn btn-secondary btn-sm" onclick="window.app.connectInstagramOAuth()">
               + Add Instagram Account
             </button>
           </div>
@@ -3018,8 +3131,8 @@ class MetaCRMApp {
             return `
             <div class="simple-page-item">
               <div style="display:flex;align-items:center;gap:14px;">
-                <div style="width:40px;height:40px;border-radius:10px;${isIg ? 'background:linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888)' : 'background:#1877F2'};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;">
-                  ${isIg ? '📷' : 'f'}
+                <div style="width:36px;height:36px;border-radius:8px;${isIg ? 'background:#303030' : 'background:#1877F2'};color:#fff;display:flex;align-items:center;justify-content:center;">
+                  ${isIg ? this._icon('instagram', 18) : this._icon('facebook', 18)}
                 </div>
                 <div>
                   <strong style="font-size:15px;color:var(--text-primary);">${p.name}</strong>
@@ -3269,7 +3382,7 @@ class MetaCRMApp {
       if (data.lead && this.svc) {
         this.svc.leads.unshift(data.lead);
         if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
-        this.toast(`🎉 New Lead arrived from Facebook Page "${pageName}"!`, 'success');
+        this.toast(`New Lead arrived from Facebook Page "${pageName}"!`, 'success');
         this.renderNotifications();
         setTimeout(() => this.navigate('leads'), 800);
       } else {
@@ -3369,7 +3482,7 @@ class MetaCRMApp {
           this.svc.leads.unshift(data.lead);
           this.svc._saveToStorage ? this.svc._saveToStorage() : this.svc.saveAll();
         }
-        this.toast(`🎉 Inbound Lead Received: ${data.lead.name}! Assigned to staff.`);
+        this.toast(`Inbound Lead Received: ${data.lead.name}! Assigned to staff.`);
         this.renderSidebar();
         if (this.currentRoute === 'leads') this.renderLeads();
       }
@@ -3427,7 +3540,7 @@ class MetaCRMApp {
               ${this._priorityBadge(t.priority)}
             </div>`;
         }).join('')}
-      </div>` : this._empty('No tasks in this view', 'You are all caught up! Create a follow-up or scheduled call.', null, null, '<button class="btn btn-primary" onclick="window.app.openAddTaskModal()">+ New Task</button>', '✅')}`;
+      </div>` : this._empty('No tasks in this view', 'You are all caught up! Create a follow-up or scheduled call.', null, null, '<button class="btn btn-primary" onclick="window.app.openAddTaskModal()">+ New Task</button>')}`;
   }
 
   completeTask(taskId, checkbox) {
@@ -3558,7 +3671,7 @@ class MetaCRMApp {
             <div class="card-title">Ad Spend &amp; Return on Advertising</div>
             <span class="text-xs text-gray">Live cost per lead and customer tracked against Meta ad spend</span>
           </div>
-          <button class="btn btn-secondary btn-sm" onclick="window.app.syncAdSpend()">🔄 Refresh Ad Spend</button>
+          <button class="btn btn-secondary btn-sm" onclick="window.app.syncAdSpend()">${this._icon('refresh', 13)} Refresh Ad Spend</button>
         </div>
 
         ${(() => {
@@ -4233,10 +4346,11 @@ class MetaCRMApp {
     return n;
   }
 
-  _empty(title, subtitle, href = null, cta = null, actionHtml = null, icon = '📭') {
+  _empty(title, subtitle, href = null, cta = null, actionHtml = null, icon = null) {
+    const iconHtml = (icon && !/[\uD83C-\uDBFF\uDC00-\uDFFF]/.test(icon)) ? icon : `<svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>`;
     return `
       <div class="empty-state">
-        <div class="empty-state-icon">${icon}</div>
+        <div class="empty-state-icon">${iconHtml}</div>
         <div class="empty-state-title">${title}</div>
         <div class="empty-state-desc">${subtitle}</div>
         <div class="empty-state-actions">
