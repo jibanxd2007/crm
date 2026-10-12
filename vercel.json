@@ -2,7 +2,7 @@
   "version": 2,
   "crons": [
     {
-      "path": "/api/meta/ad-spend-sync",
+      "path": "/api/meta/sync?type=ad-spend",
       "schedule": "0 0 * * *"
     },
     {
@@ -13,139 +13,167 @@
   "rewrites": [
     {
       "source": "/api/config",
-      "destination": "/api/config"
+      "destination": "/api/config.js"
     },
     {
       "source": "/api/integrations/(.*)",
-      "destination": "/api/integrations"
+      "destination": "/api/integrations.js"
     },
     {
       "source": "/api/integrations",
-      "destination": "/api/integrations"
+      "destination": "/api/integrations.js"
     },
     {
       "source": "/api/email/oauth/(.*)",
-      "destination": "/api/email/oauth"
+      "destination": "/api/email/oauth.js"
     },
     {
       "source": "/api/email/oauth",
-      "destination": "/api/email/oauth"
+      "destination": "/api/email/oauth.js"
     },
     {
       "source": "/api/email/messages/(.*)",
-      "destination": "/api/email/messages"
+      "destination": "/api/email/messages.js"
     },
     {
       "source": "/api/email/messages",
-      "destination": "/api/email/messages"
+      "destination": "/api/email/messages.js"
     },
     {
       "source": "/api/conversations/(.*)",
-      "destination": "/api/messages"
+      "destination": "/api/messages.js"
     },
     {
       "source": "/api/conversations",
-      "destination": "/api/messages"
+      "destination": "/api/messages.js"
     },
     {
       "source": "/api/messages/(.*)",
-      "destination": "/api/messages"
+      "destination": "/api/messages.js"
+    },
+    {
+      "source": "/api/messages",
+      "destination": "/api/messages.js"
     },
     {
       "source": "/api/leads/(.*)",
-      "destination": "/api/leads"
+      "destination": "/api/leads.js"
+    },
+    {
+      "source": "/api/leads",
+      "destination": "/api/leads.js"
     },
     {
       "source": "/api/pages/(.*)",
-      "destination": "/api/pages"
+      "destination": "/api/pages.js"
+    },
+    {
+      "source": "/api/pages",
+      "destination": "/api/pages.js"
     },
     {
       "source": "/api/staff/(.*)",
-      "destination": "/api/staff"
+      "destination": "/api/staff.js"
+    },
+    {
+      "source": "/api/staff",
+      "destination": "/api/staff.js"
     },
     {
       "source": "/api/reports/(.*)",
-      "destination": "/api/reports"
+      "destination": "/api/reports.js"
+    },
+    {
+      "source": "/api/reports",
+      "destination": "/api/reports.js"
     },
     {
       "source": "/api/notifications/(.*)",
-      "destination": "/api/notifications"
+      "destination": "/api/notifications.js"
+    },
+    {
+      "source": "/api/notifications",
+      "destination": "/api/notifications.js"
     },
     {
       "source": "/api/auth/meta/url",
-      "destination": "/api/meta/oauth"
+      "destination": "/api/meta/oauth.js"
     },
     {
       "source": "/api/auth/meta/callback",
-      "destination": "/api/meta/oauth"
+      "destination": "/api/meta/oauth.js"
     },
     {
       "source": "/api/meta/callback",
-      "destination": "/api/meta/oauth"
+      "destination": "/api/meta/oauth.js"
     },
     {
       "source": "/api/webhooks/meta",
-      "destination": "/api/meta/webhook"
+      "destination": "/api/meta/webhook.js"
+    },
+    {
+      "source": "/api/meta/roi",
+      "destination": "/api/meta/roi.js"
     },
     {
       "source": "/api/meta/ad-spend-sync",
-      "destination": "/api/meta/sync?type=ad-spend"
+      "destination": "/api/meta/sync.js?type=ad-spend"
     },
     {
       "source": "/api/ad-spend-sync",
-      "destination": "/api/meta/sync?type=ad-spend"
+      "destination": "/api/meta/sync.js?type=ad-spend"
     },
     {
       "source": "/api/campaigns",
-      "destination": "/api/meta/campaigns"
+      "destination": "/api/meta/campaigns.js"
     },
     {
       "source": "/api/meta/insights",
-      "destination": "/api/meta/campaigns?action=insights"
+      "destination": "/api/meta/campaigns.js?action=insights"
     },
     {
       "source": "/api/meta/assets/(.*)",
-      "destination": "/api/meta/campaigns?action=assets"
+      "destination": "/api/meta/campaigns.js?action=assets"
     },
     {
       "source": "/api/meta/assets",
-      "destination": "/api/meta/campaigns?action=assets"
+      "destination": "/api/meta/campaigns.js?action=assets"
     },
     {
       "source": "/api/zernio/connect/(.*)",
-      "destination": "/api/zernio?path=connect&channel=$1"
+      "destination": "/api/zernio.js?path=connect&channel=$1"
     },
     {
       "source": "/api/zernio/connect",
-      "destination": "/api/zernio?path=connect"
+      "destination": "/api/zernio.js?path=connect"
     },
     {
       "source": "/api/zernio/status",
-      "destination": "/api/zernio?path=status"
+      "destination": "/api/zernio.js?path=status"
     },
     {
       "source": "/api/zernio/accounts",
-      "destination": "/api/zernio?path=accounts"
+      "destination": "/api/zernio.js?path=accounts"
     },
     {
       "source": "/api/zernio/inbox/conversations/(.*)/messages",
-      "destination": "/api/zernio?path=inbox-messages&conversationId=$1"
+      "destination": "/api/zernio.js?path=inbox-messages&conversationId=$1"
     },
     {
       "source": "/api/zernio/inbox/conversations/(.*)",
-      "destination": "/api/zernio?path=inbox-conv&conversationId=$1"
+      "destination": "/api/zernio.js?path=inbox-conv&conversationId=$1"
     },
     {
       "source": "/api/zernio/inbox/conversations",
-      "destination": "/api/zernio?path=inbox-conversations"
+      "destination": "/api/zernio.js?path=inbox-conversations"
     },
     {
       "source": "/api/zernio/simulate-lead",
-      "destination": "/api/zernio?path=simulate-lead"
+      "destination": "/api/zernio.js?path=simulate-lead"
     },
     {
       "source": "/api/webhooks/zernio",
-      "destination": "/api/zernio?path=webhook"
+      "destination": "/api/zernio.js?path=webhook"
     },
     {
       "source": "/((?!api/|.*\\..*).*)",
