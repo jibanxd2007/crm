@@ -150,7 +150,45 @@ async function metaCampaignsUnifiedHandler(req, res) {
   }
 
   // --------------------------------------------------------------------------
-  // C. AD SETS & ADS DRILLDOWN MODES
+  // C. ROI MODE (/api/meta/roi)
+  // --------------------------------------------------------------------------
+  if (action === 'roi' || url.includes('/roi')) {
+    const { resolveUser } = require('../_utils.js');
+    const user = resolveUser(req.headers);
+    if (!user) {
+      return res.status(401).json({ error: "Unauthorized: Authentication required" });
+    }
+
+    const allSampleRecords = [
+      { pageId: "page_01", campaignId: "camp_01", spend: 45000.0, leads: 45, cpl: 1000.0 },
+      { pageId: "page_02", campaignId: "camp_02", spend: 32000.0, leads: 20, cpl: 1600.0 }
+    ];
+
+    let records = [];
+    if (user.role === 'admin' || user.pages.includes('*')) {
+      records = allSampleRecords;
+    } else {
+      records = allSampleRecords.filter(r => user.pages.includes(r.pageId));
+    }
+
+    const totalSpend = records.reduce((sum, r) => sum + r.spend, 0);
+    const totalLeads = records.reduce((sum, r) => sum + r.leads, 0);
+
+    return res.status(200).json({
+      status: "success",
+      userRole: user.role,
+      accessiblePages: user.pages,
+      records: records,
+      summary: {
+        totalSpend,
+        totalLeads,
+        blendedCpl: totalLeads > 0 ? totalSpend / totalLeads : 0
+      }
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // D. AD SETS & ADS DRILLDOWN MODES
   // --------------------------------------------------------------------------
   if (action === 'adsets' || url.includes('/adsets')) {
     const { ad_account_id = 'act_104829104812', date_preset = 'last_30d', campaign_id } = query;

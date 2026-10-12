@@ -113,7 +113,7 @@
     },
     {
       "source": "/api/meta/roi",
-      "destination": "/api/meta/roi.js"
+      "destination": "/api/meta/campaigns.js?action=roi"
     },
     {
       "source": "/api/meta/ad-spend-sync",
