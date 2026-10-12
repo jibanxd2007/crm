@@ -2052,6 +2052,82 @@ tbody tr:hover {
   font-size: 11px;
 }
 
+.msg-status-sending {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #94A3B8;
+  font-size: 10px;
+}
+
+.msg-status-sending .spinner-dot {
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid #CBD5E1;
+  border-top-color: #3B82F6;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+
+.msg-status-failed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #EF4444;
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+.btn-msg-retry {
+  background: transparent;
+  border: 1px solid #FCA5A5;
+  color: #DC2626;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  transition: all 0.15s ease;
+  margin-left: 4px;
+}
+
+.btn-msg-retry:hover {
+  background: #FEE2E2;
+  border-color: #EF4444;
+}
+
+.msg-out.msg-sending .msg-bubble {
+  opacity: 0.88;
+}
+
+.msg-out.msg-failed .msg-bubble {
+  border: 1px solid #FCA5A5;
+}
+
+.inbox-scroll-bottom-btn {
+  position: absolute;
+  bottom: 80px;
+  right: 24px;
+  background: #1E293B;
+  color: #FFFFFF;
+  border: 1px solid #334155;
+  border-radius: 20px;
+  padding: 6px 12px;
+  font-size: 11.5px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+  animation: fadeIn 0.2s ease;
+}
+
 /* Empty Conversation Thread */
 .inbox-thread-empty-state {
   margin: auto;

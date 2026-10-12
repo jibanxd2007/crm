@@ -236,6 +236,14 @@ async function zernioUnifiedHandler(req, res) {
         resp.on('end', () => {
           try {
             const parsed = JSON.parse(data);
+            const msgList = parsed.messages || parsed.data || [];
+            if (Array.isArray(msgList)) {
+              msgList.sort((a, b) => {
+                const timeA = new Date(a.sentAt || a.createdAt || a.created_at || 0).getTime();
+                const timeB = new Date(b.sentAt || b.createdAt || b.created_at || 0).getTime();
+                return timeA - timeB;
+              });
+            }
             res.status(200).json(parsed);
             resolve();
           } catch (e) {
@@ -278,6 +286,14 @@ async function zernioUnifiedHandler(req, res) {
         resp.on('end', () => {
           try {
             const parsed = JSON.parse(data);
+            const convList = parsed.data || parsed.conversations || [];
+            if (Array.isArray(convList)) {
+              convList.sort((a, b) => {
+                const timeA = new Date(a.updatedTime || a.lastMessageAt || a.updated_at || 0).getTime();
+                const timeB = new Date(b.updatedTime || b.lastMessageAt || b.updated_at || 0).getTime();
+                return timeB - timeA;
+              });
+            }
             res.status(200).json(parsed);
             resolve();
           } catch (e) {

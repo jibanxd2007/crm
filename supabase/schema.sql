@@ -591,8 +591,22 @@ CREATE TABLE IF NOT EXISTS public.messages (
   text TEXT NOT NULL,
   attachments JSONB DEFAULT '[]',
   is_read BOOLEAN NOT NULL DEFAULT false,
+  client_msg_id TEXT,
+  meta_mid TEXT,
+  status TEXT DEFAULT 'sent' CHECK (status IN ('sending', 'sent', 'failed')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX IF NOT EXISTS idx_conversations_last_message_at ON public.conversations (last_message_at DESC NULLS LAST);
+CREATE INDEX IF NOT EXISTS idx_conversations_org_last_msg ON public.conversations (organization_id, last_message_at DESC NULLS LAST);
+CREATE INDEX IF NOT EXISTS idx_conversations_page_last_msg ON public.conversations (page_id, last_message_at DESC NULLS LAST);
+CREATE INDEX IF NOT EXISTS idx_conversations_assigned_last_msg ON public.conversations (assigned_to, last_message_at DESC NULLS LAST);
+CREATE INDEX IF NOT EXISTS idx_conversations_unread ON public.conversations (unread_count);
+CREATE INDEX IF NOT EXISTS idx_conversations_customer_psid ON public.conversations (page_id, customer_psid);
+CREATE INDEX IF NOT EXISTS idx_messages_conv_created ON public.messages (conversation_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_messages_created ON public.messages (created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_messages_client_msg_id ON public.messages (conversation_id, client_msg_id) WHERE client_msg_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_messages_meta_mid ON public.messages (meta_mid) WHERE meta_mid IS NOT NULL;
 
 -- ------------------------------------------------------------------------------
 -- 24. SCRUM SPRINTS & TASKS MODULE

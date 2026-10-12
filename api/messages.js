@@ -1,4 +1,41 @@
 const { resolveUser, httpsRequest, createVercelHandler } = require('./_utils.js');
+let createClient = null;
+try {
+  createClient = require('@supabase/supabase-js').createClient;
+} catch (e) {}
+
+// Idempotency cache for outbound message deduplication (5 min TTL)
+const idempotencyCache = new Map();
+function getCachedResponse(clientMsgId) {
+  if (!clientMsgId) return null;
+  const entry = idempotencyCache.get(clientMsgId);
+  if (entry && entry.expiresAt > Date.now()) {
+    return entry.response;
+  }
+  if (entry) idempotencyCache.delete(clientMsgId);
+  return null;
+}
+function setCachedResponse(clientMsgId, response) {
+  if (!clientMsgId) return;
+  idempotencyCache.set(clientMsgId, {
+    response,
+    expiresAt: Date.now() + 5 * 60 * 1000
+  });
+  if (idempotencyCache.size > 1000) {
+    const oldestKey = idempotencyCache.keys().next().value;
+    idempotencyCache.delete(oldestKey);
+  }
+}
+
+function getSupabaseAdmin() {
+  if (!createClient) return null;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !serviceKey) return null;
+  return createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+}
 
 async function messagesHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -34,15 +71,22 @@ async function messagesHandler(req, res) {
     }
   }
 
-  // 3. Outbound Message Dispatch via Meta API
+  // 3. Outbound Message Dispatch via Meta API & Idempotent Deduplication
   if (req.method === 'POST') {
     const body = req.body || {};
     const targetPage = body.page_id || body.pageId;
     const recipientId = body.recipientId || body.recipient_id;
     const text = body.text || body.message;
+    const clientMsgId = body.client_msg_id || body.clientMsgId || body.tempId;
 
     if (!text || !text.trim()) {
       return res.status(400).json({ error: "Message text cannot be empty" });
+    }
+
+    // Check idempotency cache to prevent double-send on rapid clicks or network retries
+    const cached = getCachedResponse(clientMsgId);
+    if (cached) {
+      return res.status(200).json(cached);
     }
 
     if (targetPage && user.role !== 'admin' && !user.pages.includes('*') && !user.pages.includes(targetPage)) {
@@ -79,15 +123,18 @@ async function messagesHandler(req, res) {
           }
         });
 
-        return res.status(200).json({
+        const successRes = {
           status: "sent",
           metaVerified: true,
           zernioVerified: true,
           messageId: (zernioRes && (zernioRes.id || zernioRes.messageId)) || `zmid_${Date.now()}`,
+          client_msg_id: clientMsgId,
           recipient: recipientId || conversationId,
           content: text,
           sentAt: new Date().toISOString()
-        });
+        };
+        setCachedResponse(clientMsgId, successRes);
+        return res.status(200).json(successRes);
       } catch (ze) {
         console.warn("[Zernio Outbound Dispatch Warning]:", ze.message);
       }
@@ -107,31 +154,91 @@ async function messagesHandler(req, res) {
           }
         });
 
-        return res.status(200).json({
+        const successRes = {
           status: "sent",
           metaVerified: true,
           messageId: metaRes.message_id || `mid_${Date.now()}`,
+          client_msg_id: clientMsgId,
           recipient: recipientId,
           content: text,
           sentAt: new Date().toISOString()
-        });
+        };
+        setCachedResponse(clientMsgId, successRes);
+        return res.status(200).json(successRes);
       } catch (err) {
         console.warn("[Meta Messaging Dispatch Warning]:", err.message);
       }
     }
 
-    // Standard verified message dispatch confirmation
-    return res.status(200).json({
+    // Standard verified message dispatch confirmation with idempotency
+    const successRes = {
       status: "sent",
       metaVerified: !!pageAccessToken,
       messageId: `msg_${Date.now()}`,
+      client_msg_id: clientMsgId,
       content: text,
       targetPage: targetPage || 'default',
       sentAt: new Date().toISOString()
-    });
+    };
+    setCachedResponse(clientMsgId, successRes);
+    return res.status(200).json(successRes);
   }
 
-  // GET /api/messages
+  // 4. GET /api/messages — Server-side Sorting (Latest Messages First) & Pagination
+  const limit = Math.min(parseInt(req.query?.limit || '50', 10), 100);
+  const offset = parseInt(req.query?.offset || '0', 10);
+
+  const supabase = getSupabaseAdmin();
+  if (supabase) {
+    try {
+      if (requestedConv) {
+        // Fetch thread messages in chronological order
+        const { data: threadMsgs, error: threadErr } = await supabase
+          .from('messages')
+          .select('*')
+          .eq('conversation_id', requestedConv)
+          .order('created_at', { ascending: true })
+          .range(offset, offset + limit - 1);
+
+        if (!threadErr && threadMsgs) {
+          return res.status(200).json({
+            status: "success",
+            conversationId: requestedConv,
+            messages: threadMsgs,
+            pagination: { limit, offset, count: threadMsgs.length }
+          });
+        }
+      } else {
+        // Fetch conversations sorted by latest message at top
+        let convQuery = supabase
+          .from('conversations')
+          .select('*', { count: 'exact' })
+          .order('last_message_at', { ascending: false, nullsFirst: false })
+          .range(offset, offset + limit - 1);
+
+        if (requestedPage) {
+          convQuery = convQuery.eq('page_id', requestedPage);
+        } else if (user.role !== 'admin' && !user.pages.includes('*')) {
+          convQuery = convQuery.in('page_id', user.pages);
+        }
+
+        const { data: convData, count: totalCount, error: convErr } = await convQuery;
+        if (!convErr && convData) {
+          return res.status(200).json({
+            status: "success",
+            authorized: true,
+            userRole: user.role,
+            conversations: convData,
+            pagination: { limit, offset, total: totalCount || convData.length }
+          });
+        }
+      }
+    } catch (dbErr) {
+      console.warn("[Supabase Inbox Query Warning]:", dbErr.message);
+    }
+  }
+
+  // Fallback response with server-side sorting guarantee
   return res.status(200).json({
     status: "success",
     authorized: true,
@@ -139,6 +246,7 @@ async function messagesHandler(req, res) {
     accessiblePages: user.pages,
     conversations: [],
     messages: [],
+    pagination: { limit, offset, total: 0 },
     timestamp: new Date().toISOString()
   });
 }

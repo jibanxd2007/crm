@@ -67,7 +67,7 @@ class SupabaseService {
     if (!this.client) return;
 
     try {
-      // Subscribe to inbound leads table updates via WebSocket
+      // 1. Inbound Leads Realtime Stream
       this.realtimeChannel = this.client
         .channel('public:leads')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, payload => {
@@ -77,8 +77,43 @@ class SupabaseService {
           }
         })
         .subscribe();
+
+      // 2. Inbound Messages Realtime Stream (Instant messaging across Facebook/Instagram)
+      this.messagesChannel = this.client
+        .channel('public:messages')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, payload => {
+          console.log('[Supabase Realtime] Inbound message received:', payload.new);
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent('crm:remote_message_received', { detail: payload.new }));
+          }
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, payload => {
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent('crm:remote_message_updated', { detail: payload.new }));
+          }
+        })
+        .subscribe();
+
+      // 3. Conversation Recency & Unread Counter Stream
+      this.conversationsChannel = this.client
+        .channel('public:conversations')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, payload => {
+          console.log('[Supabase Realtime] Conversation updated:', payload.new);
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent('crm:remote_conversation_updated', { detail: payload.new }));
+          }
+        })
+        .subscribe();
     } catch (e) {
       console.warn("[Supabase Realtime] Subscription error:", e);
+    }
+  }
+
+  unsubscribeRealtime() {
+    if (this.client) {
+      if (this.realtimeChannel) this.client.removeChannel(this.realtimeChannel);
+      if (this.messagesChannel) this.client.removeChannel(this.messagesChannel);
+      if (this.conversationsChannel) this.client.removeChannel(this.conversationsChannel);
     }
   }
 

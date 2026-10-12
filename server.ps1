@@ -518,7 +518,13 @@ while ($listener.IsListening) {
                         Send-JsonResponse $response 403 @{ error = "Forbidden: User B cannot send message for page $tgtPage" }
                         continue
                     }
-                    Send-JsonResponse $response 200 @{ status = "sent"; messageId = "msg_" + (Get-Random) }
+                    $cMsgId = if ($bJson.client_msg_id) { $bJson.client_msg_id } elseif ($bJson.clientMsgId) { $bJson.clientMsgId } else { "msg_" + (Get-Random) }
+                    Send-JsonResponse $response 200 @{ 
+                        status = "sent"; 
+                        messageId = "msg_" + (Get-Random); 
+                        client_msg_id = $cMsgId; 
+                        sentAt = (Get-Date).ToString("o") 
+                    }
                     continue
                 }
 

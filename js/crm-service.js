@@ -516,6 +516,7 @@ class CRMService {
   }
 
   getDefaultConversations() {
+    const now = Date.now();
     return [
       {
         id: "conv_01",
@@ -525,10 +526,12 @@ class CRMService {
         unread: 1,
         unread_count: 1,
         time: "10m ago",
+        last_message_at: new Date(now - 10 * 60 * 1000).toISOString(),
         preview: "Could you share the pricing brochure for Enterprise B2B plan?",
+        last_message: "Could you share the pricing brochure for Enterprise B2B plan?",
         messages: [
-          { text: "Hi, I saw your ad on Facebook about Enterprise Cloud.", incoming: true, time: "12m ago", is_read: true },
-          { text: "Could you share the pricing brochure for Enterprise B2B plan?", incoming: true, time: "10m ago", is_read: false }
+          { id: "m_01_1", text: "Hi, I saw your ad on Facebook about Enterprise Cloud.", incoming: true, time: "12m ago", created_at: new Date(now - 12 * 60 * 1000).toISOString(), is_read: true },
+          { id: "m_01_2", text: "Could you share the pricing brochure for Enterprise B2B plan?", incoming: true, time: "10m ago", created_at: new Date(now - 10 * 60 * 1000).toISOString(), is_read: false }
         ]
       },
       {
@@ -540,10 +543,12 @@ class CRMService {
         unread: 1,
         unread_count: 1,
         time: "25m ago",
+        last_message_at: new Date(now - 25 * 60 * 1000).toISOString(),
         preview: "Is the Spring Collection available for bulk commercial orders?",
+        last_message: "Is the Spring Collection available for bulk commercial orders?",
         messages: [
-          { text: "Hello! Loved your Instagram post about Spring Home Decor.", incoming: true, time: "30m ago", is_read: true },
-          { text: "Is the Spring Collection available for bulk commercial orders?", incoming: true, time: "25m ago", is_read: false }
+          { id: "m_02_1", text: "Hello! Loved your Instagram post about Spring Home Decor.", incoming: true, time: "30m ago", created_at: new Date(now - 30 * 60 * 1000).toISOString(), is_read: true },
+          { id: "m_02_2", text: "Is the Spring Collection available for bulk commercial orders?", incoming: true, time: "25m ago", created_at: new Date(now - 25 * 60 * 1000).toISOString(), is_read: false }
         ]
       },
       {
@@ -554,10 +559,12 @@ class CRMService {
         unread: 0,
         unread_count: 0,
         time: "1h ago",
+        last_message_at: new Date(now - 60 * 60 * 1000).toISOString(),
         preview: "Thanks, contract signed and payment processed.",
+        last_message: "Thanks, contract signed and payment processed.",
         messages: [
-          { text: "Here is the final contract draft, Aarav.", incoming: false, time: "1h 15m ago", is_read: true },
-          { text: "Thanks, contract signed and payment processed.", incoming: true, time: "1h ago", is_read: true }
+          { id: "m_03_1", text: "Here is the final contract draft, Aarav.", incoming: false, time: "1h 15m ago", created_at: new Date(now - 75 * 60 * 1000).toISOString(), is_read: true },
+          { id: "m_03_2", text: "Thanks, contract signed and payment processed.", incoming: true, time: "1h ago", created_at: new Date(now - 60 * 60 * 1000).toISOString(), is_read: true }
         ]
       }
     ];
@@ -2118,11 +2125,47 @@ class CRMService {
   // ==========================================================================
   // UNIFIED 3-COLUMN INBOX (MESSENGER & INSTAGRAM DM)
   // ==========================================================================
+  _resolveConvTimestamp(conv) {
+    if (!conv) return 0;
+    // 1. Explicit ISO last_message_at
+    if (conv.last_message_at && conv.last_message_at !== "Just now") {
+      const t = new Date(conv.last_message_at).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    // 2. Latest message timestamp inside messages array
+    if (conv.messages && conv.messages.length > 0) {
+      const lastMsg = conv.messages[conv.messages.length - 1];
+      const mTime = lastMsg.created_at || lastMsg.sentAt || lastMsg.timestamp;
+      if (mTime && mTime !== "Just now") {
+        const t = new Date(mTime).getTime();
+        if (!isNaN(t) && t > 0) return t;
+      }
+    }
+    // 3. UpdatedAt or updatedTime
+    if (conv.updated_at || conv.updatedTime) {
+      const t = new Date(conv.updated_at || conv.updatedTime).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    // 4. Relative time string parsing ("10m ago", "25m ago", "1h ago")
+    if (conv.time) {
+      if (conv.time === "Just now") return Date.now();
+      const mMatch = conv.time.match(/(\d+)\s*m/i);
+      if (mMatch) return Date.now() - parseInt(mMatch[1], 10) * 60 * 1000;
+      const hMatch = conv.time.match(/(\d+)\s*h/i);
+      if (hMatch) return Date.now() - parseInt(hMatch[1], 10) * 3600 * 1000;
+      const dMatch = conv.time.match(/(\d+)\s*d/i);
+      if (dMatch) return Date.now() - parseInt(dMatch[1], 10) * 86400 * 1000;
+      const t = new Date(conv.time).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    return 0;
+  }
+
   getConversations(customFilters = {}) {
     const f = { ...this.filters, ...customFilters };
     const user = this.currentUser;
 
-    return this.conversations.filter(conv => {
+    const filtered = this.conversations.filter(conv => {
       // 1. RBAC Gate
       if (user && user.role === "staff") {
         const allowedPages = user.assignedPageIds || [];
@@ -2149,7 +2192,7 @@ class CRMService {
       }
 
       // 5. Unread only
-      if (f.unreadOnly && conv.unread_count === 0) {
+      if (f.unreadOnly && (conv.unread_count === 0 && (conv.unread || 0) === 0)) {
         return false;
       }
 
@@ -2158,7 +2201,10 @@ class CRMService {
         const q = f.searchQuery.toLowerCase().trim();
         const haystack = [
           conv.customer_name,
+          conv.name,
+          conv.participantUsername,
           conv.last_message,
+          conv.preview,
           conv.page_name,
           conv.channel
         ].join(" ").toLowerCase();
@@ -2167,10 +2213,17 @@ class CRMService {
 
       return true;
     });
+
+    // 7. ALWAYS DISPLAY CONVERSATION WITH MOST RECENT MESSAGE AT THE TOP (Newest First)
+    return filtered.sort((a, b) => {
+      const timeA = this._resolveConvTimestamp(a);
+      const timeB = this._resolveConvTimestamp(b);
+      return timeB - timeA;
+    });
   }
 
   getConversationById(convId, user = null) {
-    const conv = this.conversations.find(c => c.id === convId);
+    const conv = this.conversations.find(c => String(c.id) === String(convId));
     if (!conv) return null;
 
     if (!this.canUserAccessConversation(conv, user)) {
@@ -2187,8 +2240,8 @@ class CRMService {
     }
 
     // Find linked contact and lead
-    const contact = this.contacts.find(c => c.id === conv.contact_id || c.name === conv.customer_name);
-    const lead = this.leads.find(l => l.name === conv.customer_name);
+    const contact = this.contacts.find(c => c.id === conv.contact_id || c.name === conv.customer_name || c.name === conv.name);
+    const lead = this.leads.find(l => l.name === conv.customer_name || l.name === conv.name);
 
     return {
       accessDenied: false,
@@ -2198,12 +2251,12 @@ class CRMService {
     };
   }
 
-  sendReplyMessage(convId, text) {
+  sendReplyMessage(convId, text, optimisticId = null) {
     if (!text || text.trim() === "") {
       return { success: false, error: "Reply text cannot be empty" };
     }
 
-    const conv = this.conversations.find(c => c.id === convId);
+    const conv = this.conversations.find(c => String(c.id) === String(convId));
     if (!conv) return { success: false, error: "Conversation not found" };
 
     if (!this.canUserAccessConversation(conv)) {
@@ -2212,25 +2265,101 @@ class CRMService {
 
     const user = this.currentUser;
     const userName = user ? (user.displayName || user.name) : "Staff";
+    const nowIso = new Date().toISOString();
     const newMsg = {
-      id: "m_" + Date.now(),
+      id: optimisticId || ("m_" + Date.now()),
+      client_msg_id: optimisticId,
       sender_type: "staff",
       sender_name: userName,
       sender_id: user ? user.id : null,
       text: text.trim(),
       timestamp: "Just now",
+      created_at: nowIso,
+      status: "sent",
       is_read: true
     };
 
     conv.messages = conv.messages || [];
     conv.messages.push(newMsg);
     conv.last_message = text.trim();
-    conv.last_message_at = "Just now";
+    conv.preview = "You: " + text.trim();
+    conv.last_message_at = nowIso;
+    conv.time = "Just now";
+
+    // Immediately bubble conversation to index 0 (top of inbox)
+    const idx = this.conversations.findIndex(c => String(c.id) === String(convId));
+    if (idx > 0) {
+      this.conversations.splice(idx, 1);
+      this.conversations.unshift(conv);
+    }
 
     this.saveAll();
-    this.logAudit("INBOX_MESSAGE_SENT", `${conv.customer_name} via ${conv.channel}`, "SUCCESS", text.substring(0, 50));
+    this.logAudit("INBOX_MESSAGE_SENT", `${conv.customer_name || conv.name} via ${conv.channel}`, "SUCCESS", text.substring(0, 50));
     this.notifyChange("message_sent", { convId, message: newMsg, conversation: conv });
     return { success: true, message: newMsg, conversation: conv };
+  }
+
+  receiveIncomingMessage(convId, text, options = {}) {
+    if (!convId || !text) return null;
+    let conv = this.conversations.find(c => String(c.id) === String(convId));
+    const nowIso = new Date().toISOString();
+
+    if (!conv) {
+      conv = {
+        id: String(convId),
+        name: options.senderName || "New Inquirer",
+        channel: options.channel || "messenger",
+        page_id: options.pageId || "page_01",
+        unread: 1,
+        unread_count: 1,
+        time: "Just now",
+        last_message_at: nowIso,
+        preview: text,
+        last_message: text,
+        messages: []
+      };
+      this.conversations.unshift(conv);
+    } else {
+      // Deduplication check: prevent duplicate messages from webhook retries
+      conv.messages = conv.messages || [];
+      const isDupe = conv.messages.some(m => {
+        if (options.metaMid && (m.meta_mid === options.metaMid || m.id === options.metaMid)) return true;
+        return m.incoming && m.text === text && Math.abs(new Date(m.created_at || 0).getTime() - Date.now()) < 3000;
+      });
+      if (isDupe) return conv;
+
+      conv.unread = (conv.unread || 0) + 1;
+      conv.unread_count = (conv.unread_count || 0) + 1;
+      conv.preview = text;
+      conv.last_message = text;
+      conv.last_message_at = nowIso;
+      conv.time = "Just now";
+
+      // Move conversation to the very top of inbox
+      const idx = this.conversations.findIndex(c => String(c.id) === String(convId));
+      if (idx > 0) {
+        this.conversations.splice(idx, 1);
+        this.conversations.unshift(conv);
+      }
+    }
+
+    const newMsg = {
+      id: options.metaMid || ("m_in_" + Date.now()),
+      meta_mid: options.metaMid,
+      text: text,
+      incoming: true,
+      sender_type: "customer",
+      sender_name: conv.name,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      created_at: nowIso,
+      status: "sent",
+      is_read: false
+    };
+    conv.messages.push(newMsg);
+
+    this.saveAll();
+    this.notifyChange("message_received", { convId, message: newMsg, conversation: conv });
+    return conv;
   }
 
   assignConversation(convId, staffId) {

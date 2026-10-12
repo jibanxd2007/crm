@@ -1,4 +1,32 @@
 const { verifyMetaSignature, createVercelHandler } = require('../_utils.js');
+let createClient = null;
+try {
+  createClient = require('@supabase/supabase-js').createClient;
+} catch (e) {}
+
+// In-memory deduplication cache for Meta webhook retries (10 min TTL)
+const processedEvents = new Map();
+function isDuplicateEvent(id) {
+  if (!id) return false;
+  const exp = processedEvents.get(id);
+  if (exp && exp > Date.now()) return true;
+  processedEvents.set(id, Date.now() + 10 * 60 * 1000);
+  if (processedEvents.size > 2000) {
+    const oldest = processedEvents.keys().next().value;
+    processedEvents.delete(oldest);
+  }
+  return false;
+}
+
+function getSupabaseAdmin() {
+  if (!createClient) return null;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !serviceKey) return null;
+  return createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+}
 
 async function metaWebhookHandler(req, res) {
   const verifyToken = process.env.META_VERIFY_TOKEN;
@@ -41,9 +69,80 @@ async function metaWebhookHandler(req, res) {
     const eventId = payload.entry && payload.entry[0] ? payload.entry[0].id : `evt_${Date.now()}`;
     const pageId = payload.entry && payload.entry[0] ? payload.entry[0].id : 'page_01';
 
+    // Extract messaging events if present
+    const entries = payload.entry || [];
+    let processedMsgs = 0;
+    let duplicateIgnored = false;
+
+    for (const entry of entries) {
+      const messagingList = entry.messaging || entry.standby || [];
+      for (const msgEvent of messagingList) {
+        const mid = msgEvent.message?.mid || `${msgEvent.sender?.id}_${msgEvent.timestamp}`;
+        if (isDuplicateEvent(mid)) {
+          duplicateIgnored = true;
+          continue;
+        }
+
+        processedMsgs++;
+        const senderPsid = msgEvent.sender?.id;
+        const msgText = msgEvent.message?.text || (msgEvent.message?.attachments ? '[Attachment]' : '');
+        const msgTimestamp = msgEvent.timestamp ? new Date(msgEvent.timestamp).toISOString() : new Date().toISOString();
+
+        // Persist to Supabase if available
+        const supabase = getSupabaseAdmin();
+        if (supabase && senderPsid && msgText) {
+          try {
+            // Find or create conversation
+            const { data: conv } = await supabase
+              .from('conversations')
+              .select('id')
+              .eq('page_id', pageId)
+              .eq('customer_psid', senderPsid)
+              .maybeSingle();
+
+            let convId = conv?.id;
+            if (!convId) {
+              const { data: newConv } = await supabase
+                .from('conversations')
+                .insert({
+                  page_id: pageId,
+                  customer_psid: senderPsid,
+                  customer_name: `Facebook User (${senderPsid.substring(0, 6)})`,
+                  channel: 'messenger',
+                  last_message: msgText,
+                  last_message_at: msgTimestamp,
+                  unread_count: 1
+                })
+                .select('id')
+                .single();
+              convId = newConv?.id;
+            }
+
+            if (convId) {
+              await supabase
+                .from('messages')
+                .insert({
+                  conversation_id: convId,
+                  sender_type: 'customer',
+                  sender_name: 'Customer',
+                  text: msgText,
+                  meta_mid: mid,
+                  is_read: false,
+                  created_at: msgTimestamp
+                });
+            }
+          } catch (dbErr) {
+            console.warn("[Webhook DB Ingest Warning]:", dbErr.message);
+          }
+        }
+      }
+    }
+
     return res.status(200).json({
       status: "success",
       processed: true,
+      duplicateIgnored,
+      messagesProcessed: processedMsgs,
       eventId: eventId,
       pageId: pageId,
       slaTargetMinutes: 5,

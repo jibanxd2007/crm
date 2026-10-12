@@ -198,6 +198,11 @@ class MetaCRMApp {
       this.renderNotifications();
     });
 
+    // Real-time Inbox Messaging Engine (Instant Webhook & Supabase Realtime Delivery)
+    window.addEventListener('crm:remote_message_received', (e) => this.handleRemoteMessageReceived(e.detail));
+    window.addEventListener('crm:remote_message_updated', (e) => this.handleRemoteMessageUpdated(e.detail));
+    window.addEventListener('crm:remote_conversation_updated', (e) => this.handleRemoteConversationUpdated(e.detail));
+
     // Keyboard Shortcuts (Ctrl+K for command palette, Escape, and module navigation)
     window.addEventListener('keydown', e => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -2525,6 +2530,13 @@ class MetaCRMApp {
       ? convs
       : convs.filter(c => !c.page_id || userPages.includes(c.page_id) || userPages.includes(c.accountId));
 
+    // ALWAYS SORT CONVERSATIONS BY LATEST MESSAGE (Most Recently Received or Sent First)
+    accessibleConvs.sort((a, b) => {
+      const timeA = this.svc ? this.svc._resolveConvTimestamp(a) : new Date(a.last_message_at || a.time || 0).getTime();
+      const timeB = this.svc ? this.svc._resolveConvTimestamp(b) : new Date(b.last_message_at || b.time || 0).getTime();
+      return timeB - timeA;
+    });
+
     const totalCount = accessibleConvs.length;
     const unreadInboxCount = accessibleConvs.filter(c => (c.unread || 0) > 0).length;
     const fbCount = accessibleConvs.filter(c => !c.channel || c.channel.toLowerCase().includes('mess') || c.channel.toLowerCase().includes('face')).length;
@@ -2625,6 +2637,7 @@ class MetaCRMApp {
               const isUnread = (c.unread || 0) > 0;
               const isCurrentActive = activeConv && String(c.id) === String(activeConv.id);
               const searchText = `${c.name || ''} ${c.preview || ''} ${c.participantUsername || ''}`.toLowerCase();
+              const displayTime = this._formatMessageTime(c.last_message_at || c.time);
 
               return `
               <div class="inbox-conv-item ${isCurrentActive ? 'active' : ''}" data-conv-id="${c.id}" data-search-text="${escapeHtml(searchText)}" onclick="window.app.selectInboxConv('${c.id}')">
@@ -2635,7 +2648,7 @@ class MetaCRMApp {
                 <div class="conv-info">
                   <div class="conv-name-row">
                     <span class="conv-name">${escapeHtml(c.name)}</span>
-                    <span class="conv-time">${c.time || ''}</span>
+                    <span class="conv-time">${displayTime}</span>
                   </div>
                   <div class="conv-preview ${isUnread ? 'is-unread' : ''}">${escapeHtml(c.preview || '')}</div>
                   <div class="conv-channel-row">
@@ -2692,7 +2705,7 @@ class MetaCRMApp {
                   const isMedia = m.text && (m.text.includes('[Photo/Media Attachment]') || m.text.includes('Replied to your story'));
                   if (m.incoming) {
                     return `
-                      <div class="msg msg-in">
+                      <div class="msg msg-in" data-msg-id="${m.id || ''}">
                         <div class="msg-in-row">
                           <div class="msg-mini-avatar" style="background-color:${activeColor.bg};color:${activeColor.text};">
                             ${activeInitials}
@@ -2706,13 +2719,23 @@ class MetaCRMApp {
                       </div>
                     `;
                   } else {
+                    const isSending = m.status === 'sending';
+                    const isFailed = m.status === 'failed';
                     return `
-                      <div class="msg msg-out">
+                      <div class="msg msg-out ${isSending ? 'msg-sending' : ''} ${isFailed ? 'msg-failed' : ''}" data-msg-id="${m.id || ''}">
                         <div class="msg-bubble">
                           ${escapeHtml(m.text || '')}
                         </div>
                         <span class="msg-time">
-                          ${m.time || 'Just now'} <span class="msg-status-check" title="Delivered">✓✓</span>
+                          ${m.time || 'Just now'}
+                          ${isSending ? `
+                            <span class="msg-status-sending" title="Sending…"><span class="spinner-dot"></span> Sending</span>
+                          ` : isFailed ? `
+                            <span class="msg-status-failed" title="Delivery failed">⚠️ Failed</span>
+                            <button class="btn-msg-retry" onclick="window.app.retryInboxMessage('${m.id}')" title="Retry sending">↻ Retry</button>
+                          ` : `
+                            <span class="msg-status-check" title="Delivered">✓✓</span>
+                          `}
                         </span>
                       </div>
                     `;
@@ -2968,9 +2991,17 @@ class MetaCRMApp {
   async selectInboxConv(convId) {
     this.activeConvId = convId;
     this.mobileInboxView = 'chat';
-    this.renderInbox();
 
     const conv = (this.svc && this.svc.conversations) ? this.svc.conversations.find(c => String(c.id) === String(convId)) : null;
+    if (conv && ((conv.unread || 0) > 0 || (conv.unread_count || 0) > 0)) {
+      conv.unread = 0;
+      conv.unread_count = 0;
+      if (this.svc && this.svc._saveToStorage) this.svc._saveToStorage();
+      else if (this.svc && this.svc.saveAll) this.svc.saveAll();
+    }
+
+    this.renderInbox();
+
     if (conv && (!conv.messages || conv.messages.length === 0)) {
       await this.fetchRealConversationMessages(conv);
     }
@@ -3110,6 +3141,7 @@ class MetaCRMApp {
             existing.channel = channel;
             existing.preview = c.lastMessage || existing.preview;
             existing.time = c.updatedTime ? new Date(c.updatedTime).toLocaleDateString([], { month: 'short', day: 'numeric' }) : existing.time;
+            existing.last_message_at = c.updatedTime || existing.last_message_at || new Date().toISOString();
             existing.unread = c.unreadCount || 0;
             existing.accountId = c.accountId;
           } else {
@@ -3122,12 +3154,22 @@ class MetaCRMApp {
               channel: channel,
               page_id: c.accountId || '6aca1c00e12ba0b652e62f45',
               time: c.updatedTime ? new Date(c.updatedTime).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'Recently',
+              last_message_at: c.updatedTime || new Date().toISOString(),
               preview: c.lastMessage || 'Direct message',
               unread: c.unreadCount || 0,
               messages: []
             });
           }
         });
+
+        // Always ensure conversations are sorted by newest message first
+        if (this.svc && this.svc.conversations) {
+          this.svc.conversations.sort((a, b) => {
+            const timeA = this.svc._resolveConvTimestamp ? this.svc._resolveConvTimestamp(a) : new Date(a.last_message_at || a.time || 0).getTime();
+            const timeB = this.svc._resolveConvTimestamp ? this.svc._resolveConvTimestamp(b) : new Date(b.last_message_at || b.time || 0).getTime();
+            return timeB - timeA;
+          });
+        }
 
         if (this.svc._saveToStorage) this.svc._saveToStorage();
         else if (this.svc.saveAll) this.svc.saveAll();
@@ -3187,89 +3229,425 @@ class MetaCRMApp {
     }
   }
 
-  async sendInboxMessage() {
+  _formatMessageTime(val) {
+    if (!val) return '';
+    if (typeof val === 'string' && (val.includes('ago') || val === 'Just now' || (val.includes(':') && !val.includes('-') && !val.includes('T')))) {
+      return val;
+    }
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return String(val);
+    const now = new Date();
+    const diffSec = Math.floor((now.getTime() - d.getTime()) / 1000);
+    if (diffSec < 45) return 'Just now';
+    if (diffSec < 3600) return `${Math.max(1, Math.floor(diffSec / 60))}m ago`;
+    if (diffSec < 86400 && d.getDate() === now.getDate()) {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (d.getDate() === yesterday.getDate() && d.getMonth() === yesterday.getMonth() && d.getFullYear() === yesterday.getFullYear()) {
+      return 'Yesterday';
+    }
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+
+  _moveSidebarConvToTop(convId, preview, timeText = 'Just now', unreadCount = null) {
+    const list = document.getElementById('inbox-conv-list');
+    if (list) {
+      const item = list.querySelector(`.inbox-conv-item[data-conv-id="${convId}"]`);
+      if (item) {
+        if (preview) {
+          const prevEl = item.querySelector('.conv-preview');
+          if (prevEl) prevEl.textContent = preview;
+        }
+        if (timeText) {
+          const timeEl = item.querySelector('.conv-time');
+          if (timeEl) timeEl.textContent = timeText;
+        }
+        if (unreadCount !== null) {
+          let unreadBadge = item.querySelector('.conv-unread');
+          if (unreadCount > 0) {
+            if (!unreadBadge) {
+              const channelRow = item.querySelector('.conv-channel-row');
+              if (channelRow) {
+                unreadBadge = document.createElement('span');
+                unreadBadge.className = 'conv-unread';
+                channelRow.appendChild(unreadBadge);
+              }
+            }
+            if (unreadBadge) unreadBadge.textContent = unreadCount;
+            const prevEl = item.querySelector('.conv-preview');
+            if (prevEl) prevEl.classList.add('is-unread');
+          } else if (unreadBadge) {
+            unreadBadge.remove();
+            const prevEl = item.querySelector('.conv-preview');
+            if (prevEl) prevEl.classList.remove('is-unread');
+          }
+        }
+        const searchEmpty = document.getElementById('inbox-search-empty');
+        if (searchEmpty && searchEmpty.nextSibling) {
+          list.insertBefore(item, searchEmpty.nextSibling);
+        } else {
+          list.prepend(item);
+        }
+      } else {
+        if (this.currentRoute === 'inbox') {
+          this.renderInbox();
+        }
+      }
+    }
+
+    if (this.svc && this.svc.conversations) {
+      const idx = this.svc.conversations.findIndex(c => String(c.id) === String(convId));
+      if (idx > 0) {
+        const [moved] = this.svc.conversations.splice(idx, 1);
+        this.svc.conversations.unshift(moved);
+      }
+    }
+  }
+
+  _scrollThreadToBottom(force = false) {
+    const thread = document.getElementById('inbox-thread');
+    if (!thread) return;
+    const isNearBottom = (thread.scrollHeight - thread.scrollTop - thread.clientHeight) < 160;
+    if (force || isNearBottom) {
+      thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' });
+      const scrollBtn = document.getElementById('inbox-scroll-bottom-btn');
+      if (scrollBtn) scrollBtn.remove();
+    } else {
+      let scrollBtn = document.getElementById('inbox-scroll-bottom-btn');
+      if (!scrollBtn) {
+        scrollBtn = document.createElement('button');
+        scrollBtn.id = 'inbox-scroll-bottom-btn';
+        scrollBtn.className = 'inbox-scroll-bottom-btn';
+        scrollBtn.innerHTML = `<span>New message ↓</span>`;
+        scrollBtn.onclick = () => {
+          thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' });
+          scrollBtn.remove();
+        };
+        const container = thread.parentElement;
+        if (container) container.appendChild(scrollBtn);
+      }
+    }
+  }
+
+  _renderOptimisticMessageInThread(msgObj) {
+    const thread = document.getElementById('inbox-thread');
+    if (!thread) return;
+    const emptyState = thread.querySelector('.inbox-thread-empty-state');
+    if (emptyState) emptyState.remove();
+
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'msg msg-out msg-sending';
+    msgDiv.setAttribute('data-msg-id', msgObj.id);
+    msgDiv.innerHTML = `
+      <div class="msg-bubble">${escapeHtml(msgObj.text || '')}</div>
+      <span class="msg-time">
+        ${msgObj.time || 'Just now'}
+        <span class="msg-status-sending" title="Sending…"><span class="spinner-dot"></span> Sending</span>
+      </span>
+    `;
+    thread.appendChild(msgDiv);
+    this._scrollThreadToBottom(true);
+  }
+
+  _updateMessageBubbleStatus(msgId, status, errorText = '') {
+    const thread = document.getElementById('inbox-thread');
+    if (!thread) return;
+    const msgDiv = thread.querySelector(`.msg[data-msg-id="${msgId}"]`);
+    if (!msgDiv) return;
+
+    msgDiv.classList.remove('msg-sending', 'msg-failed');
+    const timeSpan = msgDiv.querySelector('.msg-time');
+    const timeText = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    if (status === 'sent') {
+      if (timeSpan) {
+        timeSpan.innerHTML = `${timeText} <span class="msg-status-check" title="Delivered">✓✓</span>`;
+      }
+    } else if (status === 'failed') {
+      msgDiv.classList.add('msg-failed');
+      if (timeSpan) {
+        timeSpan.innerHTML = `
+          ${timeText}
+          <span class="msg-status-failed" title="${escapeHtml(errorText || 'Delivery failed')}">⚠️ Failed</span>
+          <button class="btn-msg-retry" onclick="window.app.retryInboxMessage('${msgId}')" title="Retry sending">↻ Retry</button>
+        `;
+      }
+    } else if (status === 'sending') {
+      msgDiv.classList.add('msg-sending');
+      if (timeSpan) {
+        timeSpan.innerHTML = `
+          ${timeText}
+          <span class="msg-status-sending" title="Sending…"><span class="spinner-dot"></span> Sending</span>
+        `;
+      }
+    }
+  }
+
+  async sendInboxMessage(retryMsgId = null) {
     const input = document.getElementById('inbox-msg-input');
     const btn = document.getElementById('inbox-send-btn');
-    if (!input || !input.value.trim()) return;
-    const text = input.value.trim();
+
+    this._inFlightSends = this._inFlightSends || new Set();
 
     const convList = (this.svc ? (this.svc.conversations || []) : []);
     const activeConv = convList.find(c => String(c.id) === String(this.activeConvId)) || convList[0];
     if (!activeConv) return;
 
-    const isIg = activeConv.channel && activeConv.channel.toLowerCase().includes('insta');
-    const channelName = isIg ? 'Instagram' : 'Facebook';
+    let text = '';
+    let clientMsgId = '';
+    let msgObj = null;
 
-    if (btn) {
-      btn.disabled = true;
-      btn.innerHTML = `<span class="spinner" style="width:12px;height:12px;border-width:2px;"></span> Sending…`;
-    }
-    input.disabled = true;
+    if (retryMsgId) {
+      clientMsgId = retryMsgId;
+      if (this._inFlightSends.has(clientMsgId)) return;
+      msgObj = (activeConv.messages || []).find(m => m.id === retryMsgId || m.client_msg_id === retryMsgId);
+      if (!msgObj) return;
+      text = msgObj.text;
+      msgObj.status = 'sending';
+      this._updateMessageBubbleStatus(clientMsgId, 'sending');
+    } else {
+      if (!input || !input.value.trim()) return;
+      text = input.value.trim();
 
-    try {
-      this.toast(`Sending message to ${activeConv.name} via ${channelName}…`, 'info');
+      clientMsgId = 'opt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+      if (this._inFlightSends.has(clientMsgId)) return;
 
-      const accountId = activeConv.accountId || '6aca1c00e12ba0b652e62f45';
-      const res = await fetch(`/api/zernio?path=inbox-messages&conversationId=${activeConv.id}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          accountId: accountId,
-          message: text
-        })
-      });
-
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        throw new Error(data.error || `Failed to dispatch ${channelName} message`);
-      }
-
+      // Keep composer responsive: clear input immediately and keep enabled
       input.value = '';
       input.style.height = 'auto';
 
+      msgObj = {
+        id: clientMsgId,
+        client_msg_id: clientMsgId,
+        text: text,
+        incoming: false,
+        status: 'sending',
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        created_at: new Date().toISOString()
+      };
+
       if (!activeConv.messages) activeConv.messages = [];
-      const newMsg = { text, incoming: false, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) };
-      activeConv.messages.push(newMsg);
-      activeConv.preview = 'You: ' + text;
-      activeConv.time = 'Just now';
-      activeConv.unread = 0;
+      activeConv.messages.push(msgObj);
+      this._renderOptimisticMessageInThread(msgObj);
+    }
+
+    this._inFlightSends.add(clientMsgId);
+
+    // Update conversation preview and ordering immediately
+    activeConv.preview = 'You: ' + text;
+    activeConv.last_message_at = new Date().toISOString();
+    activeConv.time = 'Just now';
+    activeConv.unread = 0;
+    this._moveSidebarConvToTop(activeConv.id, activeConv.preview, 'Just now');
+
+    if (this.svc) {
+      if (this.svc._saveToStorage) this.svc._saveToStorage();
+      else if (this.svc.saveAll) this.svc.saveAll();
+    }
+
+    const isIg = activeConv.channel && activeConv.channel.toLowerCase().includes('insta');
+    const channelName = isIg ? 'Instagram Direct' : 'Facebook Messenger';
+    const accountId = activeConv.accountId || '6aca1c00e12ba0b652e62f45';
+
+    try {
+      // 1. Try unified POST /api/messages endpoint with deduplication idempotency key
+      let res = null;
+      let data = null;
+
+      try {
+        res = await fetch('/api/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-User-Id': (this.user && this.user.id) || 'admin'
+          },
+          body: JSON.stringify({
+            conversation_id: activeConv.id,
+            conversationId: activeConv.id,
+            page_id: activeConv.page_id,
+            pageId: activeConv.page_id,
+            message: text,
+            client_msg_id: clientMsgId,
+            accountId: accountId,
+            recipient_id: activeConv.sender_id || activeConv.customer_psid || activeConv.participantUsername
+          })
+        });
+        if (res.ok) {
+          data = await res.json();
+        }
+      } catch (netErr) {
+        console.warn('API /api/messages dispatch failed, trying fallback:', netErr);
+      }
+
+      // 2. If /api/messages was not available or gave 404, fallback to /api/zernio
+      if (!data || (!res.ok && res.status === 404)) {
+        const zernioRes = await fetch(`/api/zernio?path=inbox-messages&conversationId=${activeConv.id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            accountId: accountId,
+            message: text,
+            client_msg_id: clientMsgId
+          })
+        });
+        data = await zernioRes.json();
+        if (!zernioRes.ok || data.error) {
+          throw new Error(data.error || `Failed to dispatch ${channelName} message`);
+        }
+      }
+
+      if (data && data.error) {
+        throw new Error(data.error);
+      }
+
+      // Reconcile optimistic message
+      msgObj.status = 'sent';
+      if (data && (data.messageId || data.id)) {
+        msgObj.id = data.messageId || data.id;
+      }
+      this._updateMessageBubbleStatus(clientMsgId, 'sent');
+
       if (this.svc) {
         if (this.svc._saveToStorage) this.svc._saveToStorage();
         else if (this.svc.saveAll) this.svc.saveAll();
       }
 
+      this.toast(`Message sent on ${channelName} ✓`, 'success');
+
+    } catch (err) {
+      console.error('[Send Message Error]:', err);
+      msgObj.status = 'failed';
+      this._updateMessageBubbleStatus(clientMsgId, 'failed', err.message);
+      this.toast(`Couldn't send: ${err.message}. Click Retry on message.`, 'error');
+    } finally {
+      this._inFlightSends.delete(clientMsgId);
+      if (input) input.focus();
+    }
+  }
+
+  retryInboxMessage(msgId) {
+    this.sendInboxMessage(msgId);
+  }
+
+  handleRemoteMessageReceived(detail) {
+    if (!detail) return;
+    const msg = detail.message || detail;
+    const convId = String(detail.convId || detail.conversation_id || msg.conversation_id || '');
+    if (!convId) return;
+
+    const convList = (this.svc ? (this.svc.conversations || []) : []);
+    let targetConv = convList.find(c => String(c.id) === convId);
+
+    if (!targetConv) {
+      if (this.svc && this.svc.receiveIncomingMessage) {
+        targetConv = this.svc.receiveIncomingMessage(convId, msg.text || msg.message, {
+          senderName: msg.sender_name,
+          channel: msg.channel || 'messenger',
+          pageId: msg.page_id,
+          metaMid: msg.meta_mid || msg.id
+        });
+      }
+      if (this.currentRoute === 'inbox') this.renderInbox();
+      return;
+    }
+
+    targetConv.messages = targetConv.messages || [];
+    const isDupe = targetConv.messages.some(m => {
+      if (msg.client_msg_id && (m.client_msg_id === msg.client_msg_id || m.id === msg.client_msg_id)) return true;
+      if (msg.meta_mid && (m.meta_mid === msg.meta_mid || m.id === msg.meta_mid)) return true;
+      if (msg.id && m.id === msg.id) return true;
+      return false;
+    });
+
+    if (isDupe) return;
+
+    const isIncoming = msg.sender_type !== 'staff' && msg.incoming !== false;
+    const nowIso = msg.created_at || new Date().toISOString();
+    const formattedMsg = {
+      id: msg.id || ('msg_' + Date.now()),
+      meta_mid: msg.meta_mid,
+      text: msg.text || msg.message || '',
+      incoming: isIncoming,
+      status: 'sent',
+      time: new Date(nowIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      created_at: nowIso
+    };
+
+    targetConv.messages.push(formattedMsg);
+    targetConv.last_message_at = nowIso;
+    targetConv.time = 'Just now';
+    targetConv.preview = isIncoming ? formattedMsg.text : ('You: ' + formattedMsg.text);
+
+    const isActive = String(this.activeConvId) === convId;
+    if (!isActive && isIncoming) {
+      targetConv.unread = (targetConv.unread || 0) + 1;
+    }
+
+    if (this.svc && this.svc._saveToStorage) this.svc._saveToStorage();
+
+    this._moveSidebarConvToTop(convId, targetConv.preview, 'Just now', targetConv.unread);
+
+    if (isActive && this.currentRoute === 'inbox') {
       const thread = document.getElementById('inbox-thread');
       if (thread) {
-        // If empty state was showing, remove it
         const emptyState = thread.querySelector('.inbox-thread-empty-state');
         if (emptyState) emptyState.remove();
 
         const msgDiv = document.createElement('div');
-        msgDiv.className = 'msg msg-out';
-        msgDiv.innerHTML = `
-          <div class="msg-bubble">${escapeHtml(text)}</div>
-          <span class="msg-time">${newMsg.time} <span class="msg-status-check">✓✓</span></span>
-        `;
+        if (isIncoming) {
+          const initials = this._getContactInitials(targetConv.name);
+          const color = this._getAvatarColor(targetConv.name);
+          msgDiv.className = 'msg msg-in';
+          msgDiv.setAttribute('data-msg-id', formattedMsg.id);
+          msgDiv.innerHTML = `
+            <div class="msg-in-row">
+              <div class="msg-mini-avatar" style="background-color:${color.bg};color:${color.text};">
+                ${initials}
+              </div>
+              <div class="msg-bubble">${escapeHtml(formattedMsg.text)}</div>
+            </div>
+            <span class="msg-time">${formattedMsg.time}</span>
+          `;
+        } else {
+          msgDiv.className = 'msg msg-out';
+          msgDiv.setAttribute('data-msg-id', formattedMsg.id);
+          msgDiv.innerHTML = `
+            <div class="msg-bubble">${escapeHtml(formattedMsg.text)}</div>
+            <span class="msg-time">${formattedMsg.time} <span class="msg-status-check">✓✓</span></span>
+          `;
+        }
         thread.appendChild(msgDiv);
-        thread.scrollTop = thread.scrollHeight;
+        this._scrollThreadToBottom(false);
       }
-      this.toast(`Message sent to ${activeConv.name} on ${channelName} ✓`, 'success');
+    } else if (isIncoming) {
+      this.toast(`New message from ${targetConv.name}: "${formattedMsg.text.substring(0, 35)}…"`, 'info');
+    }
+  }
 
-    } catch (err) {
-      console.error('[Send Message Error]:', err);
-      this.toast(`Couldn't send: ${err.message}`, 'error');
-    } finally {
-      input.disabled = false;
-      if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = `
-          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-          <span>Send</span>
-        `;
-      }
-      input.focus();
+  handleRemoteMessageUpdated(detail) {
+    if (!detail) return;
+    const msg = detail.message || detail;
+    const clientMsgId = msg.client_msg_id || msg.clientMsgId || msg.id;
+    if (clientMsgId) {
+      this._updateMessageBubbleStatus(clientMsgId, msg.status || 'sent');
+    }
+  }
+
+  handleRemoteConversationUpdated(detail) {
+    if (!detail) return;
+    const conv = detail.conversation || detail;
+    const convId = String(conv.id || conv.conversationId || '');
+    if (!convId) return;
+
+    const convList = (this.svc ? (this.svc.conversations || []) : []);
+    const existing = convList.find(c => String(c.id) === convId);
+    if (existing) {
+      if (conv.last_message) existing.preview = conv.last_message;
+      if (conv.last_message_at) existing.last_message_at = conv.last_message_at;
+      if (typeof conv.unread_count === 'number') existing.unread = conv.unread_count;
+      this._moveSidebarConvToTop(convId, existing.preview, 'Just now', existing.unread);
     }
   }
 
@@ -3302,27 +3680,17 @@ class MetaCRMApp {
     const matchingPage = isIg ? (pages.find(p => p.channel === 'instagram' || p.name.startsWith('@')) || pages[0]) : (pages.find(p => p.channel !== 'instagram') || pages[0]);
     const pageId = matchingPage ? matchingPage.id : (isIg ? 'page_ig_001' : 'page_fb_001');
 
-    const newConv = {
-      id: 'conv_' + Date.now(),
-      name: randName,
-      sender_id: 'sender_' + Date.now(),
-      channel: isIg ? 'instagram' : 'messenger',
-      page_id: pageId,
-      time: 'Just now',
-      preview: randMsg,
-      unread: 1,
-      messages: [
-        { text: randMsg, incoming: true, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
-      ]
-    };
-
-    if (this.svc) {
-      if (!this.svc.conversations) this.svc.conversations = [];
-      this.svc.conversations.unshift(newConv);
-      if (this.svc._saveToStorage) this.svc._saveToStorage();
-      else if (this.svc.saveAll) this.svc.saveAll();
+    const convId = 'conv_' + Date.now();
+    if (this.svc && this.svc.receiveIncomingMessage) {
+      this.svc.receiveIncomingMessage(convId, randMsg, {
+        senderName: randName,
+        channel: isIg ? 'instagram' : 'messenger',
+        pageId: pageId,
+        metaMid: 'sim_mid_' + Date.now()
+      });
     }
-    this.activeConvId = newConv.id;
+
+    this.activeConvId = convId;
     this.inboxTab = isIg ? 'instagram' : (preferredChannel ? 'messenger' : this.inboxTab || 'all');
     this.toast(`New ${randChannel} message from ${randName}!`, 'info');
     this.renderInbox();
