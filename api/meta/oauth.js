@@ -15,7 +15,7 @@ async function metaOAuthUnifiedHandler(req, res) {
   const clientId = process.env.META_APP_ID;
   const clientSecret = process.env.META_APP_SECRET;
 
-  const host = req.headers['x-forwarded-host'] || req.headers.host || process.env.VERCEL_URL || "localhost:3000";
+  const host = req.headers['x-forwarded-host'] || req.headers.host || process.env.VERCEL_URL || (process.env.NODE_ENV === 'production' ? "crm-beta-three-36.vercel.app" : "localhost:3000");
   const proto = req.headers['x-forwarded-proto'] || (host.includes('localhost') ? 'http' : 'https');
   const redirectUri = process.env.META_REDIRECT_URI || `${proto}://${host}/api/meta/callback`;
 

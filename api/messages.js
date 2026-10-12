@@ -170,6 +170,36 @@ async function messagesHandler(req, res) {
       }
     }
 
+    // Persist outbound message to Supabase database
+    if (supabase && conversationId) {
+      try {
+        await supabase
+          .from('messages')
+          .insert({
+            conversation_id: conversationId,
+            sender_id: user.id || 'staff',
+            sender_name: user.name || 'Agent',
+            message_text: text,
+            direction: 'outbound',
+            attachment_url: body.attachmentUrl || body.attachment_url || null,
+            created_at: new Date().toISOString()
+          })
+          .catch(e => console.warn('[Message Persist Warning]:', e.message));
+
+        await supabase
+          .from('conversations')
+          .update({
+            last_message: text,
+            last_message_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', conversationId)
+          .catch(e => console.warn('[Conv Recency Update Warning]:', e.message));
+      } catch (dbErr) {
+        console.warn('[DB Error on Outbound Message]:', dbErr.message);
+      }
+    }
+
     // Standard verified message dispatch confirmation with idempotency
     const successRes = {
       status: "sent",

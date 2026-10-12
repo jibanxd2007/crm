@@ -41,7 +41,21 @@ class SupabaseService {
     return this.isLive;
   }
 
-  init() {
+  async init() {
+    // If config is missing, fetch from canonical /api/config
+    if ((!this.config.url || !this.config.anonKey) && typeof window !== "undefined") {
+      try {
+        const res = await fetch("/api/config").catch(() => null);
+        if (res && res.ok) {
+          const cfg = await res.json();
+          if (cfg.supabaseUrl && cfg.supabaseAnonKey) {
+            this.config = { url: cfg.supabaseUrl, anonKey: cfg.supabaseAnonKey };
+            try { localStorage.setItem(this.storageKey, JSON.stringify(this.config)); } catch (e) {}
+          }
+        }
+      } catch (err) {}
+    }
+
     // Check if Supabase JS SDK is loaded and credentials are provided
     if (typeof window !== "undefined" && window.supabase && this.config.url && this.config.anonKey) {
       try {
@@ -55,7 +69,7 @@ class SupabaseService {
         console.log("[Supabase] Connected to live Supabase PostgreSQL instance:", this.config.url);
         this.initRealtimeSubscriptions();
       } catch (err) {
-        console.warn("[Supabase] Failed to initialize client. Running in Demo Mode.", err);
+        console.warn("[Supabase] Failed to initialize client:", err);
         this.isLive = false;
       }
     } else {

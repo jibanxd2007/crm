@@ -80,17 +80,17 @@ function verifyMetaSignature(rawBody, signatureHeader, appSecret) {
 global.META_PAGE_TOKENS = global.META_PAGE_TOKENS || {};
 
 /**
- * Universal Handler Adapter:
- * Automatically adapts between Vercel Serverless (req, res) and Netlify/Lambda (event, context).
+ * Vercel Serverless Handler Adapter:
+ * Standardizes execution for Vercel Serverless (req, res) with fallback context handling.
  */
 function createVercelHandler(fn) {
   const handler = async function(reqOrEvent, resOrContext) {
-    // Detect Vercel execution (res has .status and .json methods)
+    // Standard Vercel Serverless execution (res has .status and .json methods)
     if (resOrContext && typeof resOrContext.status === 'function') {
       return fn(reqOrEvent, resOrContext);
     }
 
-    // AWS Lambda / Netlify execution
+    // Serverless fallback execution
     const event = reqOrEvent || {};
     const context = resOrContext || {};
     let statusCode = 200;

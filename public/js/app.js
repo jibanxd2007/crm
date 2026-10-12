@@ -599,32 +599,6 @@ class MetaCRMApp {
           </button>
         </form>`}
 
-        <div class="auth-demo-section">
-          <div class="auth-demo-title">Quick Demo Sign-In (1-Click)</div>
-          <div class="auth-demo-pills">
-            <div class="auth-demo-pill" onclick="window.app.quickDemoLogin('admin')">
-              <div>
-                <strong style="display:flex;align-items:center;gap:6px;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Administrator (Super Admin)</strong>
-                <div class="text-xs text-gray">admin@company.com · Full Access</div>
-              </div>
-              <span class="badge badge-purple">Log In</span>
-            </div>
-            <div class="auth-demo-pill" onclick="window.app.quickDemoLogin('staff_a')">
-              <div>
-                <strong style="display:flex;align-items:center;gap:6px;">${this._icon('user', 14)} Vikram Sharma (Staff A)</strong>
-                <div class="text-xs text-gray">vikram@company.com · Page 1 Assigned</div>
-              </div>
-              <span class="badge badge-green">Log In</span>
-            </div>
-            <div class="auth-demo-pill" onclick="window.app.quickDemoLogin('staff_b')">
-              <div>
-                <strong style="display:flex;align-items:center;gap:6px;">${this._icon('user', 14)} Priya Patel (Staff B)</strong>
-                <div class="text-xs text-gray">priya@company.com · Page 2 Assigned</div>
-              </div>
-              <span class="badge badge-green">Log In</span>
-            </div>
-          </div>
-        </div>
       </div>
     `;
   }
@@ -634,7 +608,7 @@ class MetaCRMApp {
     this.renderAuthScreen();
   }
 
-  submitLogin() {
+  async submitLogin() {
     const email = (document.getElementById('login-email')?.value || '').trim();
     const pass = (document.getElementById('login-password')?.value || '').trim();
     const feedback = document.getElementById('auth-feedback');
@@ -647,26 +621,48 @@ class MetaCRMApp {
 
     if (submitBtn) submitBtn.innerHTML = '<span class="spinner"></span> Verifying credentials…';
 
-    setTimeout(() => {
+    try {
+      // 1. Try Supabase Auth if connected
+      if (window.supabaseService && window.supabaseService.isLive) {
+        const { data, error } = await window.supabaseService.login(email, pass);
+        if (!error && data?.user) {
+          const authUser = {
+            id: data.user.id,
+            email: data.user.email,
+            name: data.user.user_metadata?.full_name || data.user.email.split('@')[0],
+            role: data.user.user_metadata?.role || 'admin',
+            assignedPageIds: []
+          };
+          this.user = authUser;
+          if (this.svc) {
+            this.svc.currentUser = authUser;
+            this.svc.saveAll();
+          }
+          try { localStorage.setItem('metacrm_authenticated', 'true'); } catch (e) {}
+          this.toast(`Welcome back, ${authUser.name}!`, 'success');
+          this.navigate('dashboard');
+          return;
+        }
+      }
+
+      // 2. Service-level login fallback
       if (this.svc) {
         const res = this.svc.login(email, pass);
         if (res.success) {
           this.user = res.user;
           try { localStorage.setItem('metacrm_authenticated', 'true'); } catch (e) {}
-          const pages = this._getAccessiblePages();
           this.toast(`Welcome back, ${(this.user.displayName || this.user.name).split(' ')[0]}!`, 'success');
-          if (pages.length === 0) {
-            this.navigate('connections');
-          } else {
-            this.navigate('dashboard');
-          }
+          this.navigate('dashboard');
           return;
         } else {
           if (submitBtn) submitBtn.innerHTML = 'Sign In to MetaCRM';
           if (feedback) feedback.innerHTML = `<div class="auth-error-banner"><span>⚠️</span> ${res.error || 'Incorrect email or password. Please verify and try again.'}</div>`;
         }
       }
-    }, 350);
+    } catch (err) {
+      if (submitBtn) submitBtn.innerHTML = 'Sign In to MetaCRM';
+      if (feedback) feedback.innerHTML = `<div class="auth-error-banner"><span>⚠️</span> ${err.message || 'Authentication failed'}</div>`;
+    }
   }
 
   submitSignup() {
@@ -692,12 +688,12 @@ class MetaCRMApp {
         email: email,
         role: role,
         status: 'active',
-        assignedPageIds: role === 'admin' ? (this.svc ? this.svc.pages.map(p => p.id) : []) : ['page_01']
+        assignedPageIds: role === 'admin' ? (this.svc ? this.svc.pages.map(p => p.id) : []) : []
       };
 
       if (this.svc) {
         this.svc.staff.push(newUser);
-        this.svc._saveToStorage ? this.svc._saveToStorage() : this.svc.saveAll();
+        this.svc.saveAll();
         this.svc.login(email);
         this.user = this.svc.getCurrentUser();
       }
@@ -706,21 +702,6 @@ class MetaCRMApp {
       this.toast(`Account created! Welcome, ${name.split(' ')[0]}!`, 'success');
       this.navigate('dashboard');
     }, 400);
-  }
-
-  quickDemoLogin(type) {
-    if (type === 'admin') {
-      const user = this.svc ? this.svc.staff.find(s => s.role === 'admin') : null;
-      if (user) this.switchUserDirect(user.id);
-    } else if (type === 'staff_a') {
-      const user = this.svc ? this.svc.staff.find(s => s.email && s.email.includes('vikram')) || this.svc.staff[1] : null;
-      if (user) this.switchUserDirect(user.id);
-    } else if (type === 'staff_b') {
-      const user = this.svc ? this.svc.staff.find(s => s.email && s.email.includes('priya')) || this.svc.staff[2] : null;
-      if (user) this.switchUserDirect(user.id);
-    }
-    try { localStorage.setItem('metacrm_authenticated', 'true'); } catch (e) {}
-    this.navigate('dashboard');
   }
 
   openForgotPasswordModal() {
@@ -2639,8 +2620,8 @@ class MetaCRMApp {
                 <h2 class="inbox-sidebar-title">Inbox</h2>
                 <span class="inbox-count-badge" id="inbox-total-badge">${totalCount} ${totalCount === 1 ? 'chat' : 'chats'}</span>
               </div>
-              <button class="inbox-action-btn-sm" onclick="window.app.simulateInboundMessage('${activeTab === 'instagram' ? 'Instagram Direct' : 'Messenger'}')" title="Simulate Inbound Test Message">
-                + Test DM
+              <button class="inbox-action-btn-sm" onclick="window.app.refreshInbox()" title="Refresh conversations">
+                ↻ Refresh
               </button>
             </div>
 
@@ -2683,8 +2664,8 @@ class MetaCRMApp {
                 <p class="inbox-conv-empty-desc">
                   Incoming messages from your connected ${activeTab === 'instagram' ? 'Instagram' : (activeTab === 'facebook' ? 'Facebook' : 'Facebook & Instagram')} account will appear here automatically.
                 </p>
-                <button class="btn btn-secondary btn-sm" onclick="window.app.simulateInboundMessage('${activeTab === 'instagram' ? 'Instagram Direct' : 'Messenger'}')">
-                  + Test ${activeTab === 'instagram' ? 'Instagram DM' : 'Message'}
+                <button class="btn btn-secondary btn-sm" onclick="window.app.refreshInbox()">
+                  ↻ Refresh Messages
                 </button>
               </div>
             ` : convList.map(c => {
@@ -2768,6 +2749,17 @@ class MetaCRMApp {
                             ${activeInitials}
                           </div>
                           <div class="msg-bubble">
+                            ${m.attachment ? `
+                              <div class="msg-attachment-render" style="margin-bottom:6px;">
+                                ${(m.attachment.type && m.attachment.type.startsWith('image/')) || (m.attachment.url && m.attachment.url.match(/\.(jpeg|jpg|gif|png|webp)/i)) ? `
+                                  <img src="${escapeHtml(m.attachment.url)}" alt="${escapeHtml(m.attachment.name || 'Attachment')}" style="max-width:240px;max-height:200px;border-radius:8px;object-fit:cover;cursor:pointer;display:block;" onclick="window.open('${escapeHtml(m.attachment.url)}', '_blank')">
+                                ` : `
+                                  <a href="${escapeHtml(m.attachment.url)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:rgba(0,0,0,0.06);border-radius:6px;color:inherit;text-decoration:none;font-size:12px;">
+                                    📎 <span>${escapeHtml(m.attachment.name || 'Download File')}</span>
+                                  </a>
+                                `}
+                              </div>
+                            ` : ''}
                             ${isMedia ? `<div class="msg-media-preview">${m.text.includes('story') ? '📸 Story Mention' : '📎 Media Attachment'}</div>` : ''}
                             ${escapeHtml(m.text || '')}
                           </div>
@@ -2781,6 +2773,17 @@ class MetaCRMApp {
                     return `
                       <div class="msg msg-out ${isSending ? 'msg-sending' : ''} ${isFailed ? 'msg-failed' : ''}" data-msg-id="${m.id || ''}">
                         <div class="msg-bubble">
+                          ${m.attachment ? `
+                            <div class="msg-attachment-render" style="margin-bottom:6px;">
+                              ${(m.attachment.type && m.attachment.type.startsWith('image/')) || (m.attachment.url && m.attachment.url.match(/\.(jpeg|jpg|gif|png|webp)/i)) ? `
+                                <img src="${escapeHtml(m.attachment.url)}" alt="${escapeHtml(m.attachment.name || 'Attachment')}" style="max-width:240px;max-height:200px;border-radius:8px;object-fit:cover;cursor:pointer;display:block;" onclick="window.open('${escapeHtml(m.attachment.url)}', '_blank')">
+                              ` : `
+                                <a href="${escapeHtml(m.attachment.url)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:rgba(255,255,255,0.15);border-radius:6px;color:inherit;text-decoration:none;font-size:12px;">
+                                  📎 <span>${escapeHtml(m.attachment.name || 'Download File')}</span>
+                                </a>
+                              `}
+                            </div>
+                          ` : ''}
                           ${escapeHtml(m.text || '')}
                         </div>
                         <span class="msg-time">
@@ -2826,6 +2829,8 @@ class MetaCRMApp {
             </div>
 
             <div class="inbox-composer">
+              <input type="file" id="inbox-file-input" style="display:none;" accept="image/*,.pdf,.doc,.docx" onchange="window.app.handleFileSelected(event)">
+              <div id="inbox-attachment-preview-bar" style="display:none;padding:6px 14px;background:rgba(0,0,0,0.04);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;"></div>
               <div class="composer-top-bar">
                 <div class="composer-channel-info">
                   ${isIgActive ? this._icon('instagram', 13) : this._icon('facebook', 13)}
@@ -2863,11 +2868,11 @@ class MetaCRMApp {
                 Live direct messages from connected Facebook Pages and Instagram accounts appear here in real-time. Select a conversation on the left to start chatting.
               </p>
               <div class="inbox-empty-actions">
-                <button class="btn btn-secondary btn-sm" onclick="window.app.simulateInboundMessage('Instagram Direct')">
-                  ${this._icon('instagram', 13)} Test Instagram Direct Message
+                <button class="btn btn-secondary btn-sm" onclick="window.app.refreshInbox()">
+                  ↻ Refresh Messages
                 </button>
-                <button class="btn btn-secondary btn-sm" onclick="window.app.simulateInboundMessage('Messenger')">
-                  ${this._icon('facebook', 13)} Test Facebook Messenger Message
+                <button class="btn btn-primary btn-sm" onclick="window.app.navigate('connections')">
+                  Manage Meta Connections →
                 </button>
               </div>
             </div>
@@ -3465,20 +3470,25 @@ class MetaCRMApp {
       msgObj.status = 'sending';
       this._updateMessageBubbleStatus(clientMsgId, 'sending');
     } else {
-      if (!input || !input.value.trim()) return;
-      text = input.value.trim();
+      const pendingAttach = this._pendingAttachment;
+      if ((!input || !input.value.trim()) && !pendingAttach) return;
+      text = input ? input.value.trim() : '';
 
       clientMsgId = 'opt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
       if (this._inFlightSends.has(clientMsgId)) return;
 
       // Keep composer responsive: clear input immediately and keep enabled
-      input.value = '';
-      input.style.height = 'auto';
+      if (input) {
+        input.value = '';
+        input.style.height = 'auto';
+      }
+      this.clearPendingAttachment();
 
       msgObj = {
         id: clientMsgId,
         client_msg_id: clientMsgId,
         text: text,
+        attachment: pendingAttach || null,
         incoming: false,
         status: 'sending',
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -3493,7 +3503,7 @@ class MetaCRMApp {
     this._inFlightSends.add(clientMsgId);
 
     // Update conversation preview and ordering immediately
-    activeConv.preview = 'You: ' + text;
+    activeConv.preview = 'You: ' + (text || (msgObj.attachment ? '📎 ' + msgObj.attachment.name : 'Message'));
     activeConv.last_message_at = new Date().toISOString();
     activeConv.time = 'Just now';
     activeConv.unread = 0;
@@ -3526,6 +3536,7 @@ class MetaCRMApp {
             page_id: activeConv.page_id,
             pageId: activeConv.page_id,
             message: text,
+            attachment: msgObj.attachment || null,
             client_msg_id: clientMsgId,
             accountId: accountId,
             recipient_id: activeConv.sender_id || activeConv.customer_psid || activeConv.participantUsername
@@ -4836,8 +4847,8 @@ class MetaCRMApp {
 
       if (this.svc) {
         const newLead = {
-          id: 'lead_manual_' + Date.now(),
           name,
+          full_name: name,
           phone: document.getElementById('nl-phone').value.trim(),
           email: document.getElementById('nl-email').value.trim(),
           page_id: pageId,
@@ -4845,16 +4856,18 @@ class MetaCRMApp {
           source: 'Manual Entry',
           assigned_staff_id: assignedStaff,
           assignedStaffId: assignedStaff,
-          status: 'New Lead',
-          created_at: new Date().toISOString(),
-          notes: [],
-          activities: [{ type: 'CREATED', description: 'Lead manually entered', timestamp: new Date().toISOString() }]
+          status: 'New',
+          created_at: new Date().toISOString()
         };
-        this.svc.leads.unshift(newLead);
-        this.svc._saveToStorage ? this.svc._saveToStorage() : this.svc.saveAll();
+        if (this.svc.createLead) {
+          this.svc.createLead(newLead);
+        } else {
+          this.svc.leads.unshift(newLead);
+          if (this.svc._saveToStorage) this.svc._saveToStorage();
+        }
       }
       this.closeModal();
-      this.toast(`Lead "${name}" created and assigned!`);
+      this.toast(`Lead "${name}" created and assigned!`, 'success');
       this.renderSidebar();
       if (this.currentRoute === 'leads') this.renderLeads();
     };
@@ -5233,12 +5246,14 @@ class MetaCRMApp {
     // Calculate aggregated metrics with comparison
     const totalSpend = campaigns.reduce((s, c) => s + (c.spend || (c.metrics && c.metrics.spend) || 0), 0);
     const totalLeads = campaigns.reduce((s, c) => s + (c.leads || (c.metrics && c.metrics.leads) || 0), 0);
-    const totalImpressions = campaigns.reduce((s, c) => s + ((c.metrics && c.metrics.impressions) || 124500), 0);
-    const totalClicks = campaigns.reduce((s, c) => s + ((c.metrics && c.metrics.clicks) || 3820), 0);
-    const avgCtr = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(2) : '3.07';
-    const avgCpc = totalClicks > 0 ? (totalSpend / totalClicks).toFixed(2) : '20.15';
-    const avgCpl = totalLeads > 0 ? Math.round(totalSpend / totalLeads) : 1000;
-    const avgCpm = totalImpressions > 0 ? ((totalSpend / totalImpressions) * 1000).toFixed(2) : '618.47';
+    const totalImpressions = campaigns.reduce((s, c) => s + ((c.metrics && c.metrics.impressions) || 0), 0);
+    const totalClicks = campaigns.reduce((s, c) => s + ((c.metrics && c.metrics.clicks) || 0), 0);
+    const avgCtr = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(2) : '0.00';
+    const avgCpc = totalClicks > 0 ? (totalSpend / totalClicks).toFixed(2) : '0.00';
+    const avgCpl = totalLeads > 0 ? Math.round(totalSpend / totalLeads) : 0;
+    const avgCpm = totalImpressions > 0 ? ((totalSpend / totalImpressions) * 1000).toFixed(2) : '0.00';
+
+    const accessiblePages = this._getAccessiblePages ? this._getAccessiblePages() : [];
 
     this.el.content.innerHTML = `
       <div class="ads-manager-view">
@@ -5250,8 +5265,8 @@ class MetaCRMApp {
           </div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <select class="input input-sm" id="ads-account-select" style="font-weight:500;">
-              <option value="act_104829104812">TechNova Cloud Main (act_104829104812)</option>
-              <option value="act_205938102931">Aura Living Performance (act_205938102931)</option>
+              <option value="all">All Connected Accounts</option>
+              ${accessiblePages.map(p => `<option value="${p.id}">${escapeHtml(p.name)} (${p.id})</option>`).join('')}
             </select>
             <select class="input input-sm" id="ads-daterange-select" onchange="window.app.changeAdsDateRange(this.value)">
               <option value="last_7d" ${this.adsDateRange==='last_7d'?'selected':''}>Last 7 Days</option>
@@ -6187,6 +6202,300 @@ class MetaCRMApp {
     };
 
     this.el.mOverlay.classList.add('open');
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // ATTACHMENT & INBOX ACTIONS
+  // ──────────────────────────────────────────────────────────
+
+  handleAttachmentClick() {
+    const fileInput = document.getElementById('inbox-file-input');
+    if (fileInput) fileInput.click();
+  }
+
+  handleFileSelected(event) {
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      this.toast('File is too large. Maximum size is 10 MB.', 'error');
+      event.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      this._pendingAttachment = {
+        name: file.name,
+        type: file.type || 'application/octet-stream',
+        size: file.size,
+        url: e.target.result
+      };
+      const bar = document.getElementById('inbox-attachment-preview-bar');
+      if (bar) {
+        bar.style.display = 'flex';
+        bar.innerHTML = `
+          <div style="font-size:12px;display:flex;align-items:center;gap:6px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            ${(file.type || '').startsWith('image/') ? '🖼️' : '📎'}
+            <strong>${escapeHtml(file.name)}</strong>
+            <span style="color:var(--text-secondary);font-size:11px;">(${Math.round(file.size / 1024)} KB)</span>
+          </div>
+          <button type="button" class="btn btn-sm btn-secondary" onclick="window.app.clearPendingAttachment()" style="padding:2px 8px;font-size:11px;">✕ Remove</button>
+        `;
+      }
+      this.toast(`Attachment attached: ${file.name}`, 'info');
+    };
+    reader.readAsDataURL(file);
+  }
+
+  clearPendingAttachment() {
+    this._pendingAttachment = null;
+    const fileInput = document.getElementById('inbox-file-input');
+    if (fileInput) fileInput.value = '';
+    const bar = document.getElementById('inbox-attachment-preview-bar');
+    if (bar) {
+      bar.style.display = 'none';
+      bar.innerHTML = '';
+    }
+  }
+
+  async refreshInbox() {
+    this.toast('Refreshing live conversations…', 'info');
+    try {
+      if (this.svc && this.svc.fetchRemoteConversations) {
+        await this.svc.fetchRemoteConversations();
+      }
+      this.renderInbox();
+      this.toast('✓ Inbox refreshed!', 'success');
+    } catch (e) {
+      console.error('[Refresh Inbox Error]:', e);
+      this.toast('Failed to refresh inbox: ' + e.message, 'error');
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // REPORTS & ANALYTICS
+  // ──────────────────────────────────────────────────────────
+
+  renderReports() {
+    this._setBreadcrumbs('Reports & Performance');
+
+    const leads = this._filterUserLeads ? this._filterUserLeads(this.svc ? this.svc.leads : []) : (this.svc ? this.svc.leads : []);
+    const campaigns = this.svc ? (this.svc.campaigns || []) : [];
+    const staff = this.svc ? (this.svc.staff || []) : [];
+    const pages = this._getAccessiblePages ? this._getAccessiblePages() : [];
+
+    // Aggregations
+    const totalLeads = leads.length;
+    const qualifiedLeads = leads.filter(l => l.status === 'Qualified' || l.status === 'Contacted').length;
+    const wonLeads = leads.filter(l => l.status === 'Won' || l.status === 'Converted').length;
+    const totalSpend = campaigns.reduce((s, c) => s + (c.spend || (c.metrics && c.metrics.spend) || 0), 0);
+    const avgCpl = totalLeads > 0 ? Math.round(totalSpend / totalLeads) : 0;
+    const conversionRate = totalLeads > 0 ? ((wonLeads / totalLeads) * 100).toFixed(1) : '0.0';
+    const pipelineWonValue = wonLeads * 25000;
+    const roas = totalSpend > 0 ? (pipelineWonValue / totalSpend).toFixed(2) : '0.00';
+
+    // Source breakdown
+    const sourceCounts = {};
+    leads.forEach(l => {
+      const src = l.source || 'Meta Lead Ads';
+      sourceCounts[src] = (sourceCounts[src] || 0) + 1;
+    });
+
+    // Staff activity breakdown
+    const staffStats = staff.map(s => {
+      const staffLeads = leads.filter(l => String(l.assigned_staff_id || l.assignedStaffId) === String(s.id));
+      const staffWon = staffLeads.filter(l => l.status === 'Won' || l.status === 'Converted').length;
+      const rate = staffLeads.length > 0 ? ((staffWon / staffLeads.length) * 100).toFixed(1) : '0.0';
+      return {
+        name: s.name,
+        role: s.role,
+        leads: staffLeads.length,
+        won: staffWon,
+        rate: rate + '%'
+      };
+    });
+
+    this.el.content.innerHTML = `
+      <div class="reports-view" style="padding:4px 0 32px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:24px;">
+          <div>
+            <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.02em;margin-bottom:4px;color:var(--text);">CRM Reports &amp; ROI Analytics</h2>
+            <p class="text-xs text-gray">Real-time performance metrics reconciled across Meta Ads, Lead Gen, and Sales conversion.</p>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="window.app.exportReportsCsv()">
+              <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Export CSV
+            </button>
+            <button class="btn btn-primary btn-sm" onclick="window.app.renderReports()">
+              <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+              Refresh Data
+            </button>
+          </div>
+        </div>
+
+        <!-- KPI SUMMARY METRICS -->
+        <div class="stats-grid" style="grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:14px;margin-bottom:24px;">
+          <div class="stat-card">
+            <div class="stat-label">Total Leads</div>
+            <div class="stat-value">${totalLeads}</div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Inbound CRM contacts</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Qualified Leads</div>
+            <div class="stat-value">${qualifiedLeads}</div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Verified stage prospects</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Won / Converted</div>
+            <div class="stat-value">${wonLeads}</div>
+            <div style="font-size:11px;color:#10B981;margin-top:4px;">${conversionRate}% conversion rate</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Total Ad Spend</div>
+            <div class="stat-value">₹${Number(totalSpend).toLocaleString('en-IN')}</div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Connected Meta campaigns</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Cost Per Lead (CPL)</div>
+            <div class="stat-value">₹${Number(avgCpl).toLocaleString('en-IN')}</div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Blended acquisition cost</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Est. Revenue &amp; ROAS</div>
+            <div class="stat-value">₹${Number(pipelineWonValue).toLocaleString('en-IN')}</div>
+            <div style="font-size:11px;color:#10B981;margin-top:4px;">${roas}x return on ad spend</div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(360px, 1fr));gap:20px;margin-bottom:24px;">
+          <!-- LEAD SOURCE BREAKDOWN -->
+          <div class="dash-panel-card">
+            <div class="dash-panel-header">
+              <div class="dash-panel-title">Leads by Acquisition Channel</div>
+            </div>
+            <div style="overflow-x:auto;">
+              <table class="crm-table">
+                <thead>
+                  <tr>
+                    <th>Channel / Source</th>
+                    <th style="text-align:right;">Leads Count</th>
+                    <th style="text-align:right;">% Share</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${Object.keys(sourceCounts).length === 0 ? `
+                    <tr><td colspan="3" class="empty-cell" style="text-align:center;padding:24px 16px;color:var(--text-muted);">No lead attribution records found.</td></tr>
+                  ` : Object.entries(sourceCounts).map(([src, count]) => `
+                    <tr>
+                      <td style="font-weight:500;">${escapeHtml(src)}</td>
+                      <td style="text-align:right;font-weight:600;">${count}</td>
+                      <td style="text-align:right;color:var(--text-secondary);">${totalLeads > 0 ? ((count / totalLeads) * 100).toFixed(1) : 0}%</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- STAFF ACTIVITY BREAKDOWN -->
+          <div class="dash-panel-card">
+            <div class="dash-panel-header">
+              <div class="dash-panel-title">Staff Conversion Performance</div>
+            </div>
+            <div style="overflow-x:auto;">
+              <table class="crm-table">
+                <thead>
+                  <tr>
+                    <th>Staff Member</th>
+                    <th style="text-align:right;">Assigned</th>
+                    <th style="text-align:right;">Won</th>
+                    <th style="text-align:right;">Win Rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${staffStats.length === 0 ? `
+                    <tr><td colspan="4" class="empty-cell" style="text-align:center;padding:24px 16px;color:var(--text-muted);">No staff members found.</td></tr>
+                  ` : staffStats.map(s => `
+                    <tr>
+                      <td style="font-weight:500;">${escapeHtml(s.name)} <span class="text-xs text-gray">(${escapeHtml(s.role)})</span></td>
+                      <td style="text-align:right;">${s.leads}</td>
+                      <td style="text-align:right;font-weight:600;color:#10B981;">${s.won}</td>
+                      <td style="text-align:right;">${s.rate}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- CAMPAIGN ATTRIBUTION TABLE -->
+        <div class="dash-panel-card">
+          <div class="dash-panel-header">
+            <div class="dash-panel-title">Campaign Attribution &amp; Performance</div>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="crm-table">
+              <thead>
+                <tr>
+                  <th>Campaign Name</th>
+                  <th>Status</th>
+                  <th style="text-align:right;">Spend</th>
+                  <th style="text-align:right;">Leads</th>
+                  <th style="text-align:right;">CPL</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${campaigns.length === 0 ? `
+                  <tr><td colspan="5" class="empty-cell" style="text-align:center;padding:24px 16px;color:var(--text-muted);">No Meta ad campaigns connected yet. Connect your Meta Ad Account in Connections to sync live metrics.</td></tr>
+                ` : campaigns.map(c => {
+                  const cSpend = c.spend || (c.metrics && c.metrics.spend) || 0;
+                  const cLeads = c.leads || (c.metrics && c.metrics.leads) || 0;
+                  const cCpl = cLeads > 0 ? Math.round(cSpend / cLeads) : 0;
+                  return `
+                    <tr>
+                      <td style="font-weight:600;">${escapeHtml(c.name || 'Campaign')}</td>
+                      <td><span class="badge ${c.status === 'ACTIVE' ? 'badge-green' : 'badge-gray'}">${escapeHtml(c.status || 'PAUSED')}</span></td>
+                      <td style="text-align:right;">₹${Number(cSpend).toLocaleString('en-IN')}</td>
+                      <td style="text-align:right;font-weight:600;">${cLeads}</td>
+                      <td style="text-align:right;">₹${Number(cCpl).toLocaleString('en-IN')}</td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  exportReportsCsv() {
+    const leads = this._filterUserLeads ? this._filterUserLeads(this.svc ? this.svc.leads : []) : (this.svc ? this.svc.leads : []);
+    const campaigns = this.svc ? (this.svc.campaigns || []) : [];
+
+    let csv = 'Report,Category,Metric,Value\n';
+    csv += `"Summary","Overview","Total Leads","${leads.length}"\n`;
+    csv += `"Summary","Overview","Won Deals","${leads.filter(l => l.status === 'Won' || l.status === 'Converted').length}"\n`;
+
+    const totalSpend = campaigns.reduce((s, c) => s + (c.spend || (c.metrics && c.metrics.spend) || 0), 0);
+    csv += `"Summary","Overview","Total Ad Spend (INR)","${totalSpend}"\n`;
+
+    // Leads detail
+    csv += '\nLead_ID,Name,Phone,Email,Source,Status,Created_At\n';
+    leads.forEach(l => {
+      csv += `"${l.id}","${l.name || l.full_name || ''}","${l.phone || ''}","${l.email || ''}","${l.source || ''}","${l.status || ''}","${l.created_at || ''}"\n`;
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `metacrm_report_export_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    this.toast('Reports exported to CSV successfully! ✓', 'success');
   }
 }
 

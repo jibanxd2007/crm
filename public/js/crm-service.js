@@ -87,6 +87,8 @@ class CRMService {
     // Realtime event listeners
     if (typeof window !== "undefined") {
       window.addEventListener("crm:remote_lead_received", (e) => this.handleInboundMetaLead(e.detail));
+      // Auto fetch real data on startup
+      setTimeout(() => this.fetchRemoteData(), 50);
     }
   }
 
@@ -96,9 +98,9 @@ class CRMService {
   loadDevMode() {
     try {
       const v = localStorage.getItem(this.devModeKey);
-      return v !== null ? JSON.parse(v) : true;
+      return v !== null ? JSON.parse(v) : false;
     } catch (e) {
-      return true;
+      return false;
     }
   }
 
@@ -111,123 +113,53 @@ class CRMService {
     return this.isDevMode;
   }
 
+  formatCurrency(amount, currency = 'INR') {
+    const val = Number(amount) || 0;
+    try {
+      return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: currency,
+        maximumFractionDigits: 2
+      }).format(val);
+    } catch (e) {
+      return `₹${val.toLocaleString('en-IN')}`;
+    }
+  }
+
   loadPages() {
     try {
       const saved = localStorage.getItem(this.pagesKey);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.length > 0) return parsed;
+        if (parsed && Array.isArray(parsed)) {
+          // Filter out legacy demo entities
+          const filtered = parsed.filter(p => p.id !== 'page_01' && p.id !== 'page_02' && p.name !== 'TechNova Solutions');
+          if (filtered.length > 0) return filtered;
+        }
       }
     } catch (e) {}
-    if (window.INITIAL_DATA && window.INITIAL_DATA.pages && window.INITIAL_DATA.pages.length > 0) {
-      return [...window.INITIAL_DATA.pages];
-    }
     return this.getDefaultPages();
   }
 
   getDefaultPages() {
-    return [
-      {
-        id: "page_01",
-        meta_page_id: "104829104812",
-        name: "TechNova Solutions",
-        category: "Technology & Cloud Services",
-        platform: "facebook",
-        status: "connected",
-        spend: 45000,
-        leadsCount: 45,
-        wonDeals: 9,
-        wonValue: 185000,
-        activeCampaigns: 1
-      },
-      {
-        id: "page_02",
-        meta_page_id: "205938102931",
-        name: "Aura Living",
-        category: "Home Decor & Living",
-        platform: "instagram",
-        status: "connected",
-        spend: 32000,
-        leadsCount: 20,
-        wonDeals: 2,
-        wonValue: 48000,
-        activeCampaigns: 1
-      },
-      {
-        id: "page_03",
-        meta_page_id: "309482710294",
-        name: "Prime Healthcare",
-        category: "Clinics & Wellness",
-        platform: "facebook",
-        status: "connected",
-        spend: 0,
-        leadsCount: 0,
-        wonDeals: 0,
-        wonValue: 0,
-        activeCampaigns: 0
-      },
-      {
-        id: "page_04",
-        meta_page_id: "408192830192",
-        name: "Urban Fitness Club",
-        category: "Health & Fitness",
-        platform: "instagram",
-        status: "connected",
-        spend: 0,
-        leadsCount: 0,
-        wonDeals: 0,
-        wonValue: 0,
-        activeCampaigns: 0
-      },
-      {
-        id: "page_05",
-        meta_page_id: "509182730192",
-        name: "Gourmet Kitchen",
-        category: "Hospitality & F&B",
-        platform: "facebook",
-        status: "connected",
-        spend: 0,
-        leadsCount: 0,
-        wonDeals: 0,
-        wonValue: 0,
-        activeCampaigns: 0
-      },
-      {
-        id: "page_06",
-        meta_page_id: "609182730192",
-        name: "Zenith Wealth",
-        category: "Financial Advisory",
-        platform: "facebook",
-        status: "connected",
-        spend: 0,
-        leadsCount: 0,
-        wonDeals: 0,
-        wonValue: 0,
-        activeCampaigns: 0
-      }
-    ];
+    return [];
   }
-
   loadStaff() {
     try {
       const saved = localStorage.getItem(this.staffKey);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.length > 0) return parsed;
+        if (parsed && Array.isArray(parsed)) {
+          const filtered = parsed.filter(s => s.id !== 'user_a' && s.id !== 'user_b' && s.email !== 'rahul@metacrm.io');
+          if (filtered.length > 0) return filtered;
+        }
       }
     } catch (e) {}
-    if (window.INITIAL_DATA && window.INITIAL_DATA.staff && window.INITIAL_DATA.staff.length > 0) {
-      return [...window.INITIAL_DATA.staff];
-    }
     return this.getDefaultStaff();
   }
 
   getDefaultStaff() {
-    return [
-      { id: "admin", name: "Administrator", email: "admin@metacrm.io", role: "admin", assignedPages: ["page_01", "page_02", "page_03", "page_04", "page_05", "page_06"] },
-      { id: "user_a", name: "Staff A (Rahul)", email: "rahul@metacrm.io", role: "staff", assignedPages: ["page_01"], assignedPageId: "page_01" },
-      { id: "user_b", name: "Staff B (Sneha)", email: "sneha@metacrm.io", role: "staff", assignedPages: ["page_02"], assignedPageId: "page_02" }
-    ];
+    return [];
   }
 
   loadCampaigns() {
@@ -235,50 +167,17 @@ class CRMService {
       const saved = localStorage.getItem(this.campaignsKey);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.length > 0) return parsed;
+        if (parsed && Array.isArray(parsed)) {
+          const filtered = parsed.filter(c => c.id !== 'cmp_leadgen_01' && c.id !== 'cmp_leadgen_02');
+          if (filtered.length > 0) return filtered;
+        }
       }
     } catch (e) {}
-    if (window.INITIAL_DATA && window.INITIAL_DATA.campaigns && window.INITIAL_DATA.campaigns.length > 0) {
-      return [...window.INITIAL_DATA.campaigns];
-    }
     return this.getDefaultCampaigns();
   }
 
   getDefaultCampaigns() {
-    return [
-      {
-        id: "cmp_leadgen_01",
-        page_id: "page_01",
-        name: "Enterprise B2B Lead Gen",
-        status: "ACTIVE",
-        objective: "OUTCOME_LEADS",
-        spend: 45000,
-        leads: 45,
-        impressions: 125000,
-        clicks: 3400,
-        ctr: 2.72,
-        cpc: 13.23,
-        cpm: 360,
-        wonDeals: 9,
-        wonValue: 185000
-      },
-      {
-        id: "cmp_leadgen_02",
-        page_id: "page_02",
-        name: "Spring Home Decor",
-        status: "ACTIVE",
-        objective: "OUTCOME_LEADS",
-        spend: 32000,
-        leads: 20,
-        impressions: 98000,
-        clicks: 2100,
-        ctr: 2.14,
-        cpc: 15.24,
-        cpm: 326.53,
-        wonDeals: 2,
-        wonValue: 48000
-      }
-    ];
+    return [];
   }
 
   loadAdSets() {
@@ -286,7 +185,7 @@ class CRMService {
       const saved = localStorage.getItem(this.adsetsKey);
       if (saved) return JSON.parse(saved);
     } catch (e) {}
-    return (window.INITIAL_DATA && window.INITIAL_DATA.adsets) ? [...window.INITIAL_DATA.adsets] : [];
+    return [];
   }
 
   loadAds() {
@@ -294,7 +193,7 @@ class CRMService {
       const saved = localStorage.getItem(this.adsKey);
       if (saved) return JSON.parse(saved);
     } catch (e) {}
-    return (window.INITIAL_DATA && window.INITIAL_DATA.ads) ? [...window.INITIAL_DATA.ads] : [];
+    return [];
   }
 
   loadLeads() {
@@ -302,174 +201,39 @@ class CRMService {
       const saved = localStorage.getItem(this.leadsKey);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.length > 0) return parsed;
+        if (parsed && Array.isArray(parsed)) {
+          const filtered = parsed.filter(l => !l.id?.startsWith('lead_0') && l.name !== 'Aarav Mehta' && l.name !== 'Priya Sharma');
+          if (filtered.length > 0) return filtered;
+        }
       }
     } catch (e) {}
-    if (window.INITIAL_DATA && window.INITIAL_DATA.leads && window.INITIAL_DATA.leads.length > 0) {
-      return [...window.INITIAL_DATA.leads];
-    }
     return this.getDefaultLeads();
   }
 
   getDefaultLeads() {
-    const now = Date.now();
-    return [
-      {
-        id: "lead_01",
-        name: "Aarav Mehta",
-        phone: "+91 98201 12345",
-        email: "aarav.mehta@techcorp.in",
-        company: "TechCorp India",
-        page_id: "page_01",
-        campaign_id: "cmp_leadgen_01",
-        campaign_name: "Enterprise B2B Lead Gen",
-        status: "Won",
-        value: 45000,
-        source: "Facebook Lead Ads",
-        created_at: new Date(now - 1000 * 60 * 180).toISOString(),
-        first_response_at: new Date(now - 1000 * 60 * 180 + 1000 * 162).toISOString(),
-        first_response_action: "call",
-        sla_target_minutes: 5,
-        is_sla_compliant: true
-      },
-      {
-        id: "lead_02",
-        name: "Priya Sharma",
-        phone: "+91 98334 56789",
-        email: "priya.sharma@innovate.co",
-        company: "Innovate Solutions",
-        page_id: "page_01",
-        campaign_id: "cmp_leadgen_01",
-        campaign_name: "Enterprise B2B Lead Gen",
-        status: "Follow-up",
-        value: 30000,
-        source: "Facebook Lead Ads",
-        created_at: new Date(now - 1000 * 60 * 240).toISOString(),
-        first_response_at: new Date(now - 1000 * 60 * 240 + 1000 * 195).toISOString(),
-        first_response_action: "message",
-        follow_up_date: new Date(now + 1000 * 60 * 60 * 2).toISOString(),
-        sla_target_minutes: 5,
-        is_sla_compliant: true
-      },
-      {
-        id: "lead_03",
-        name: "Rohit Verma",
-        phone: "+91 98450 98765",
-        email: "rohit.verma@apexcloud.io",
-        company: "Apex Cloud Services",
-        page_id: "page_01",
-        campaign_id: "cmp_leadgen_01",
-        campaign_name: "Enterprise B2B Lead Gen",
-        status: "Contacted",
-        value: 25000,
-        source: "Facebook Lead Ads",
-        created_at: new Date(now - 1000 * 60 * 360).toISOString(),
-        first_response_at: new Date(now - 1000 * 60 * 360 + 1000 * 140).toISOString(),
-        first_response_action: "call",
-        sla_target_minutes: 5,
-        is_sla_compliant: true
-      },
-      {
-        id: "lead_04",
-        name: "Ananya Iyer",
-        phone: "+91 98765 43210",
-        email: "ananya.iyer@zenithsys.com",
-        company: "Zenith Systems",
-        page_id: "page_01",
-        campaign_id: "cmp_leadgen_01",
-        campaign_name: "Enterprise B2B Lead Gen",
-        status: "New",
-        value: 35000,
-        source: "Facebook Lead Ads",
-        created_at: new Date(now - 1000 * 60 * 3).toISOString(),
-        first_response_at: null,
-        sla_target_minutes: 5
-      },
-      {
-        id: "lead_05",
-        name: "Vikram Malhotra",
-        phone: "+91 98112 34567",
-        email: "vikram.m@luxuryhomes.in",
-        company: "Malhotra Living",
-        page_id: "page_02",
-        campaign_id: "cmp_leadgen_02",
-        campaign_name: "Spring Home Decor",
-        status: "Won",
-        value: 28000,
-        source: "Instagram Lead Ads",
-        created_at: new Date(now - 1000 * 60 * 600).toISOString(),
-        first_response_at: new Date(now - 1000 * 60 * 600 + 1000 * 175).toISOString(),
-        first_response_action: "call",
-        sla_target_minutes: 5,
-        is_sla_compliant: true
-      },
-      {
-        id: "lead_06",
-        name: "Sneha Patel",
-        phone: "+91 98920 87654",
-        email: "sneha.p@auradesign.org",
-        company: "Aura Interiors",
-        page_id: "page_02",
-        campaign_id: "cmp_leadgen_02",
-        campaign_name: "Spring Home Decor",
-        status: "Follow-up",
-        value: 20000,
-        source: "Instagram Lead Ads",
-        created_at: new Date(now - 1000 * 60 * 480).toISOString(),
-        first_response_at: new Date(now - 1000 * 60 * 480 + 1000 * 210).toISOString(),
-        first_response_action: "message",
-        follow_up_date: new Date(now + 1000 * 60 * 60 * 4).toISOString(),
-        sla_target_minutes: 5,
-        is_sla_compliant: true
-      },
-      {
-        id: "lead_07",
-        name: "Karan Kapoor",
-        phone: "+91 98711 22334",
-        email: "karan.k@livingspaces.in",
-        company: "Living Spaces Studio",
-        page_id: "page_02",
-        campaign_id: "cmp_leadgen_02",
-        campaign_name: "Spring Home Decor",
-        status: "New",
-        value: 18000,
-        source: "Instagram Lead Ads",
-        created_at: new Date(now - 1000 * 60 * 4).toISOString(),
-        first_response_at: null,
-        sla_target_minutes: 5
-      }
-    ];
+    return [];
   }
 
   loadContacts() {
     try {
       const saved = localStorage.getItem(this.contactsKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && parsed.length > 0) return parsed;
-      }
+      if (saved) return JSON.parse(saved);
     } catch (e) {}
-    return (window.INITIAL_DATA && window.INITIAL_DATA.contacts) ? [...window.INITIAL_DATA.contacts] : [];
+    return [];
   }
 
   loadDeals() {
     try {
       const saved = localStorage.getItem(this.dealsKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && parsed.length > 0) return parsed;
-      }
+      if (saved) return JSON.parse(saved);
     } catch (e) {}
-    return (window.INITIAL_DATA && window.INITIAL_DATA.deals) ? [...window.INITIAL_DATA.deals] : [];
+    return [];
   }
 
   loadPipelines() {
     try {
       const saved = localStorage.getItem(this.pipelinesKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && parsed.length > 0) return parsed;
-      }
+      if (saved) return JSON.parse(saved);
     } catch (e) {}
     return (window.INITIAL_DATA && window.INITIAL_DATA.pipelines) ? [...window.INITIAL_DATA.pipelines] : [];
   }
@@ -479,32 +243,25 @@ class CRMService {
       const saved = localStorage.getItem(this.tasksKey);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.length > 0) return parsed;
+        if (parsed && Array.isArray(parsed)) {
+          const filtered = parsed.filter(t => !t.id?.startsWith('task_0'));
+          if (filtered.length > 0) return filtered;
+        }
       }
     } catch (e) {}
-    if (window.INITIAL_DATA && window.INITIAL_DATA.tasks && window.INITIAL_DATA.tasks.length > 0) {
-      return [...window.INITIAL_DATA.tasks];
-    }
     return this.getDefaultTasks();
   }
 
   getDefaultTasks() {
-    return [
-      { id: "task_01", title: "Call Priya Sharma for product demo follow-up", status: "Todo", priority: "High", type: "follow_up", due: "Today", assigned_to: "user_a", assignedStaffId: "user_a" },
-      { id: "task_02", title: "Send custom proposal to Sneha Patel", status: "Todo", priority: "Medium", type: "follow_up", due: "Today", assigned_to: "user_b", assignedStaffId: "user_b" },
-      { id: "task_03", title: "Review Enterprise B2B Lead Gen ad performance", status: "In Progress", priority: "Medium", type: "marketing", due: "Tomorrow", assigned_to: "admin", assignedStaffId: "admin" }
-    ];
+    return [];
   }
 
   loadSprints() {
     try {
       const saved = localStorage.getItem(this.sprintsKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && parsed.length > 0) return parsed;
-      }
+      if (saved) return JSON.parse(saved);
     } catch (e) {}
-    return (window.INITIAL_DATA && window.INITIAL_DATA.sprints) ? [...window.INITIAL_DATA.sprints] : [];
+    return [];
   }
 
   loadConversations() {
@@ -512,68 +269,142 @@ class CRMService {
       const saved = localStorage.getItem(this.conversationsKey);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.length > 0) return parsed;
+        if (parsed && Array.isArray(parsed)) {
+          const filtered = parsed.filter(c => !c.id?.startsWith('conv_0'));
+          if (filtered.length > 0) return filtered;
+        }
       }
     } catch (e) {}
-    if (window.INITIAL_DATA && window.INITIAL_DATA.conversations && window.INITIAL_DATA.conversations.length > 0) {
-      return [...window.INITIAL_DATA.conversations];
-    }
     return this.getDefaultConversations();
   }
 
   getDefaultConversations() {
-    const now = Date.now();
-    return [
-      {
-        id: "conv_01",
-        name: "Priya Sharma",
-        channel: "messenger",
-        page_id: "page_01",
-        unread: 1,
-        unread_count: 1,
-        time: "10m ago",
-        last_message_at: new Date(now - 10 * 60 * 1000).toISOString(),
-        preview: "Could you share the pricing brochure for Enterprise B2B plan?",
-        last_message: "Could you share the pricing brochure for Enterprise B2B plan?",
-        messages: [
-          { id: "m_01_1", text: "Hi, I saw your ad on Facebook about Enterprise Cloud.", incoming: true, time: "12m ago", created_at: new Date(now - 12 * 60 * 1000).toISOString(), is_read: true },
-          { id: "m_01_2", text: "Could you share the pricing brochure for Enterprise B2B plan?", incoming: true, time: "10m ago", created_at: new Date(now - 10 * 60 * 1000).toISOString(), is_read: false }
-        ]
-      },
-      {
-        id: "conv_02",
-        name: "@sneha_designs",
-        participantUsername: "sneha_designs",
-        channel: "instagram",
-        page_id: "page_02",
-        unread: 1,
-        unread_count: 1,
-        time: "25m ago",
-        last_message_at: new Date(now - 25 * 60 * 1000).toISOString(),
-        preview: "Is the Spring Collection available for bulk commercial orders?",
-        last_message: "Is the Spring Collection available for bulk commercial orders?",
-        messages: [
-          { id: "m_02_1", text: "Hello! Loved your Instagram post about Spring Home Decor.", incoming: true, time: "30m ago", created_at: new Date(now - 30 * 60 * 1000).toISOString(), is_read: true },
-          { id: "m_02_2", text: "Is the Spring Collection available for bulk commercial orders?", incoming: true, time: "25m ago", created_at: new Date(now - 25 * 60 * 1000).toISOString(), is_read: false }
-        ]
-      },
-      {
-        id: "conv_03",
-        name: "Aarav Mehta",
-        channel: "messenger",
-        page_id: "page_01",
-        unread: 0,
-        unread_count: 0,
-        time: "1h ago",
-        last_message_at: new Date(now - 60 * 60 * 1000).toISOString(),
-        preview: "Thanks, contract signed and payment processed.",
-        last_message: "Thanks, contract signed and payment processed.",
-        messages: [
-          { id: "m_03_1", text: "Here is the final contract draft, Aarav.", incoming: false, time: "1h 15m ago", created_at: new Date(now - 75 * 60 * 1000).toISOString(), is_read: true },
-          { id: "m_03_2", text: "Thanks, contract signed and payment processed.", incoming: true, time: "1h ago", created_at: new Date(now - 60 * 60 * 1000).toISOString(), is_read: true }
-        ]
+    return [];
+  }
+
+  // ==========================================================================
+  // REMOTE DATA SYNCHRONIZATION WITH VERCEL / SUPABASE
+  // ==========================================================================
+  async fetchRemoteLeads() {
+    try {
+      const authUser = this.getCurrentUser();
+      const headers = { 'Content-Type': 'application/json' };
+      if (authUser && authUser.id) headers['X-User-Id'] = authUser.id;
+      const res = await fetch('/api/leads', { headers }).catch(() => null);
+      if (res && res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.leads)) {
+          this.leads = data.leads.map(l => ({
+            ...l,
+            name: l.full_name || l.name || 'Meta Lead',
+            value: Number(l.lead_value || l.value || 0)
+          }));
+          this.saveLeads();
+          this.notifyChange('leads_updated');
+          return this.leads;
+        }
       }
-    ];
+    } catch (e) {
+      console.warn('[CRMService] fetchRemoteLeads warning:', e);
+    }
+    return this.leads;
+  }
+
+  async fetchRemotePages() {
+    try {
+      const authUser = this.getCurrentUser();
+      const headers = { 'Content-Type': 'application/json' };
+      if (authUser && authUser.id) headers['X-User-Id'] = authUser.id;
+      const res = await fetch('/api/pages', { headers }).catch(() => null);
+      if (res && res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.pages)) {
+          this.pages = data.pages.map(p => ({
+            id: p.id,
+            meta_page_id: p.page_id,
+            name: p.page_name || p.name,
+            platform: p.platform || 'facebook',
+            status: p.is_active ? 'connected' : 'disconnected'
+          }));
+          this.savePages();
+          this.notifyChange('pages_updated');
+          return this.pages;
+        }
+      }
+    } catch (e) {
+      console.warn('[CRMService] fetchRemotePages warning:', e);
+    }
+    return this.pages;
+  }
+
+  async fetchRemoteStaff() {
+    try {
+      const authUser = this.getCurrentUser();
+      const headers = { 'Content-Type': 'application/json' };
+      if (authUser && authUser.id) headers['X-User-Id'] = authUser.id;
+      const res = await fetch('/api/staff', { headers }).catch(() => null);
+      if (res && res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.staff)) {
+          this.staff = data.staff.map(s => ({
+            id: s.id,
+            name: s.full_name || s.name || s.email,
+            displayName: s.full_name || s.name || s.email,
+            email: s.email,
+            role: s.role || 'staff',
+            assignedPageIds: s.assigned_pages || []
+          }));
+          this.saveStaff();
+          this.notifyChange('staff_updated');
+          return this.staff;
+        }
+      }
+    } catch (e) {
+      console.warn('[CRMService] fetchRemoteStaff warning:', e);
+    }
+    return this.staff;
+  }
+
+  async fetchRemoteConversations() {
+    try {
+      const authUser = this.getCurrentUser();
+      const headers = { 'Content-Type': 'application/json' };
+      if (authUser && authUser.id) headers['X-User-Id'] = authUser.id;
+      const res = await fetch('/api/messages', { headers }).catch(() => null);
+      if (res && res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.conversations)) {
+          this.conversations = data.conversations.map(c => ({
+            id: c.id,
+            name: c.participant_name || 'Anonymous',
+            channel: c.channel || 'messenger',
+            page_id: c.page_id,
+            unread: c.unread_count || 0,
+            unread_count: c.unread_count || 0,
+            last_message_at: c.last_message_at || c.created_at,
+            preview: c.last_message || '',
+            last_message: c.last_message || '',
+            messages: c.messages || []
+          }));
+          this.conversations.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
+          this.saveConversations();
+          this.notifyChange('conversations_updated');
+          return this.conversations;
+        }
+      }
+    } catch (e) {
+      console.warn('[CRMService] fetchRemoteConversations warning:', e);
+    }
+    return this.conversations;
+  }
+
+  async fetchRemoteData() {
+    return Promise.allSettled([
+      this.fetchRemotePages(),
+      this.fetchRemoteStaff(),
+      this.fetchRemoteLeads(),
+      this.fetchRemoteConversations()
+    ]);
   }
 
   loadAutomations() {
@@ -1066,7 +897,76 @@ class CRMService {
     this.saveAll();
     this.logAudit("LEAD_STATUS_UPDATED", `${lead.name} (${leadId})`, "SUCCESS", `Updated status to ${newStatus}`);
     this.notifyChange("lead_updated", { leadId, lead, newStatus });
+
+    fetch('/api/leads', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-User-Id': (this.currentUser && this.currentUser.id) || 'admin'
+      },
+      body: JSON.stringify({ id: leadId, status: newStatus })
+    }).catch(e => console.warn('[CRMService] Remote lead PATCH warning:', e));
+
     return { success: true, lead };
+  }
+
+  async createLead(leadData) {
+    const userName = this.currentUser ? (this.currentUser.displayName || this.currentUser.name) : "User";
+    const newId = leadData.id || `lead_${Date.now()}`;
+    const newLead = {
+      id: newId,
+      full_name: leadData.name || leadData.full_name || 'New Lead',
+      name: leadData.name || leadData.full_name || 'New Lead',
+      phone: leadData.phone || '',
+      email: leadData.email || '',
+      page_id: leadData.page_id || leadData.pageId || (this.pages[0]?.id || null),
+      page_name: this.pages.find(p => p.id === (leadData.page_id || leadData.pageId))?.name || 'Manual Entry',
+      source: leadData.source || 'Manual Entry',
+      status: leadData.status || 'New',
+      campaign_name: leadData.campaign_name || 'Direct Lead',
+      value: Number(leadData.value || leadData.lead_value || 0),
+      lead_value: Number(leadData.value || leadData.lead_value || 0),
+      assigned_staff_id: leadData.assigned_to || (this.currentUser?.id || null),
+      assigned_staff_name: userName,
+      created_at: new Date().toISOString(),
+      notes: [],
+      activities: [{
+        id: "act_" + Date.now(),
+        type: "LEAD_CREATED",
+        description: `Lead created manually by ${userName}`,
+        user: userName,
+        timestamp: new Date().toISOString()
+      }]
+    };
+
+    this.leads.unshift(newLead);
+    this.saveAll();
+    this.notifyChange("lead_created", { lead: newLead });
+
+    try {
+      const res = await fetch('/api/leads', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': (this.currentUser && this.currentUser.id) || 'admin'
+        },
+        body: JSON.stringify({
+          ...newLead,
+          name: newLead.name,
+          full_name: newLead.name
+        })
+      });
+      if (res.ok) {
+        const respData = await res.json();
+        if (respData.lead && respData.lead.id) {
+          newLead.id = respData.lead.id;
+          this.saveAll();
+        }
+      }
+    } catch (e) {
+      console.warn('[CRMService] createLead remote post warning:', e);
+    }
+    return newLead;
   }
 
   // ==========================================================================
@@ -1412,17 +1312,32 @@ class CRMService {
   }
 
   handleInboundMetaLead(rawLead) {
-    const pageObj = this.pages.find(p => p.id === rawLead.page_id || p.meta_page_id === rawLead.meta_page_id) || this.pages[0];
-    const newId = "lead_" + String(this.leads.length + 1).padStart(3, "0");
+    if (!rawLead) return;
+
+    // Deduplication check
+    const existing = this.leads.find(l => 
+      (rawLead.id && l.id === rawLead.id) || 
+      (rawLead.meta_lead_id && l.meta_lead_id === rawLead.meta_lead_id)
+    );
+    if (existing) {
+      if (rawLead.status) existing.status = rawLead.status;
+      if (rawLead.full_name) existing.name = rawLead.full_name;
+      this.saveAll();
+      this.notifyChange("lead_updated", { leadId: existing.id, lead: existing });
+      return existing;
+    }
+
+    const pageObj = this.pages.find(p => p.id === rawLead.page_id || p.meta_page_id === rawLead.page_id) || (this.pages.length > 0 ? this.pages[0] : { id: rawLead.page_id || 'default_page', name: 'Meta Page' });
+    const newId = rawLead.id || ("lead_" + Date.now());
 
     let newLead = {
       id: newId,
-      meta_lead_id: rawLead.meta_lead_id || `meta_lead_${Date.now()}`,
-      name: rawLead.name || "Inbound Meta Lead",
-      phone: rawLead.phone || "+91 98000 00000",
-      email: rawLead.email || "lead@meta-ad.com",
-      company: rawLead.company || "Independent Buyer",
-      location: rawLead.location || "Mumbai, MH",
+      meta_lead_id: rawLead.meta_lead_id || null,
+      name: rawLead.full_name || rawLead.name || "Meta Lead",
+      phone: rawLead.phone || "",
+      email: rawLead.email || "",
+      company: rawLead.company || "",
+      location: rawLead.location || "",
       page_id: pageObj.id,
       page_name: pageObj.name,
       platform: rawLead.platform || "Facebook",
@@ -1435,8 +1350,8 @@ class CRMService {
       ad_name: rawLead.ad_name || "",
       form_id: rawLead.form_id || "",
       form_name: rawLead.form_name || "Instant Lead Form",
-      status: "New",
-      assigned_staff_id: null,
+      status: rawLead.status || "New",
+      assigned_staff_id: rawLead.assigned_to || null,
       assigned_staff_name: null,
       created_at: new Date().toISOString(),
       last_contacted_at: null,

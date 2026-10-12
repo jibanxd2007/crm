@@ -25,64 +25,8 @@ function getSupabaseAdmin() {
   });
 }
 
-// In-memory fallback integrations registry
-let inMemoryIntegrations = [
-  {
-    id: "int_meta_ads_01",
-    provider: "meta_ads",
-    account_id: "act_104829104812",
-    account_name: "TechNova Meta Ads Portfolio",
-    status: "connected",
-    scopes: ["ads_read", "ads_management", "leads_retrieval", "business_management"],
-    assigned_staff_ids: ["admin", "rahul", "amit"],
-    last_synced_at: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-    next_sync_at: new Date(Date.now() + 45 * 60 * 1000).toISOString(),
-    last_error: null,
-    metadata: {
-      business_name: "TechNova Solutions Ltd",
-      currency: "INR",
-      timezone: "Asia/Kolkata",
-      ad_accounts_count: 2,
-      pages_count: 2
-    }
-  },
-  {
-    id: "int_google_email_01",
-    provider: "google_email",
-    account_id: "sales@technova.io",
-    account_name: "TechNova Sales (Google Workspace)",
-    status: "connected",
-    scopes: ["gmail.readonly", "gmail.send", "userinfo.email"],
-    assigned_staff_ids: ["admin", "rahul"],
-    last_synced_at: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-    next_sync_at: new Date(Date.now() + 25 * 60 * 1000).toISOString(),
-    last_error: null,
-    metadata: {
-      provider: "google",
-      email: "sales@technova.io",
-      unread_count: 4,
-      total_messages: 128
-    }
-  },
-  {
-    id: "int_ms_email_01",
-    provider: "microsoft_email",
-    account_id: "support@technova.onmicrosoft.com",
-    account_name: "TechNova Support (Microsoft 365)",
-    status: "connected",
-    scopes: ["Mail.ReadWrite", "Mail.Send", "User.Read"],
-    assigned_staff_ids: ["admin", "amit", "priya"],
-    last_synced_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-    next_sync_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-    last_error: null,
-    metadata: {
-      provider: "microsoft",
-      email: "support@technova.onmicrosoft.com",
-      unread_count: 1,
-      total_messages: 64
-    }
-  }
-];
+// Verified integrations registry
+let inMemoryIntegrations = [];
 
 async function integrationsHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');

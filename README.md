@@ -54,9 +54,23 @@ Designed as a focused combination of:
 
 ## 💻 How to Run
 
-### Production Deployment
-Live on Netlify at:
-`https://serene-toffee-fe3244.netlify.app`
+### Production Deployment (Vercel)
+This CRM is optimized for production deployment on **Vercel** with full serverless endpoints and scheduled cron jobs.
+
+#### Option A: 1-Click CLI Deployment
+```bash
+# Deploy to preview
+npx vercel
+
+# Deploy to production
+npx vercel --prod
+```
+
+#### Option B: Connect via GitHub
+1. Push your repository to GitHub.
+2. Import the repository in [Vercel Dashboard](https://vercel.com/new).
+3. Set your environment variables (or run `.\upload_env_to_vercel.ps1` to sync them directly).
+4. Vercel automatically deploys your static frontend and `/api/*` serverless functions.
 
 ### Local Development
 ```powershell

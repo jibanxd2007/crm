@@ -425,7 +425,7 @@ async function zernioUnifiedHandler(req, res) {
     });
   }
 
-  // 4. WEBHOOK
+  // 4. WEBHOOK (Real Meta Leads & Messaging via Zernio)
   if (path === 'webhook' || url.includes('/webhooks/zernio')) {
     if (req.method === 'GET') {
       const challenge = query.challenge || query['hub.challenge'] || 'zernio_ok';
@@ -435,22 +435,38 @@ async function zernioUnifiedHandler(req, res) {
     if (req.method === 'POST') {
       const body = req.body || {};
       const supabase = getSupabaseAdmin();
-      const defaultOrgId = '00000000-0000-0000-0000-000000000001';
 
       const payload = body.data || body.payload || body;
-      const leadId = payload.id || payload.lead_id || payload.leadgen_id || ('zn_lead_' + Date.now());
-      const platform = payload.platform || (payload.source && payload.source.toLowerCase().includes('instagram') ? 'Instagram Ads' : 'Facebook Ads');
+      const leadId = payload.id || payload.lead_id || payload.leadgen_id || payload.meta_lead_id || ('zn_lead_' + Date.now());
+      const platform = payload.platform || (payload.source && payload.source.toLowerCase().includes('instagram') ? 'Instagram Ads' : 'Facebook Lead Ad');
       const pageId = payload.page_id || payload.pageId || null;
-      const pageName = payload.page_name || payload.pageName || 'Connected Page';
+      const pageName = payload.page_name || payload.pageName || null;
       const campaignId = payload.campaign_id || payload.campaignId || null;
-      const campaignName = payload.campaign_name || payload.campaignName || 'Meta Campaign';
+      const campaignName = payload.campaign_name || payload.campaignName || null;
+      const formId = payload.form_id || payload.formId || null;
+      const formName = payload.form_name || payload.formName || null;
 
-      const name = payload.name || payload.full_name || 'Prospect Lead';
-      const email = payload.email || null;
+      const fullName = (payload.full_name || payload.name || payload.first_name ? `${payload.first_name || ''} ${payload.last_name || ''}`.trim() : 'Meta Lead').trim();
+      const email = payload.email || payload.email_address || null;
       const phone = payload.phone || payload.phone_number || null;
 
       try {
         if (supabase) {
+          // Idempotency check: prevent duplicate leads
+          const { data: existingLead } = await supabase
+            .from('leads')
+            .select('*')
+            .eq('meta_lead_id', String(leadId))
+            .maybeSingle();
+
+          if (existingLead) {
+            return res.status(200).json({
+              status: 'success',
+              isDuplicate: true,
+              lead: { ...existingLead, name: existingLead.full_name }
+            });
+          }
+
           let assignedStaffId = null;
           const { data: staffMembers } = await supabase
             .from('users')
@@ -462,30 +478,42 @@ async function zernioUnifiedHandler(req, res) {
             assignedStaffId = staffMembers[0].id;
           }
 
-          await supabase
+          const insertData = {
+            meta_lead_id: String(leadId),
+            full_name: fullName,
+            email: email ? email.trim() : null,
+            phone: phone ? phone.trim() : null,
+            source: platform,
+            campaign_id: campaignId ? String(campaignId) : null,
+            campaign_name: campaignName,
+            form_id: formId ? String(formId) : null,
+            form_name: formName,
+            assigned_to: assignedStaffId,
+            status: 'New'
+          };
+
+          const { data: created, error: dbErr } = await supabase
             .from('leads')
-            .insert({
-              organization_id: defaultOrgId,
-              meta_lead_id: String(leadId),
-              name,
-              email,
-              phone,
-              source: platform,
-              page_id: pageId ? (pageId.startsWith('page_') ? pageId : `page_${pageId}`) : null,
-              page_name: pageName,
-              campaign_id: campaignId,
-              campaign_name: campaignName,
-              assigned_to: assignedStaffId,
-              status: 'new'
-            })
+            .insert(insertData)
             .select()
             .single();
+
+          if (dbErr) {
+            console.error('[Zernio Lead Ingest DB Error]:', dbErr);
+            return res.status(500).json({ error: dbErr.message });
+          }
+
+          return res.status(200).json({
+            status: 'success',
+            provider: 'zernio',
+            lead: { ...created, name: created.full_name }
+          });
         }
 
         return res.status(200).json({
           status: 'success',
           provider: 'zernio',
-          lead: { id: leadId, name, email, phone, pageName, campaignName, source: platform }
+          lead: { id: leadId, name: fullName, email, phone, source: platform }
         });
       } catch (err) {
         return res.status(500).json({ error: err.message });

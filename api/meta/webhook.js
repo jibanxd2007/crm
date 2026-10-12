@@ -137,26 +137,32 @@ async function metaWebhookHandler(req, res) {
           const supabase = getSupabaseAdmin();
           if (supabase) {
             try {
-              await supabase.from('leads').insert({
-                organization_id: '00000000-0000-0000-0000-000000000001',
-                page_id: entryPageId,
-                name: leadName,
-                email: leadEmail,
-                phone: leadPhone,
-                source: 'Facebook Lead Ad',
-                status: 'New Lead',
-                meta_leadgen_id: String(leadgenId),
-                form_id: formId ? String(formId) : null,
-                form_name: formName,
-                campaign_id: campaignId ? String(campaignId) : null,
-                campaign_name: campaignName,
-                adset_id: adsetId ? String(adsetId) : null,
-                adset_name: adsetName,
-                ad_id: adId ? String(adId) : null,
-                ad_name: adName,
-                platform: 'facebook',
-                created_at: createdTime
-              });
+              // Deduplication check
+              const { data: existing } = await supabase
+                .from('leads')
+                .select('id')
+                .eq('meta_lead_id', String(leadgenId))
+                .maybeSingle();
+
+              if (!existing) {
+                await supabase.from('leads').insert({
+                  full_name: leadName,
+                  email: leadEmail || null,
+                  phone: leadPhone || null,
+                  source: 'Facebook Lead Ad',
+                  status: 'New',
+                  meta_lead_id: String(leadgenId),
+                  form_id: formId ? String(formId) : null,
+                  form_name: formName || null,
+                  campaign_id: campaignId ? String(campaignId) : null,
+                  campaign_name: campaignName || null,
+                  adset_id: adsetId ? String(adsetId) : null,
+                  adset_name: adsetName || null,
+                  ad_id: adId ? String(adId) : null,
+                  ad_name: adName || null,
+                  created_at: createdTime
+                });
+              }
             } catch (leadDbErr) {
               console.warn(`[Lead DB Ingest Note]: ${leadDbErr.message}`);
             }

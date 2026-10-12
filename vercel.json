@@ -12,6 +12,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/config",
+      "destination": "/api/config"
+    },
+    {
       "source": "/api/integrations/(.*)",
       "destination": "/api/integrations"
     },
@@ -50,6 +54,22 @@
     {
       "source": "/api/leads/(.*)",
       "destination": "/api/leads"
+    },
+    {
+      "source": "/api/pages/(.*)",
+      "destination": "/api/pages"
+    },
+    {
+      "source": "/api/staff/(.*)",
+      "destination": "/api/staff"
+    },
+    {
+      "source": "/api/reports/(.*)",
+      "destination": "/api/reports"
+    },
+    {
+      "source": "/api/notifications/(.*)",
+      "destination": "/api/notifications"
     },
     {
       "source": "/api/auth/meta/url",

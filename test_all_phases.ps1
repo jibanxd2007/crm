@@ -3,7 +3,10 @@
 # Tests all 21 phases defined in the Master QA Directive
 # ==============================================================================
 
-$baseUri = "http://localhost:3000"
+param(
+  [string]$baseUri = "https://crm-beta-three-36.vercel.app"
+)
+
 $results = @()
 
 function Assert-Test($phase, $name, $condition, $details = "") {
@@ -32,11 +35,11 @@ try {
   Assert-Test "PHASE 1-2" "Server & Gateway Health" $false $_.Exception.Message
 }
 
-$hasNetlifyToml = Test-Path ".\netlify.toml"
-Assert-Test "PHASE 2" "Netlify Configuration (netlify.toml)" $hasNetlifyToml
+$hasVercelJson = Test-Path ".\vercel.json"
+Assert-Test "PHASE 2" "Vercel Configuration (vercel.json)" $hasVercelJson
 
-$hasFunctions = (Get-ChildItem ".\netlify\functions").Count -ge 7
-Assert-Test "PHASE 2" "Netlify Functions Created (Count: $((Get-ChildItem '.\netlify\functions').Count))" $hasFunctions
+$hasApiFunctions = (Get-ChildItem ".\api").Count -ge 7
+Assert-Test "PHASE 2" "Vercel Serverless Functions in api/ (Count: $((Get-ChildItem '.\api').Count))" $hasApiFunctions
 
 $hasEnvExample = Test-Path ".\.env.example"
 Assert-Test "PHASE 2" "Environment Documentation (.env.example)" $hasEnvExample
@@ -199,12 +202,12 @@ $hasPageTsx = Test-Path "page.tsx"
 Assert-Test "PHASE 23" "Supabase SSR Helpers & Middleware (utils/supabase)" ($hasSsrServer -and $hasSsrClient -and $hasSsrMiddleware -and $hasPageTsx)
 
 # ------------------------------------------------------------------------------
-# PHASE 24: NETLIFY SERVERLESS META FUNCTIONS
+# PHASE 24: VERCEL SERVERLESS META FUNCTIONS (api/meta)
 # ------------------------------------------------------------------------------
-$hasMetaOAuthFunc = Test-Path "netlify\functions\meta-oauth.js"
-$hasMetaCallbackFunc = Test-Path "netlify\functions\meta-callback.js"
-$hasMetaWebhookFunc = Test-Path "netlify\functions\meta-webhook.js"
-Assert-Test "PHASE 24" "Netlify Meta Endpoints (OAuth, Callback, Webhook)" ($hasMetaOAuthFunc -and $hasMetaCallbackFunc -and $hasMetaWebhookFunc)
+$hasMetaOAuthFunc = Test-Path "api\meta\oauth.js"
+$hasMetaCampaignsFunc = Test-Path "api\meta\campaigns.js"
+$hasMetaWebhookFunc = Test-Path "api\meta\webhook.js"
+Assert-Test "PHASE 24" "Vercel Meta Endpoints (OAuth, Campaigns, Webhook)" ($hasMetaOAuthFunc -and $hasMetaCampaignsFunc -and $hasMetaWebhookFunc)
 
 # ------------------------------------------------------------------------------
 # PHASE A: SPEED-TO-LEAD & SLA COMPLIANCE ENGINE
@@ -316,7 +319,7 @@ $hasDailyIdx = $schemaContent.Contains("uq_ad_insights_daily_idx")
 $hasAdInsightsRls = $schemaContent.Contains("ALTER TABLE public.ad_insights ENABLE ROW LEVEL SECURITY")
 $hasAdInsightsPolicy = $schemaContent.Contains("ad_insights_select_policy")
 $hasPhaseBMigration = Test-Path ".\supabase\migrations\20261009_phase_b_ad_spend_roi.sql"
-$hasSyncFunction = Test-Path ".\netlify\functions\ad-spend-sync.js"
+$hasSyncFunction = Test-Path ".\api\meta\sync.js"
 
 $phaseBSchemaValid = $hasAdInsightsTable -and $hasDailyIdx -and $hasAdInsightsRls -and $hasAdInsightsPolicy -and $hasPhaseBMigration -and $hasSyncFunction
 Assert-Test "PHASE B" "Schema: ad_insights Table, Upsert Constraint & Scoped RLS DDL" $phaseBSchemaValid
