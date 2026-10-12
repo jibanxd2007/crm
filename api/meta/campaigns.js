@@ -150,22 +150,107 @@ async function metaCampaignsUnifiedHandler(req, res) {
   }
 
   // --------------------------------------------------------------------------
-  // C. CAMPAIGNS MODE (/api/meta/campaigns)
+  // C. AD SETS & ADS DRILLDOWN MODES
   // --------------------------------------------------------------------------
-  if (req.method === 'GET') {
-    const { ad_account_id, date_preset = 'last_30d' } = query;
-    if (!ad_account_id) {
-      // Scoped default response
-      return res.status(200).json({
-        status: "success",
-        count: 0,
-        campaigns: [],
-        timestamp: new Date().toISOString()
-      });
+  if (action === 'adsets' || url.includes('/adsets')) {
+    const { ad_account_id = 'act_104829104812', date_preset = 'last_30d', campaign_id } = query;
+    if (!token) {
+      return res.status(200).json({ status: "success", count: 0, adSets: [], message: "Meta token not configured" });
     }
 
+    try {
+      const client = new MetaClient(token);
+      const data = await client.getAdSets(ad_account_id, date_preset);
+      const rawSets = data.data || [];
+      const filtered = campaign_id ? rawSets.filter(s => s.campaign_id === campaign_id) : rawSets;
+
+      const adSets = filtered.map(s => {
+        const ins = (s.insights && s.insights.data && s.insights.data[0]) || {};
+        const spend = parseFloat(ins.spend || 0);
+        const impressions = parseInt(ins.impressions || 0, 10);
+        const clicks = parseInt(ins.clicks || 0, 10);
+        const ctr = parseFloat(ins.ctr || 0);
+        const cpc = parseFloat(ins.cpc || 0);
+        const cpm = parseFloat(ins.cpm || 0);
+        let leads = 0;
+        if (Array.isArray(ins.actions)) {
+          const lAct = ins.actions.find(a => a.action_type === 'lead' || a.action_type === 'onsite_conversion.lead_grouped');
+          if (lAct) leads = parseInt(lAct.value || 0, 10);
+        }
+        return {
+          id: s.id,
+          name: s.name,
+          campaign_id: s.campaign_id,
+          status: s.status,
+          daily_budget: s.daily_budget ? (parseFloat(s.daily_budget) / 100) : 0,
+          metrics: { spend, impressions, clicks, ctr, cpc, cpm, leads, cost_per_lead: leads > 0 ? (spend / leads) : 0 }
+        };
+      });
+
+      return res.status(200).json({ status: "success", count: adSets.length, adSets });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  if (action === 'ads' || url.includes('/ads')) {
+    const { ad_account_id = 'act_104829104812', date_preset = 'last_30d', adset_id, campaign_id } = query;
     if (!token) {
-      return res.status(500).json({ error: 'Meta Access Token not configured on the server.' });
+      return res.status(200).json({ status: "success", count: 0, ads: [], message: "Meta token not configured" });
+    }
+
+    try {
+      const client = new MetaClient(token);
+      const data = await client.getAds(ad_account_id, date_preset);
+      let rawAds = data.data || [];
+      if (adset_id) rawAds = rawAds.filter(a => a.adset_id === adset_id);
+      if (campaign_id) rawAds = rawAds.filter(a => a.campaign_id === campaign_id);
+
+      const ads = rawAds.map(a => {
+        const ins = (a.insights && a.insights.data && a.insights.data[0]) || {};
+        const spend = parseFloat(ins.spend || 0);
+        const impressions = parseInt(ins.impressions || 0, 10);
+        const clicks = parseInt(ins.clicks || 0, 10);
+        const ctr = parseFloat(ins.ctr || 0);
+        const cpc = parseFloat(ins.cpc || 0);
+        const cpm = parseFloat(ins.cpm || 0);
+        let leads = 0;
+        if (Array.isArray(ins.actions)) {
+          const lAct = ins.actions.find(act => act.action_type === 'lead' || act.action_type === 'onsite_conversion.lead_grouped');
+          if (lAct) leads = parseInt(lAct.value || 0, 10);
+        }
+        return {
+          id: a.id,
+          name: a.name,
+          adset_id: a.adset_id,
+          campaign_id: a.campaign_id,
+          status: a.status,
+          creative: a.creative || {},
+          metrics: { spend, impressions, clicks, ctr, cpc, cpm, leads, cost_per_lead: leads > 0 ? (spend / leads) : 0 }
+        };
+      });
+
+      return res.status(200).json({ status: "success", count: ads.length, ads });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // D. CAMPAIGNS MODE (/api/meta/campaigns)
+  // --------------------------------------------------------------------------
+  if (req.method === 'GET') {
+    const { ad_account_id = 'act_104829104812', date_preset = 'last_30d' } = query;
+
+    if (!token) {
+      // Return structured response indicating unconfigured live credentials
+      return res.status(200).json({
+        status: "notice",
+        configured: false,
+        message: "Meta Access Token not configured on server. Please set META_ACCESS_TOKEN in environment variables.",
+        count: 0,
+        campaigns: []
+      });
     }
 
     try {
@@ -176,6 +261,13 @@ async function metaCampaignsUnifiedHandler(req, res) {
       const campaigns = rawCampaigns.map(c => {
         const insights = (c.insights && c.insights.data && c.insights.data[0]) || {};
         const spend = parseFloat(insights.spend || 0);
+        const impressions = parseInt(insights.impressions || 0, 10);
+        const reach = parseInt(insights.reach || 0, 10);
+        const clicks = parseInt(insights.clicks || 0, 10);
+        const ctr = parseFloat(insights.ctr || 0);
+        const cpc = parseFloat(insights.cpc || 0);
+        const cpm = parseFloat(insights.cpm || 0);
+
         let leads = 0;
         if (Array.isArray(insights.actions)) {
           const leadAction = insights.actions.find(a => a.action_type === 'lead' || a.action_type === 'onsite_conversion.lead_grouped');
@@ -187,11 +279,26 @@ async function metaCampaignsUnifiedHandler(req, res) {
           name: c.name,
           status: c.status,
           objective: c.objective,
-          metrics: { spend, leads, cost_per_lead: leads > 0 ? (spend / leads) : 0 }
+          daily_budget: c.daily_budget ? (parseFloat(c.daily_budget) / 100) : null,
+          lifetime_budget: c.lifetime_budget ? (parseFloat(c.lifetime_budget) / 100) : null,
+          start_time: c.start_time,
+          stop_time: c.stop_time,
+          metrics: { 
+            spend, 
+            impressions, 
+            reach, 
+            clicks, 
+            ctr, 
+            cpc, 
+            cpm, 
+            leads, 
+            cost_per_lead: leads > 0 ? (spend / leads) : 0 
+          }
         };
       });
 
       return res.status(200).json({
+        status: "success",
         ad_account_id,
         date_preset,
         count: campaigns.length,

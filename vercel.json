@@ -12,6 +12,30 @@
   ],
   "rewrites": [
     {
+      "source": "/api/integrations/(.*)",
+      "destination": "/api/integrations"
+    },
+    {
+      "source": "/api/integrations",
+      "destination": "/api/integrations"
+    },
+    {
+      "source": "/api/email/oauth/(.*)",
+      "destination": "/api/email/oauth"
+    },
+    {
+      "source": "/api/email/oauth",
+      "destination": "/api/email/oauth"
+    },
+    {
+      "source": "/api/email/messages/(.*)",
+      "destination": "/api/email/messages"
+    },
+    {
+      "source": "/api/email/messages",
+      "destination": "/api/email/messages"
+    },
+    {
       "source": "/api/conversations/(.*)",
       "destination": "/api/messages"
     },

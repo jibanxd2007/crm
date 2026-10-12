@@ -69,12 +69,102 @@ async function metaWebhookHandler(req, res) {
     const eventId = payload.entry && payload.entry[0] ? payload.entry[0].id : `evt_${Date.now()}`;
     const pageId = payload.entry && payload.entry[0] ? payload.entry[0].id : 'page_01';
 
-    // Extract messaging events if present
+    // Extract messaging events and Leadgen changes
     const entries = payload.entry || [];
     let processedMsgs = 0;
+    let processedLeads = 0;
     let duplicateIgnored = false;
 
     for (const entry of entries) {
+      const entryPageId = entry.id || pageId;
+
+      // 1. Process Lead Ads Webhook Events (entry.changes with field === 'leadgen')
+      const changesList = entry.changes || [];
+      for (const change of changesList) {
+        if (change.field === 'leadgen' && change.value) {
+          const leadVal = change.value;
+          const leadgenId = leadVal.leadgen_id;
+          const formId = leadVal.form_id;
+          const adId = leadVal.ad_id;
+          const adsetId = leadVal.adgroup_id || leadVal.adset_id;
+          const campaignId = leadVal.campaign_id;
+          const createdTime = leadVal.created_time ? new Date(leadVal.created_time * 1000).toISOString() : new Date().toISOString();
+
+          if (isDuplicateEvent(`lead_${leadgenId}`)) {
+            duplicateIgnored = true;
+            continue;
+          }
+
+          processedLeads++;
+
+          // Attempt to fetch full lead data from Meta Graph API if token available
+          let leadName = 'New Lead';
+          let leadEmail = '';
+          let leadPhone = '';
+          let customFields = {};
+          let formName = leadVal.form_name || `Form #${formId || ''}`;
+          let campaignName = leadVal.campaign_name || '';
+          let adsetName = leadVal.adset_name || '';
+          let adName = leadVal.ad_name || '';
+
+          const pageToken = (global.META_PAGE_TOKENS && global.META_PAGE_TOKENS[entryPageId]?.accessToken) || process.env.META_ACCESS_TOKEN || process.env.META_SYSTEM_USER_ACCESS_TOKEN;
+          if (pageToken && leadgenId) {
+            try {
+              const { httpsRequest } = require('../_utils.js');
+              const graphLead = await httpsRequest(`https://graph.facebook.com/v24.0/${leadgenId}?fields=id,created_time,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id,field_data&access_token=${pageToken}`);
+              if (graphLead && Array.isArray(graphLead.field_data)) {
+                if (graphLead.campaign_name) campaignName = graphLead.campaign_name;
+                if (graphLead.adset_name) adsetName = graphLead.adset_name;
+                if (graphLead.ad_name) adName = graphLead.ad_name;
+
+                for (const field of graphLead.field_data) {
+                  const fname = (field.name || '').toLowerCase();
+                  const fval = Array.isArray(field.values) ? field.values[0] : field.values;
+                  if (fname.includes('full_name') || fname === 'name') leadName = fval || leadName;
+                  else if (fname.includes('first_name')) leadName = fval ? `${fval} ${leadName}`.trim() : leadName;
+                  else if (fname.includes('last_name')) leadName = fval ? `${leadName} ${fval}`.trim() : leadName;
+                  else if (fname.includes('email')) leadEmail = fval || leadEmail;
+                  else if (fname.includes('phone')) leadPhone = fval || leadPhone;
+                  else customFields[field.name] = fval;
+                }
+              }
+            } catch (err) {
+              console.warn(`[Leadgen Graph API Retrieval Note]: ${err.message}`);
+            }
+          }
+
+          // Persist lead with complete attribution to Supabase
+          const supabase = getSupabaseAdmin();
+          if (supabase) {
+            try {
+              await supabase.from('leads').insert({
+                organization_id: '00000000-0000-0000-0000-000000000001',
+                page_id: entryPageId,
+                name: leadName,
+                email: leadEmail,
+                phone: leadPhone,
+                source: 'Facebook Lead Ad',
+                status: 'New Lead',
+                meta_leadgen_id: String(leadgenId),
+                form_id: formId ? String(formId) : null,
+                form_name: formName,
+                campaign_id: campaignId ? String(campaignId) : null,
+                campaign_name: campaignName,
+                adset_id: adsetId ? String(adsetId) : null,
+                adset_name: adsetName,
+                ad_id: adId ? String(adId) : null,
+                ad_name: adName,
+                platform: 'facebook',
+                created_at: createdTime
+              });
+            } catch (leadDbErr) {
+              console.warn(`[Lead DB Ingest Note]: ${leadDbErr.message}`);
+            }
+          }
+        }
+      }
+
+      // 2. Process Messenger / Direct Messages
       const messagingList = entry.messaging || entry.standby || [];
       for (const msgEvent of messagingList) {
         const mid = msgEvent.message?.mid || `${msgEvent.sender?.id}_${msgEvent.timestamp}`;
@@ -96,7 +186,7 @@ async function metaWebhookHandler(req, res) {
             const { data: conv } = await supabase
               .from('conversations')
               .select('id')
-              .eq('page_id', pageId)
+              .eq('page_id', entryPageId)
               .eq('customer_psid', senderPsid)
               .maybeSingle();
 
@@ -105,7 +195,7 @@ async function metaWebhookHandler(req, res) {
               const { data: newConv } = await supabase
                 .from('conversations')
                 .insert({
-                  page_id: pageId,
+                  page_id: entryPageId,
                   customer_psid: senderPsid,
                   customer_name: `Facebook User (${senderPsid.substring(0, 6)})`,
                   channel: 'messenger',
@@ -143,6 +233,7 @@ async function metaWebhookHandler(req, res) {
       processed: true,
       duplicateIgnored,
       messagesProcessed: processedMsgs,
+      leadsProcessed: processedLeads,
       eventId: eventId,
       pageId: pageId,
       slaTargetMinutes: 5,

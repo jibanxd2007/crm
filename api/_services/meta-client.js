@@ -164,4 +164,14 @@ export class MetaClient {
       body: { daily_budget: dailyBudgetCents }
     });
   }
+
+  async getAdSets(adAccountId, datePreset = 'last_30d') {
+    const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+    return this.request(`/${actId}/adsets?fields=id,name,status,campaign_id,daily_budget,insights.date_preset(${datePreset}){spend,impressions,reach,clicks,ctr,cpc,cpm,actions}&limit=100`);
+  }
+
+  async getAds(adAccountId, datePreset = 'last_30d') {
+    const actId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+    return this.request(`/${actId}/ads?fields=id,name,status,adset_id,campaign_id,creative{title,body,image_url},insights.date_preset(${datePreset}){spend,impressions,reach,clicks,ctr,cpc,cpm,actions}&limit=100`);
+  }
 }

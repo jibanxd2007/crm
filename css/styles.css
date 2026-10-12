@@ -4897,3 +4897,51 @@ tbody tr:hover {
   }
 }
 
+/* ============================================================
+   Meta Ads, Email & Integrations Modules
+   ============================================================ */
+.ads-manager-view {
+  animation: fadeIn 0.15s ease-out;
+}
+.email-inbox-wrapper {
+  animation: fadeIn 0.15s ease-out;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+.email-acc-item:hover, .email-folder-item:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+.email-acc-item.active, .email-folder-item.active {
+  background: #E2E8F0;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.email-list-card {
+  transition: background 0.12s ease;
+}
+.email-list-card:hover {
+  background: #F1F5F9 !important;
+}
+.email-list-card.active {
+  background: #EFF6FF !important;
+  border-left: 3px solid #3B82F6;
+}
+.drawer-email-card {
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.drawer-email-card:hover {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+.integrations-view {
+  animation: fadeIn 0.15s ease-out;
+}
+@media (max-width: 900px) {
+  .email-inbox-wrapper {
+    flex-direction: column;
+    height: auto !important;
+  }
+  .email-sidebar, .email-msg-list {
+    width: 100% !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border);
+  }
+}

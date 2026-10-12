@@ -63,6 +63,37 @@
   to = "/.netlify/functions/meta-webhook"
   status = 200
 
+# --- Integrations & Email Endpoints ---
+[[redirects]]
+  from = "/api/integrations"
+  to = "/.netlify/functions/integrations"
+  status = 200
+
+[[redirects]]
+  from = "/api/integrations/*"
+  to = "/.netlify/functions/integrations"
+  status = 200
+
+[[redirects]]
+  from = "/api/email/oauth"
+  to = "/.netlify/functions/email-oauth"
+  status = 200
+
+[[redirects]]
+  from = "/api/email/oauth/*"
+  to = "/.netlify/functions/email-oauth"
+  status = 200
+
+[[redirects]]
+  from = "/api/email/messages"
+  to = "/.netlify/functions/email-messages"
+  status = 200
+
+[[redirects]]
+  from = "/api/email/messages/*"
+  to = "/.netlify/functions/email-messages"
+  status = 200
+
 # --- Core CRM REST APIs ---
 [[redirects]]
   from = "/api/leads"

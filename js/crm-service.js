@@ -40,6 +40,9 @@ class CRMService {
     this.currentUserKey = this.storagePrefix + "auth_user";
     this.metaConfigKey = this.storagePrefix + "meta_config";
     this.devModeKey = this.storagePrefix + "dev_mode";
+    this.integrationsKey = this.storagePrefix + "integrations";
+    this.emailAccountsKey = this.storagePrefix + "email_accounts";
+    this.emailMessagesKey = this.storagePrefix + "email_messages";
 
     this.isDevMode = this.loadDevMode();
     this.pages = this.loadPages();
@@ -61,6 +64,9 @@ class CRMService {
     this.adInsights = this.loadAdInsights();
     this.metaConfig = this.loadMetaConfig();
     this.currentUser = this.loadCurrentUser();
+    this.integrations = this.loadIntegrations();
+    this.emailAccounts = this.loadEmailAccounts();
+    this.emailMessages = this.loadEmailMessages();
 
     // Active Global Filters
     this.filters = {
@@ -3222,6 +3228,451 @@ class CRMService {
     } catch (e) {}
 
     return { success: false, error: "Lead simulation endpoint is disabled or unreachable" };
+  }
+
+  // ==========================================================================
+  // INTEGRATIONS, EMAIL & META ADS EXTENSIONS
+  // ==========================================================================
+
+  loadIntegrations() {
+    try {
+      const saved = localStorage.getItem(this.integrationsKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+
+    return [
+      {
+        id: "int_meta_ads_01",
+        provider: "meta_ads",
+        provider_account_id: "act_104829104812",
+        provider_account_name: "TechNova Enterprise Ads Portfolio",
+        status: "connected",
+        assigned_staff_ids: ["admin", "user_a", "user_b"],
+        last_sync_at: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+        sync_status: "idle",
+        sync_error: null,
+        metadata: {
+          business_name: "TechNova Enterprise Global",
+          currency: "INR",
+          timezone_name: "Asia/Kolkata",
+          ad_accounts: [
+            { id: "act_104829104812", name: "TechNova Enterprise Cloud Main", currency: "INR" },
+            { id: "act_205938102931", name: "Aura Living Performance Marketing", currency: "INR" }
+          ],
+          pages_count: 6,
+          campaigns_count: 3
+        }
+      },
+      {
+        id: "int_google_email_01",
+        provider: "google_email",
+        provider_account_id: "em_google_01",
+        provider_account_name: "support@technova-solutions.com",
+        status: "connected",
+        assigned_staff_ids: ["admin", "user_a"],
+        last_sync_at: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
+        sync_status: "idle",
+        sync_error: null,
+        metadata: {
+          provider: "gmail",
+          email: "support@technova-solutions.com",
+          display_name: "TechNova Support Desk",
+          total_synced: 142,
+          quota_used: "18%"
+        }
+      },
+      {
+        id: "int_ms_email_01",
+        provider: "microsoft_email",
+        provider_account_id: "em_ms_01",
+        provider_account_name: "sales@technova-corp.onmicrosoft.com",
+        status: "connected",
+        assigned_staff_ids: ["admin", "user_b"],
+        last_sync_at: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
+        sync_status: "idle",
+        sync_error: null,
+        metadata: {
+          provider: "outlook",
+          email: "sales@technova-corp.onmicrosoft.com",
+          display_name: "TechNova Enterprise Sales",
+          total_synced: 89,
+          quota_used: "12%"
+        }
+      }
+    ];
+  }
+
+  saveIntegrations() {
+    try {
+      localStorage.setItem(this.integrationsKey, JSON.stringify(this.integrations));
+    } catch (e) {}
+  }
+
+  loadEmailAccounts() {
+    try {
+      const saved = localStorage.getItem(this.emailAccountsKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+
+    return [
+      {
+        id: "em_google_01",
+        provider: "google",
+        email: "support@technova-solutions.com",
+        display_name: "TechNova Support Desk",
+        assigned_staff_ids: ["admin", "user_a"],
+        status: "connected",
+        unread_count: 2,
+        last_sync_at: new Date(Date.now() - 8 * 60 * 1000).toISOString()
+      },
+      {
+        id: "em_ms_01",
+        provider: "microsoft",
+        email: "sales@technova-corp.onmicrosoft.com",
+        display_name: "TechNova Enterprise Sales",
+        assigned_staff_ids: ["admin", "user_b"],
+        status: "connected",
+        unread_count: 1,
+        last_sync_at: new Date(Date.now() - 25 * 60 * 1000).toISOString()
+      }
+    ];
+  }
+
+  saveEmailAccounts() {
+    try {
+      localStorage.setItem(this.emailAccountsKey, JSON.stringify(this.emailAccounts));
+    } catch (e) {}
+  }
+
+  loadEmailMessages() {
+    try {
+      const saved = localStorage.getItem(this.emailMessagesKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+
+    return [
+      {
+        id: "msg_em_01",
+        account_id: "em_google_01",
+        provider_message_id: "goog_msg_101",
+        thread_id: "thread_101",
+        from_address: "arjun.sharma@enterprise.in",
+        from_name: "Arjun Sharma",
+        to_addresses: ["support@technova-solutions.com"],
+        cc_addresses: [],
+        subject: "Enterprise Cloud Security Inquiry & Demo",
+        snippet: "Hi Team, we saw your LinkedIn and Meta campaigns regarding high availability enterprise cloud architecture...",
+        body_text: "Hi Team,\n\nWe saw your LinkedIn and Meta campaigns regarding high availability enterprise cloud architecture. We are currently evaluating vendors for our Q4 infrastructure overhaul.\n\nCould your solutions architect schedule a 30-minute discovery call this Thursday at 3 PM IST?\n\nBest regards,\nArjun Sharma\nVP Engineering, Enterprise India",
+        body_html: "<p>Hi Team,</p><p>We saw your LinkedIn and Meta campaigns regarding high availability enterprise cloud architecture. We are currently evaluating vendors for our Q4 infrastructure overhaul.</p><p>Could your solutions architect schedule a 30-minute discovery call this Thursday at 3 PM IST?</p><p>Best regards,<br><strong>Arjun Sharma</strong><br>VP Engineering, Enterprise India</p>",
+        folder: "inbox",
+        is_read: false,
+        has_attachments: false,
+        sent_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+        received_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+      },
+      {
+        id: "msg_em_02",
+        account_id: "em_google_01",
+        provider_message_id: "goog_msg_102",
+        thread_id: "thread_102",
+        from_address: "priya.nair@aurahomes.com",
+        from_name: "Priya Nair",
+        to_addresses: ["support@technova-solutions.com"],
+        cc_addresses: [],
+        subject: "Interior Design Consultation & Quote Request",
+        snippet: "Hello Aura Living, I submitted the Meta Lead ad form for the modern penthouse makeover package...",
+        body_text: "Hello Aura Living,\n\nI submitted the Meta Lead ad form for the modern penthouse makeover package. Looking to know if your team handles turnkey styling in South Mumbai.\n\nThanks,\nPriya Nair",
+        body_html: "<p>Hello Aura Living,</p><p>I submitted the Meta Lead ad form for the modern penthouse makeover package. Looking to know if your team handles turnkey styling in South Mumbai.</p><p>Thanks,<br>Priya Nair</p>",
+        folder: "inbox",
+        is_read: true,
+        has_attachments: false,
+        sent_at: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+        received_at: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString()
+      },
+      {
+        id: "msg_em_03",
+        account_id: "em_ms_01",
+        provider_message_id: "ms_msg_201",
+        thread_id: "thread_201",
+        from_address: "sales@technova-corp.onmicrosoft.com",
+        from_name: "TechNova Enterprise Sales",
+        to_addresses: ["arjun.sharma@enterprise.in"],
+        cc_addresses: ["rahul@metacrm.io"],
+        subject: "Re: Enterprise Cloud Security Inquiry & Demo",
+        snippet: "Hello Arjun, thank you for reaching out. Thursday at 3 PM IST works perfectly for our senior cloud architect...",
+        body_text: "Hello Arjun,\n\nThank you for reaching out. Thursday at 3 PM IST works perfectly for our senior cloud architect. I have sent a calendar invite with the Google Meet link.\n\nWarm regards,\nRahul Verma\nAccount Executive, TechNova",
+        body_html: "<p>Hello Arjun,</p><p>Thank you for reaching out. Thursday at 3 PM IST works perfectly for our senior cloud architect. I have sent a calendar invite with the Google Meet link.</p><p>Warm regards,<br>Rahul Verma<br>Account Executive, TechNova</p>",
+        folder: "sent",
+        is_read: true,
+        has_attachments: false,
+        sent_at: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+        received_at: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString()
+      }
+    ];
+  }
+
+  saveEmailMessages() {
+    try {
+      localStorage.setItem(this.emailMessagesKey, JSON.stringify(this.emailMessages));
+    } catch (e) {}
+  }
+
+  async fetchRemoteIntegrations() {
+    try {
+      const res = await fetch("/api/integrations");
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.integrations) && data.integrations.length > 0) {
+          this.integrations = data.integrations;
+          this.saveIntegrations();
+          return this.integrations;
+        }
+      }
+    } catch (e) {}
+    return this.integrations;
+  }
+
+  async syncIntegration(id) {
+    const item = this.integrations.find(i => i.id === id);
+    if (!item) return { success: false, error: "Integration not found" };
+
+    item.sync_status = "syncing";
+    this.saveIntegrations();
+
+    try {
+      const res = await fetch("/api/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sync", id: item.id, provider: item.provider })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        item.sync_status = "idle";
+        item.last_sync_at = new Date().toISOString();
+        item.sync_error = null;
+        this.saveIntegrations();
+        return { success: true, data };
+      }
+    } catch (e) {}
+
+    // Fallback local update
+    item.sync_status = "idle";
+    item.last_sync_at = new Date().toISOString();
+    this.saveIntegrations();
+    return { success: true, timestamp: item.last_sync_at };
+  }
+
+  async disconnectIntegration(id) {
+    const item = this.integrations.find(i => i.id === id);
+    if (!item) return { success: false, error: "Integration not found" };
+
+    try {
+      await fetch("/api/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "disconnect", id: item.id })
+      });
+    } catch (e) {}
+
+    item.status = "disconnected";
+    item.sync_error = null;
+    this.saveIntegrations();
+    return { success: true };
+  }
+
+  async assignIntegrationStaff(id, assignedStaffIds) {
+    const item = this.integrations.find(i => i.id === id);
+    if (!item) return { success: false, error: "Integration not found" };
+
+    try {
+      await fetch("/api/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "assign_staff", id: item.id, assigned_staff_ids: assignedStaffIds })
+      });
+    } catch (e) {}
+
+    item.assigned_staff_ids = assignedStaffIds;
+    this.saveIntegrations();
+    return { success: true };
+  }
+
+  async fetchLiveCampaigns(adAccountId = "", datePreset = "last_30d") {
+    try {
+      const url = `/api/campaigns?accountId=${encodeURIComponent(adAccountId)}&datePreset=${encodeURIComponent(datePreset)}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.campaigns)) {
+          return data.campaigns;
+        }
+      }
+    } catch (e) {}
+    return this.campaigns;
+  }
+
+  async fetchLiveAdSets(campaignId = "", adAccountId = "") {
+    try {
+      const url = `/api/campaigns?action=adsets&campaignId=${encodeURIComponent(campaignId)}&accountId=${encodeURIComponent(adAccountId)}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.adsets)) {
+          return data.adsets;
+        }
+      }
+    } catch (e) {}
+    return this.adsets;
+  }
+
+  async fetchLiveAds(adSetId = "", campaignId = "", adAccountId = "") {
+    try {
+      const url = `/api/campaigns?action=ads&adSetId=${encodeURIComponent(adSetId)}&campaignId=${encodeURIComponent(campaignId)}&accountId=${encodeURIComponent(adAccountId)}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.ads)) {
+          return data.ads;
+        }
+      }
+    } catch (e) {}
+    return this.ads;
+  }
+
+  async fetchRemoteEmailMessages(options = {}) {
+    const { folder = "inbox", accountId = "all", leadEmail = "", search = "" } = options;
+    try {
+      const params = new URLSearchParams();
+      if (folder) params.append("folder", folder);
+      if (accountId && accountId !== "all") params.append("account_id", accountId);
+      if (leadEmail) params.append("lead_email", leadEmail);
+      if (search) params.append("search", search);
+
+      const res = await fetch(`/api/email/messages?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.messages)) {
+          return data.messages;
+        }
+      }
+    } catch (e) {}
+
+    let list = this.emailMessages.slice();
+    if (folder && folder !== "all") {
+      list = list.filter(m => m.folder === folder);
+    }
+    if (accountId && accountId !== "all") {
+      list = list.filter(m => m.account_id === accountId);
+    }
+    if (leadEmail) {
+      const q = leadEmail.toLowerCase();
+      list = list.filter(m => (m.from_address && m.from_address.toLowerCase().includes(q)) ||
+                              (m.to_addresses && m.to_addresses.some(to => to.toLowerCase().includes(q))));
+    }
+    if (search) {
+      const s = search.toLowerCase();
+      list = list.filter(m => (m.subject && m.subject.toLowerCase().includes(s)) ||
+                              (m.from_name && m.from_name.toLowerCase().includes(s)) ||
+                              (m.snippet && m.snippet.toLowerCase().includes(s)));
+    }
+    return list;
+  }
+
+  async sendEmail(payload) {
+    const { accountId, to, cc = [], bcc = [], subject, body, leadId = null, inReplyTo = null } = payload;
+    const account = this.emailAccounts.find(a => a.id === accountId) || this.emailAccounts[0];
+
+    const newMsg = {
+      id: "msg_out_" + Date.now(),
+      account_id: account ? account.id : "em_google_01",
+      thread_id: inReplyTo ? inReplyTo : ("thread_" + Date.now()),
+      lead_id: leadId,
+      from_address: account ? account.email : "user@metacrm.io",
+      from_name: account ? account.display_name : "MetaCRM Team",
+      to_addresses: Array.isArray(to) ? to : [to],
+      cc_addresses: Array.isArray(cc) ? cc : (cc ? [cc] : []),
+      subject: subject || "(No subject)",
+      snippet: body.substring(0, 100).replace(/\n/g, " "),
+      body_text: body,
+      body_html: `<p>${body.replace(/\n/g, "<br>")}</p>`,
+      folder: "sent",
+      is_read: true,
+      has_attachments: false,
+      sent_at: new Date().toISOString(),
+      received_at: new Date().toISOString()
+    };
+
+    try {
+      const res = await fetch("/api/email/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newMsg)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.message) {
+          this.emailMessages.unshift(data.message);
+          this.saveEmailMessages();
+          return { success: true, message: data.message };
+        }
+      }
+    } catch (e) {}
+
+    // Fallback store locally
+    this.emailMessages.unshift(newMsg);
+    this.saveEmailMessages();
+
+    // If attached to a lead, log activity
+    if (leadId) {
+      const lead = this.leads.find(l => l.id === leadId);
+      if (lead) {
+        if (!lead.activities) lead.activities = [];
+        lead.activities.push({
+          type: "email_sent",
+          description: `Sent email: "${subject}" to ${Array.isArray(to) ? to.join(", ") : to}`,
+          timestamp: new Date().toISOString()
+        });
+        this.saveLeads();
+      }
+    }
+
+    return { success: true, message: newMsg };
+  }
+
+  async markEmailRead(messageId, isRead = true) {
+    const msg = this.emailMessages.find(m => m.id === messageId);
+    if (msg) {
+      msg.is_read = isRead;
+      this.saveEmailMessages();
+    }
+    try {
+      await fetch("/api/email/messages", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: messageId, is_read: isRead })
+      });
+    } catch (e) {}
+    return { success: true };
+  }
+
+  getEmailsForLead(lead) {
+    if (!lead || !lead.email) return [];
+    const norm = lead.email.trim().toLowerCase();
+    return this.emailMessages.filter(m => {
+      const fromMatch = m.from_address && m.from_address.trim().toLowerCase() === norm;
+      const toMatch = m.to_addresses && m.to_addresses.some(t => t.trim().toLowerCase() === norm);
+      const leadIdMatch = m.lead_id && m.lead_id === lead.id;
+      return fromMatch || toMatch || leadIdMatch;
+    }).sort((a, b) => new Date(b.sent_at || b.received_at) - new Date(a.sent_at || a.received_at));
   }
 }
 
