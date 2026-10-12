@@ -197,33 +197,40 @@ ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 
 -- Users / Profiles
+DROP POLICY IF EXISTS "Users can view all organization profiles" ON public.users;
 CREATE POLICY "Users can view all organization profiles"
   ON public.users FOR SELECT
   USING (true);
 
+DROP POLICY IF EXISTS "Users can update own profile" ON public.users;
 CREATE POLICY "Users can update own profile"
   ON public.users FOR UPDATE
   USING (auth.uid() = id);
 
 -- Meta Connections: Strictly isolated to owner (tokens never leak across users)
+DROP POLICY IF EXISTS "Users can access own Meta connections" ON public.meta_connections;
 CREATE POLICY "Users can access own Meta connections"
   ON public.meta_connections FOR ALL
   USING (auth.uid() = user_id OR public.is_admin());
 
 -- Facebook Pages: Owner or assigned page member
+DROP POLICY IF EXISTS "Users can view permitted pages" ON public.facebook_pages;
 CREATE POLICY "Users can view permitted pages"
   ON public.facebook_pages FOR SELECT
   USING (public.can_user_access_page(id));
 
+DROP POLICY IF EXISTS "Owners and Admins can manage pages" ON public.facebook_pages;
 CREATE POLICY "Owners and Admins can manage pages"
   ON public.facebook_pages FOR ALL
   USING (auth.uid() = user_id OR public.is_admin());
 
 -- Page Members
+DROP POLICY IF EXISTS "Users can view their page memberships" ON public.page_members;
 CREATE POLICY "Users can view their page memberships"
   ON public.page_members FOR SELECT
   USING (auth.uid() = user_id OR public.can_user_access_page(page_id));
 
+DROP POLICY IF EXISTS "Page Owners and Admins can manage members" ON public.page_members;
 CREATE POLICY "Page Owners and Admins can manage members"
   ON public.page_members FOR ALL
   USING (
@@ -232,6 +239,7 @@ CREATE POLICY "Page Owners and Admins can manage members"
   );
 
 -- Leads: Accessible only to authorized page members or assigned staff
+DROP POLICY IF EXISTS "Users can view authorized leads" ON public.leads;
 CREATE POLICY "Users can view authorized leads"
   ON public.leads FOR SELECT
   USING (
@@ -240,6 +248,7 @@ CREATE POLICY "Users can view authorized leads"
     public.is_admin()
   );
 
+DROP POLICY IF EXISTS "Users can update authorized leads" ON public.leads;
 CREATE POLICY "Users can update authorized leads"
   ON public.leads FOR UPDATE
   USING (
@@ -248,11 +257,13 @@ CREATE POLICY "Users can update authorized leads"
     public.is_admin()
   );
 
+DROP POLICY IF EXISTS "Service and Webhooks can insert leads" ON public.leads;
 CREATE POLICY "Service and Webhooks can insert leads"
   ON public.leads FOR INSERT
   WITH CHECK (true);
 
 -- Conversations
+DROP POLICY IF EXISTS "Users can view authorized conversations" ON public.conversations;
 CREATE POLICY "Users can view authorized conversations"
   ON public.conversations FOR SELECT
   USING (
@@ -261,6 +272,7 @@ CREATE POLICY "Users can view authorized conversations"
     public.is_admin()
   );
 
+DROP POLICY IF EXISTS "Users can manage authorized conversations" ON public.conversations;
 CREATE POLICY "Users can manage authorized conversations"
   ON public.conversations FOR ALL
   USING (
@@ -270,6 +282,7 @@ CREATE POLICY "Users can manage authorized conversations"
   );
 
 -- Messages
+DROP POLICY IF EXISTS "Users can view authorized messages" ON public.messages;
 CREATE POLICY "Users can view authorized messages"
   ON public.messages FOR SELECT
   USING (
@@ -277,6 +290,7 @@ CREATE POLICY "Users can view authorized messages"
     public.is_admin()
   );
 
+DROP POLICY IF EXISTS "Users can insert authorized messages" ON public.messages;
 CREATE POLICY "Users can insert authorized messages"
   ON public.messages FOR INSERT
   WITH CHECK (
@@ -287,6 +301,15 @@ CREATE POLICY "Users can insert authorized messages"
 -- ------------------------------------------------------------------------------
 -- 10. REALTIME PUBLICATION CONFIGURATION
 -- ------------------------------------------------------------------------------
-ALTER PUBLICATION supabase_realtime ADD TABLE public.leads;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.conversations;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'leads') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.leads;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'conversations') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.conversations;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'messages') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
+  END IF;
+END $$;

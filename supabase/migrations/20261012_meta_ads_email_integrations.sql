@@ -190,6 +190,7 @@ ALTER TABLE public.email_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.integration_sync_logs ENABLE ROW LEVEL SECURITY;
 
 -- Integrations RLS Policy: Admins see all tenant integrations; staff see only assigned accounts
+DROP POLICY IF EXISTS "Admins have full access to integrations" ON public.integrations;
 CREATE POLICY "Admins have full access to integrations"
   ON public.integrations
   FOR ALL
@@ -197,6 +198,7 @@ CREATE POLICY "Admins have full access to integrations"
     EXISTS (SELECT 1 FROM public.users WHERE users.id = auth.uid() AND users.role = 'admin')
   );
 
+DROP POLICY IF EXISTS "Staff can view assigned integrations" ON public.integrations;
 CREATE POLICY "Staff can view assigned integrations"
   ON public.integrations
   FOR SELECT
@@ -206,6 +208,7 @@ CREATE POLICY "Staff can view assigned integrations"
   );
 
 -- Email Accounts RLS Policy
+DROP POLICY IF EXISTS "Admins have full access to email accounts" ON public.email_accounts;
 CREATE POLICY "Admins have full access to email accounts"
   ON public.email_accounts
   FOR ALL
@@ -213,6 +216,7 @@ CREATE POLICY "Admins have full access to email accounts"
     EXISTS (SELECT 1 FROM public.users WHERE users.id = auth.uid() AND users.role = 'admin')
   );
 
+DROP POLICY IF EXISTS "Staff can view and use assigned email accounts" ON public.email_accounts;
 CREATE POLICY "Staff can view and use assigned email accounts"
   ON public.email_accounts
   FOR SELECT
@@ -222,6 +226,7 @@ CREATE POLICY "Staff can view and use assigned email accounts"
   );
 
 -- Email Messages RLS Policy
+DROP POLICY IF EXISTS "Admins have full access to email messages" ON public.email_messages;
 CREATE POLICY "Admins have full access to email messages"
   ON public.email_messages
   FOR ALL
@@ -229,6 +234,7 @@ CREATE POLICY "Admins have full access to email messages"
     EXISTS (SELECT 1 FROM public.users WHERE users.id = auth.uid() AND users.role = 'admin')
   );
 
+DROP POLICY IF EXISTS "Staff can access messages for assigned accounts" ON public.email_messages;
 CREATE POLICY "Staff can access messages for assigned accounts"
   ON public.email_messages
   FOR ALL

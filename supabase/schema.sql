@@ -1173,26 +1173,32 @@ ALTER TABLE public.email_accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.email_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.integration_sync_logs ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Admins have full access to integrations" ON public.integrations;
 CREATE POLICY "Admins have full access to integrations"
   ON public.integrations FOR ALL
   USING (EXISTS (SELECT 1 FROM public.users WHERE users.id = auth.uid() AND users.role = 'admin'));
 
+DROP POLICY IF EXISTS "Staff can view assigned integrations" ON public.integrations;
 CREATE POLICY "Staff can view assigned integrations"
   ON public.integrations FOR SELECT
   USING (assigned_staff_ids @> jsonb_build_array(auth.uid()::text) OR assigned_staff_ids = '[]'::jsonb);
 
+DROP POLICY IF EXISTS "Admins have full access to email accounts" ON public.email_accounts;
 CREATE POLICY "Admins have full access to email accounts"
   ON public.email_accounts FOR ALL
   USING (EXISTS (SELECT 1 FROM public.users WHERE users.id = auth.uid() AND users.role = 'admin'));
 
+DROP POLICY IF EXISTS "Staff can view and use assigned email accounts" ON public.email_accounts;
 CREATE POLICY "Staff can view and use assigned email accounts"
   ON public.email_accounts FOR SELECT
   USING (assigned_staff_ids @> jsonb_build_array(auth.uid()::text) OR assigned_staff_ids = '[]'::jsonb);
 
+DROP POLICY IF EXISTS "Admins have full access to email messages" ON public.email_messages;
 CREATE POLICY "Admins have full access to email messages"
   ON public.email_messages FOR ALL
   USING (EXISTS (SELECT 1 FROM public.users WHERE users.id = auth.uid() AND users.role = 'admin'));
 
+DROP POLICY IF EXISTS "Staff can access messages for assigned accounts" ON public.email_messages;
 CREATE POLICY "Staff can access messages for assigned accounts"
   ON public.email_messages FOR ALL
   USING (
@@ -1204,6 +1210,16 @@ CREATE POLICY "Staff can access messages for assigned accounts"
   );
 
 -- 9. Realtime Publication Additions
-ALTER PUBLICATION supabase_realtime ADD TABLE public.integrations;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.email_accounts;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.email_messages;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'integrations') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.integrations;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'email_accounts') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.email_accounts;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'email_messages') THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.email_messages;
+  END IF;
+END $$;
+
