@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { createVercelHandler, resolveUser, httpsRequest } = require('./_utils/index.js');
 
-function getRawBodyBuffer(req) {
+function getRawStreamBuffer(req) {
   return new Promise((resolve, reject) => {
     if (Buffer.isBuffer(req.rawBody)) {
       return resolve(req.rawBody);
@@ -11,32 +11,15 @@ function getRawBodyBuffer(req) {
     if (typeof req.rawBody === 'string') {
       return resolve(Buffer.from(req.rawBody, 'utf8'));
     }
-    if (Buffer.isBuffer(req.body)) {
-      return resolve(req.body);
-    }
 
     const chunks = [];
     req.on('data', chunk => {
       chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
     });
     req.on('end', () => {
-      if (chunks.length > 0) {
-        resolve(Buffer.concat(chunks));
-      } else if (req.body) {
-        const str = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
-        resolve(Buffer.from(str, 'utf8'));
-      } else {
-        resolve(Buffer.from(''));
-      }
+      resolve(Buffer.concat(chunks));
     });
     req.on('error', err => reject(err));
-
-    if (req.readableEnded || req.complete) {
-      if (chunks.length === 0) {
-        const str = typeof req.body === 'string' ? req.body : (req.body ? JSON.stringify(req.body) : '');
-        resolve(Buffer.from(str, 'utf8'));
-      }
-    }
   });
 }
 
@@ -56,17 +39,6 @@ async function zernioUnifiedHandler(req, res) {
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
-  }
-
-  let rawBodyBuffer = Buffer.from('');
-  if (req.method === 'POST') {
-    rawBodyBuffer = await getRawBodyBuffer(req);
-    req.rawBody = rawBodyBuffer;
-    if (!req.body || typeof req.body !== 'object' || Object.keys(req.body).length === 0) {
-      try {
-        req.body = JSON.parse(rawBodyBuffer.toString('utf8'));
-      } catch (e) {}
-    }
   }
 
   const url = req.url || '';
@@ -517,7 +489,24 @@ async function zernioUnifiedHandler(req, res) {
         return res.status(500).json({ error: "Server misconfiguration: ZERNIO_WEBHOOK_SECRET is missing" });
       }
 
-      // Compute HMAC-SHA256 over raw request body bytes
+      // Read the raw stream FIRST, before anything touches req.body
+      let rawBodyBuffer;
+      try {
+        rawBodyBuffer = await getRawStreamBuffer(req);
+      } catch (readErr) {
+        console.error('[Zernio Webhook Error]: Failed to read raw request stream:', readErr.message);
+        return res.status(400).json({ error: "Bad Request: Unable to read request stream" });
+      }
+
+      if (!rawBodyBuffer || rawBodyBuffer.length === 0) {
+        console.error('[Zernio Webhook Error]: Empty or unreadable raw request body. Unable to verify HMAC signature.');
+        return res.status(400).json({ error: "Bad Request: Raw body is required for signature verification" });
+      }
+
+      // Temporarily log (no secrets) received headers
+      // TODO: Remove this temporary logging after confirming webhook delivery
+      console.log('[Zernio Webhook Debug] Received headers:', Object.keys(req.headers || {}));
+
       const sigHeader = req.headers['x-zernio-signature'] || req.headers['x-late-signature'];
       if (!sigHeader) {
         console.warn('[Zernio Webhook Unauthorized]: Missing X-Zernio-Signature header.');
@@ -541,12 +530,24 @@ async function zernioUnifiedHandler(req, res) {
         isValid = false;
       }
 
+      // Temporarily log (no secrets) whether signature matched
+      // TODO: Remove this temporary logging after confirming webhook delivery
+      console.log('[Zernio Webhook Debug] Signature verification result:', isValid ? 'MATCH' : 'MISMATCH');
+
       if (!isValid) {
         console.warn('[Zernio Webhook Unauthorized]: Webhook signature mismatch.');
         return res.status(401).json({ error: "Unauthorized: Invalid Zernio webhook signature" });
       }
 
-      const body = req.body || {};
+      // After verification, parse payload with JSON.parse(rawBody.toString('utf8')) and use that instead of req.body
+      let body = {};
+      try {
+        body = JSON.parse(rawBodyBuffer.toString('utf8'));
+      } catch (parseErr) {
+        console.error('[Zernio Webhook Error]: Failed to parse JSON from verified raw body:', parseErr.message);
+        return res.status(400).json({ error: "Bad Request: Invalid JSON in webhook body" });
+      }
+
       const supabase = getSupabaseAdmin();
       const payload = body.data || body.payload || body;
 
@@ -967,15 +968,5 @@ async function zernioUnifiedHandler(req, res) {
 
 const handler = createVercelHandler(zernioUnifiedHandler);
 handler.zernioUnifiedHandler = zernioUnifiedHandler;
-handler.config = {
-  api: {
-    bodyParser: false,
-  },
-};
 module.exports = handler;
-module.exports.config = {
-  api: {
-    bodyParser: false,
-  },
-};
 
