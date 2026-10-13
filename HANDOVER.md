@@ -58,13 +58,13 @@ Execute the following migration scripts in order via the **Supabase SQL Editor**
 6. `supabase/migrations/20261013_inbox_order_and_archive.sql` — Recency ordering, archive status scoping.
 7. `supabase/migrations/20261013_message_attachments_storage.sql` — Message attachments table schema and bucket definition.
 8. `supabase/migrations/20261013_multi_currency_support.sql` — Multi-currency support and default base currency alignment for ad accounts.
-9. `supabase/migrations/20261014_storage_signed_uploads_limit.sql` — Bucket 25MB file limit, MIME allowlist, and signed upload RLS policies.
-10. `supabase/migrations/20261014_lead_meta_id_unique.sql` — Database-level lead deduplication, foreign key reparenting, and UNIQUE constraint on `meta_lead_id`.
-11. `supabase/migrations/20261014_realtime_publications.sql` — Realtime publication registration for `leads`, `messages`, and `conversations`.
-12. `supabase/migrations/20261014_inbox_conversation_recency_trigger.sql` — Automated conversation recency trigger on `messages` insert and index on `last_message_at DESC`.
-13. `supabase/migrations/20261014_fix_conversation_recency_trigger.sql` — Trigger refinement with `GREATEST()` timestamp recency, inbound-only unread increment, duplicate cleanup, and `meta_mid` UNIQUE constraint.
-14. `supabase/migrations/20261014_backfill_clean_storage_paths.sql` — Backfill converting stored signed or public URLs in `messages` to relative storage paths.
-15. `supabase/migrations/20261014_storage_staff_read_policy.sql` — Storage RLS policy ensuring authenticated staff only can read and manage `message-attachments`.
+9. `supabase/migrations/202610140001_storage_signed_uploads_limit.sql` — Bucket 25MB file limit, MIME allowlist, and signed upload RLS policies.
+10. `supabase/migrations/202610140002_lead_meta_id_unique.sql` — Database-level lead deduplication, foreign key reparenting, and UNIQUE constraint on `meta_lead_id`.
+11. `supabase/migrations/202610140003_realtime_publications.sql` — Realtime publication registration for `leads`, `messages`, and `conversations`.
+12. `supabase/migrations/202610140004_inbox_conversation_recency_trigger.sql` — Automated conversation recency trigger on `messages` insert and index on `last_message_at DESC`.
+13. `supabase/migrations/202610140005_fix_conversation_recency_trigger.sql` — Trigger refinement with `GREATEST()` timestamp recency, inbound-only unread increment, duplicate cleanup, and `meta_mid` UNIQUE constraint.
+14. `supabase/migrations/202610140006_backfill_clean_storage_paths.sql` — Backfill converting stored signed or public URLs in `messages` to relative storage paths.
+15. `supabase/migrations/202610140007_storage_staff_read_policy.sql` — Storage RLS policy ensuring authenticated staff only can read and manage `message-attachments`.
 
 ---
 
