@@ -113,16 +113,37 @@ class CRMService {
     return this.isDevMode;
   }
 
-  formatCurrency(amount, currency = 'INR') {
+  getCurrency() {
+    return localStorage.getItem('metacrm_currency') || 'NZD';
+  }
+
+  getCurrencySymbol() {
+    const cur = this.getCurrency();
+    if (cur === 'INR') return '₹';
+    if (cur === 'EUR') return '€';
+    if (cur === 'GBP') return '£';
+    return '$';
+  }
+
+  setCurrency(curr) {
+    localStorage.setItem('metacrm_currency', curr);
+    this.notifyChange('currency_changed');
+    return curr;
+  }
+
+  formatCurrency(amount, currency = null) {
+    const curr = currency || this.getCurrency();
     const val = Number(amount) || 0;
+    const symbol = this.getCurrencySymbol();
     try {
-      return new Intl.NumberFormat('en-IN', {
+      const locale = curr === 'INR' ? 'en-IN' : (curr === 'NZD' ? 'en-NZ' : 'en-US');
+      return new Intl.NumberFormat(locale, {
         style: 'currency',
-        currency: currency,
-        maximumFractionDigits: 2
+        currency: curr,
+        maximumFractionDigits: 0
       }).format(val);
     } catch (e) {
-      return `₹${val.toLocaleString('en-IN')}`;
+      return `${symbol}${val.toLocaleString()}`;
     }
   }
 
@@ -1550,14 +1571,14 @@ class CRMService {
       },
       adSpend: {
         value: totalAdSpend,
-        formatted: `₹${totalAdSpend.toLocaleString('en-IN')}`,
+        formatted: this.formatCurrency(totalAdSpend),
         diff: "+6.5%",
         direction: "up",
         label: "across connected pages"
       },
       costPerLead: {
         value: Math.round(costPerLead * 100) / 100,
-        formatted: `₹${Math.round(costPerLead)}`,
+        formatted: this.formatCurrency(Math.round(costPerLead)),
         diff: "-8.4%",
         direction: "down",
         label: "cost efficiency metric"
@@ -1877,7 +1898,7 @@ class CRMService {
 
     this.deals.unshift(newDeal);
     this.saveAll();
-    this.logAudit("DEAL_CREATED", `${newDeal.title} (${newDeal.id})`, "SUCCESS", `Value: ₹${newDeal.value}`);
+    this.logAudit("DEAL_CREATED", `${newDeal.title} (${newDeal.id})`, "SUCCESS", `Value: ${this.formatCurrency(newDeal.value)}`);
     this.notifyChange("deal_added", { deal: newDeal });
     return newDeal;
   }
@@ -2454,7 +2475,7 @@ class CRMService {
         converted,
         pendingFollowups: overdueFollowUps.length + todayFollowUps.length,
         pendingTasks,
-        totalPipelineValue: `₹${totalPipelineValue.toLocaleString('en-IN')}`,
+        totalPipelineValue: this.formatCurrency(totalPipelineValue),
         conversionRate: myLeads.length > 0 ? ((converted / myLeads.length) * 100).toFixed(1) + "%" : "0.0%",
         avgResponseTime: "18 mins"
       },
@@ -2615,9 +2636,9 @@ class CRMService {
       return {
         page,
         leads: leadsCount,
-        spend: `₹${spend.toLocaleString('en-IN')}`,
+        spend: this.formatCurrency(spend),
         rawSpend: spend,
-        cpl: `₹${Math.round(cpl)}`,
+        cpl: this.formatCurrency(Math.round(cpl)),
         qualified,
         converted,
         conversionRate: convRate

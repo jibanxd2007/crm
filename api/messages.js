@@ -305,7 +305,11 @@ async function messagesHandler(req, res) {
             hostname: 'zernio.com',
             port: 443,
             path: `/api/v1/inbox/conversations/${requestedConv}/messages?accountId=${encodeURIComponent(accountId)}`,
-            headers: { 'Authorization': `Bearer ${zernioApiKey}`, 'Accept': 'application/json' }
+            headers: { 
+              'Authorization': `Bearer ${zernioApiKey}`, 
+              'Accept': 'application/json',
+              'User-Agent': 'MetaCRM/1.0'
+            }
           }, (mResp) => {
             let mData = '';
             mResp.on('data', d => mData += d);
@@ -341,14 +345,18 @@ async function messagesHandler(req, res) {
             hostname: 'zernio.com',
             port: 443,
             path: '/api/v1/inbox/conversations',
-            headers: { 'Authorization': `Bearer ${zernioApiKey}`, 'Accept': 'application/json' }
+            headers: { 
+              'Authorization': `Bearer ${zernioApiKey}`, 
+              'Accept': 'application/json',
+              'User-Agent': 'MetaCRM/1.0'
+            }
           }, (cResp) => {
             let cData = '';
             cResp.on('data', d => cData += d);
             cResp.on('end', () => {
               try {
                 const parsed = JSON.parse(cData);
-                resolve(parsed.conversations || parsed.data || (Array.isArray(parsed) ? parsed : []));
+                resolve(parsed.data || parsed.conversations || (Array.isArray(parsed) ? parsed : []));
               } catch(e) { resolve([]); }
             });
           }).on('error', () => resolve([]));

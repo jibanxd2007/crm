@@ -11,7 +11,7 @@
 const META_API_VERSION = process.env.META_API_VERSION || 'v20.0';
 const GRAPH_BASE_URL = `https://graph.facebook.com/${META_API_VERSION}`;
 
-export class MetaClient {
+class MetaClient {
   constructor(accessToken = null) {
     this.accessToken = accessToken || process.env.META_SYSTEM_USER_ACCESS_TOKEN || process.env.META_ACCESS_TOKEN;
   }
@@ -175,3 +175,6 @@ export class MetaClient {
     return this.request(`/${actId}/ads?fields=id,name,status,adset_id,campaign_id,creative{title,body,image_url},insights.date_preset(${datePreset}){spend,impressions,reach,clicks,ctr,cpc,cpm,actions}&limit=100`);
   }
 }
+
+module.exports = { MetaClient };
+

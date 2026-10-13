@@ -81,6 +81,14 @@
             </div>
           </div>
         </div>
+        <!-- Currency Selector Indicator -->
+        <div class="topbar-currency-wrap" style="margin-right: 8px;">
+          <select id="topbar-currency-select" class="input input-sm" style="height: 32px; padding: 2px 8px; font-size: 12px; font-weight: 600; border-radius: 6px; background: rgba(0,0,0,0.03); cursor: pointer;" onchange="window.app.setCurrency(this.value)" title="Change CRM Display Currency">
+            <option value="NZD">$ NZD</option>
+            <option value="USD">$ USD</option>
+            <option value="INR">₹ INR</option>
+          </select>
+        </div>
         <div class="topbar-avatar" id="topbar-avatar" onclick="window.app.openUserSwitchModal()" title="Administrator">A</div>
       </div>
       <div class="content-wrapper" id="main-content">

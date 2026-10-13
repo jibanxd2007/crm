@@ -80,6 +80,29 @@ class MetaCRMApp {
     this._init();
   }
 
+  getCurrencySymbol() {
+    return (this.svc && this.svc.getCurrencySymbol) ? this.svc.getCurrencySymbol() : (localStorage.getItem('metacrm_currency') === 'INR' ? '₹' : '$');
+  }
+
+  getCurrency() {
+    return (this.svc && this.svc.getCurrency) ? this.svc.getCurrency() : (localStorage.getItem('metacrm_currency') || 'NZD');
+  }
+
+  setCurrency(curr) {
+    if (this.svc && this.svc.setCurrency) this.svc.setCurrency(curr);
+    else localStorage.setItem('metacrm_currency', curr);
+    this.toast(`Currency set to ${curr} (${this.getCurrencySymbol()})`, 'info');
+    if (this.currentRoute) this.navigate(this.currentRoute);
+  }
+
+  formatCurrency(amount, currency) {
+    if (this.svc && this.svc.formatCurrency) {
+      return this.svc.formatCurrency(amount, currency);
+    }
+    const val = Number(amount) || 0;
+    return `${this.getCurrencySymbol()}${val.toLocaleString()}`;
+  }
+
   toggleMobileSidebar(open) {
     const shouldOpen = open !== undefined ? open : !this.el.sidebar.classList.contains('open');
     if (shouldOpen) {
@@ -135,6 +158,8 @@ class MetaCRMApp {
     this._checkUrlCallbacks();
     this.syncZernioAccounts(false);
     this.fetchRealInstagramConversations();
+    const curSel = document.getElementById('topbar-currency-select');
+    if (curSel) curSel.value = this.getCurrency();
     this.renderSidebar();
     this.renderNotifications();
     this._route();
@@ -1065,8 +1090,8 @@ class MetaCRMApp {
           <td style="text-align:right;font-weight:600;">${pLeads.length}</td>
           <td style="text-align:right;">${pWon.length}</td>
           <td style="text-align:right;">${conv}%</td>
-          <td style="text-align:right;">₹${this._formatNum(spend)}</td>
-          <td style="text-align:right;">₹${pageCpl}</td>
+          <td style="text-align:right;">${this.getCurrencySymbol()}${this._formatNum(spend)}</td>
+          <td style="text-align:right;">${this.getCurrencySymbol()}${pageCpl}</td>
           <td style="text-align:right;color:var(--text-muted);">&gt;</td>
         </tr>`;
     }).join('');
@@ -1328,7 +1353,7 @@ class MetaCRMApp {
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
                 <span>Ad Spend</span><!-- AD SPEND -->
               </div>
-              <div class="submetric-val">₹${this._formatNum(roi.totalSpend || 0)}</div>
+              <div class="submetric-val">${this.getCurrencySymbol()}${this._formatNum(roi.totalSpend || 0)}</div>
               <div class="submetric-sub">${roi.totalSpend > 0 ? `${roi.activeCampaignsCount || (campaigns.length || 1)} Active Campaign${(roi.activeCampaignsCount || campaigns.length || 1) === 1 ? '' : 's'}` : 'No spend yet'}</div>
             </div>
 
@@ -1337,7 +1362,7 @@ class MetaCRMApp {
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                 <span>Cost Per Lead (CPL)</span><!-- COST PER LEAD (CPL) -->
               </div>
-              <div class="submetric-val">₹${(roi.cpl || 0).toLocaleString('en-IN')}</div>
+              <div class="submetric-val">${this.getCurrencySymbol()}${(roi.cpl || 0).toLocaleString('en-IN')}</div>
               <div class="submetric-sub">Live CPL</div>
             </div>
 
@@ -1346,7 +1371,7 @@ class MetaCRMApp {
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
                 <span>Cost Per Acquisition (CPA)</span><!-- COST PER ACQUISITION (CPA) -->
               </div>
-              <div class="submetric-val">₹${(roi.cpa || 0).toLocaleString('en-IN')}</div>
+              <div class="submetric-val">${this.getCurrencySymbol()}${(roi.cpa || 0).toLocaleString('en-IN')}</div>
               <div class="submetric-sub">Spend / Won Deal</div>
             </div>
 
@@ -2053,7 +2078,7 @@ class MetaCRMApp {
           <div class="attr-row">
             <span class="attr-label">Deal Value</span>
             <div style="display:flex;align-items:center;gap:6px;">
-              <span class="text-xs text-gray">₹</span>
+              <span class="text-xs text-gray">${this.getCurrencySymbol()}</span>
               <input type="number" class="input input-sm" style="width:110px;font-weight:600;" value="${lead.lead_value || lead.value || 0}" onchange="window.app.updateLeadValue('${lead.id}', this.value)" placeholder="0">
             </div>
           </div>
@@ -2301,11 +2326,11 @@ class MetaCRMApp {
         if (!lead.activities) lead.activities = [];
         lead.activities.push({
           type: 'VALUE_UPDATED',
-          description: `Deal value set to ₹${this._formatNum(numVal)}`,
+          description: `Deal value set to ${this.getCurrencySymbol()}${this._formatNum(numVal)}`,
           timestamp: new Date().toISOString()
         });
         if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
-        this.toast(`Deal value updated to ₹${this._formatNum(numVal)}`);
+        this.toast(`Deal value updated to ${this.getCurrencySymbol()}${this._formatNum(numVal)}`);
       }
     }
   }
@@ -2438,7 +2463,7 @@ class MetaCRMApp {
               </div>
               <div class="kanban-col-meta">
                 <span class="badge badge-gray">${cards.length}</span>
-                ${total ? `<span class="text-xs text-gray font-semibold">₹${this._formatNum(total)}</span>` : ''}
+                ${total ? `<span class="text-xs text-gray font-semibold">${this.getCurrencySymbol()}${this._formatNum(total)}</span>` : ''}
               </div>
             </div>
             <div class="kanban-col-body">
@@ -2457,7 +2482,7 @@ class MetaCRMApp {
                   ${c.loss_reason && stage === 'Lost' ? `<div class="text-xs" style="color:#DC2626;margin-top:2px;">Lost: ${escapeHtml(c.loss_reason)}</div>` : ''}
                   <div class="kanban-card-footer">
                     <div class="staff-chip" title="${this._staffName(c.assigned_staff_id || c.assignedStaffId)}">${(this._staffName(c.assigned_staff_id || c.assignedStaffId)||'?').charAt(0)}</div>
-                    ${(c.value || c.dealValue || c.lead_value) ? `<span class="text-xs font-semibold">₹${this._formatNum(c.value || c.dealValue || c.lead_value)}</span>` : ''}
+                    ${(c.value || c.dealValue || c.lead_value) ? `<span class="text-xs font-semibold">${this.getCurrencySymbol()}${this._formatNum(c.value || c.dealValue || c.lead_value)}</span>` : ''}
                     <span class="text-xs text-gray ml-auto">${c.follow_up_date || c.followUpDate ? new Date(c.follow_up_date || c.followUpDate).toLocaleDateString('en-IN', {day:'numeric',month:'short'}) : 'No date'}</span>
                   </div>
                 </div>`;
@@ -2556,14 +2581,14 @@ class MetaCRMApp {
       this.el.content.classList.add('inbox-view-container');
     }
 
-    // Auto-fetch real Instagram conversations if not loaded yet
+    // Conversations collection
+    const convs = (this.svc ? (this.svc.conversations || []) : []);
+
     // Auto-fetch real Instagram/Facebook conversations if not loaded yet or empty
     if ((!this._fetchedRealIgConvs || convs.length === 0) && this.svc) {
       this._fetchedRealIgConvs = true;
       setTimeout(() => this.fetchRealInstagramConversations(), 50);
     }
-
-    const convs = (this.svc ? (this.svc.conversations || []) : []);
     const userPages = this._getAccessiblePages().map(p => p.id);
     const accessibleConvs = (this.user.role === 'admin' || this.user.role === 'super_admin')
       ? convs
@@ -3189,7 +3214,7 @@ class MetaCRMApp {
       const res = await fetch('/api/zernio?path=inbox-conversations');
       if (!res.ok) return;
       const data = await res.json();
-      const rawList = Array.isArray(data) ? data : (data.conversations || data.data || []);
+      const rawList = Array.isArray(data) ? data : (data.data || data.conversations || []);
       if (Array.isArray(rawList) && rawList.length > 0) {
         if (!this.svc) return;
         if (!this.svc.conversations) this.svc.conversations = [];
@@ -3218,11 +3243,11 @@ class MetaCRMApp {
             this.svc.conversations.push({
               id: cid,
               conversationId: cid,
-              accountId: c.accountId || '6aca1c00e12ba0b652e62f45',
+              accountId: c.accountId || '6acd4daed19284a3227d7870',
               name: cleanName,
               participantUsername: c.participantUsername,
               channel: channel,
-              page_id: c.accountId || '6aca1c00e12ba0b652e62f45',
+              page_id: c.accountId || '6acd4daed19284a3227d7870',
               time: c.updatedTime ? new Date(c.updatedTime).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'Recently',
               last_message_at: c.updatedTime || new Date().toISOString(),
               preview: c.lastMessage || 'Direct message',
@@ -4481,23 +4506,23 @@ class MetaCRMApp {
           <div class="roi-grid" style="padding: 16px;">
             <div class="roi-card">
               <div class="roi-card-label">TOTAL AD SPEND</div>
-              <div class="roi-card-value">₹${this._formatNum(roi.totalSpend)}</div>
+              <div class="roi-card-value">${this.getCurrencySymbol()}${this._formatNum(roi.totalSpend)}</div>
               <div class="roi-card-sub">Meta Graph Verified</div>
             </div>
             <div class="roi-card">
               <div class="roi-card-label">COST PER LEAD (CPL)</div>
-              <div class="roi-card-value" style="color:var(--accent);">₹${roi.cpl}</div>
+              <div class="roi-card-value" style="color:var(--accent);">${this.getCurrencySymbol()}${roi.cpl}</div>
               <div class="roi-card-sub">Spend / ${roi.totalLeads} Total Leads</div>
             </div>
             <div class="roi-card">
               <div class="roi-card-label">COST PER CUSTOMER (CPA)</div>
-              <div class="roi-card-value" style="color:var(--success);">₹${roi.cpa}</div>
+              <div class="roi-card-value" style="color:var(--success);">${this.getCurrencySymbol()}${roi.cpa}</div>
               <div class="roi-card-sub">Spend / ${roi.totalWonDeals} Closed Deals</div>
             </div>
             <div class="roi-card">
               <div class="roi-card-label">RETURN ON AD SPEND (ROAS)</div>
               <div class="roi-card-value" style="color:#7C3AED;">${roi.roas}x</div>
-              <div class="roi-card-sub">Revenue: ₹${this._formatNum(roi.totalWonValue)}</div>
+              <div class="roi-card-sub">Revenue: ${this.getCurrencySymbol()}${this._formatNum(roi.totalWonValue)}</div>
             </div>
           </div>
 
@@ -4523,12 +4548,12 @@ class MetaCRMApp {
                   ${roi.roiByPage.length > 0 ? roi.roiByPage.map(row => `
                     <tr>
                       <td><strong>${row.pageName}</strong></td>
-                      <td>₹${this._formatNum(row.spend)}</td>
+                      <td>${this.getCurrencySymbol()}${this._formatNum(row.spend)}</td>
                       <td class="font-semibold">${row.leads}</td>
-                      <td>₹${row.cpl}</td>
+                      <td>${this.getCurrencySymbol()}${row.cpl}</td>
                       <td><span class="badge badge-green">${row.wonDeals}</span></td>
-                      <td>₹${this._formatNum(row.wonValue)}</td>
-                      <td class="font-semibold">₹${row.cpa}</td>
+                      <td>${this.getCurrencySymbol()}${this._formatNum(row.wonValue)}</td>
+                      <td class="font-semibold">${this.getCurrencySymbol()}${row.cpa}</td>
                       <td><strong>${row.roas}x</strong></td>
                       <td>
                         ${row.performerFlag === 'top_roas' ? '<span class="badge-top-roas">★ Top ROI</span>' :
@@ -4562,11 +4587,11 @@ class MetaCRMApp {
                     <tr>
                       <td><strong>${camp.campaignName}</strong></td>
                       <td class="text-xs text-gray">${camp.pageName}</td>
-                      <td>₹${this._formatNum(camp.spend)}</td>
+                      <td>${this.getCurrencySymbol()}${this._formatNum(camp.spend)}</td>
                       <td class="font-semibold">${camp.leads}</td>
-                      <td>₹${camp.cpl}</td>
+                      <td>${this.getCurrencySymbol()}${camp.cpl}</td>
                       <td><span class="badge badge-green">${camp.wonDeals}</span></td>
-                      <td class="font-semibold">₹${camp.cpa}</td>
+                      <td class="font-semibold">${this.getCurrencySymbol()}${camp.cpa}</td>
                       <td><strong>${camp.roas}x</strong></td>
                       <td>
                         ${camp.performerFlag === 'top_roas' ? '<span class="badge-top-roas">★ Top ROI</span>' :
@@ -4773,7 +4798,7 @@ class MetaCRMApp {
                 <div class="text-xs text-gray mt-1">Sends real-time lead alerts directly to your team Slack channel.</div>
               </div>
               <div class="mb-4">
-                <label class="settings-label">Hot-Lead Threshold (₹ Value)</label>
+                <label class="settings-label">Hot-Lead Threshold (${this.getCurrencySymbol()} Value)</label>
                 <input type="number" class="input" id="pref-hot-threshold" value="${this.user?.notification_preferences?.hot_lead_threshold || 50000}">
                 <div class="text-xs text-gray mt-1">Leads with value greater than this amount will trigger instant Hot-Lead admin alerts.</div>
               </div>
@@ -5304,6 +5329,9 @@ class MetaCRMApp {
               <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
               Sync Live Ads
             </button>
+            <button class="btn btn-primary btn-sm" onclick="window.app.openCreateCampaignModal()">
+              + Create Campaign
+            </button>
           </div>
         </div>
 
@@ -5311,7 +5339,7 @@ class MetaCRMApp {
         <div class="stats-grid" style="grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:12px;margin-bottom:24px;">
           <div class="stat-card">
             <div class="stat-label">Total Ad Spend</div>
-            <div class="stat-value">₹${this._formatNum(totalSpend)}</div>
+            <div class="stat-value">${this.getCurrencySymbol()}${this._formatNum(totalSpend)}</div>
             <div class="stat-comparison ${totalSpend > 0 ? 'text-green' : 'text-gray'}" style="font-size:11px;margin-top:4px;">
               ${totalSpend > 0 ? '<span>Verified Meta ad spend</span>' : '<span>No active ad spend tracked</span>'}
             </div>
@@ -5325,23 +5353,23 @@ class MetaCRMApp {
           </div>
           <div class="stat-card">
             <div class="stat-label">Cost Per Lead (CPL)</div>
-            <div class="stat-value">₹${avgCpl}</div>
+            <div class="stat-value">${this.getCurrencySymbol()}${avgCpl}</div>
             <div class="stat-comparison ${avgCpl > 0 ? 'text-green' : 'text-gray'}" style="font-size:11px;margin-top:4px;">
-              ${avgCpl > 0 ? `<span>Average CPL: ₹${avgCpl}</span>` : '<span>₹0 / lead (No spend)</span>'}
+              ${avgCpl > 0 ? `<span>Average CPL: ${this.getCurrencySymbol()}${avgCpl}</span>` : '<span>${this.getCurrencySymbol()}0 / lead (No spend)</span>'}
             </div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Impressions &amp; CPM</div>
             <div class="stat-value">${this._formatNum(totalImpressions)}</div>
             <div class="stat-comparison text-gray" style="font-size:11px;margin-top:4px;">
-              CPM: <strong>₹${avgCpm}</strong>
+              CPM: <strong>${this.getCurrencySymbol()}${avgCpm}</strong>
             </div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Clicks &amp; CTR</div>
             <div class="stat-value">${this._formatNum(totalClicks)}</div>
             <div class="stat-comparison text-gray" style="font-size:11px;margin-top:4px;">
-              CTR: <strong>${avgCtr}%</strong> • CPC: <strong>₹${avgCpc}</strong>
+              CTR: <strong>${avgCtr}%</strong> • CPC: <strong>${this.getCurrencySymbol()}${avgCpc}</strong>
             </div>
           </div>
         </div>
@@ -5404,7 +5432,8 @@ class MetaCRMApp {
               <span class="badge badge-success" style="padding:4px 10px;font-size:11px;">● @bynotjiban (Connected)</span>
             </div>
             <div style="display:flex;justify-content:center;gap:10px;">
-              <button class="btn btn-primary btn-sm" onclick="window.app.syncLiveAds()">↻ Sync Live Ads</button>
+              <button class="btn btn-primary btn-sm" onclick="window.app.openCreateCampaignModal()">+ Create Campaign</button>
+              <button class="btn btn-secondary btn-sm" onclick="window.app.syncLiveAds()">↻ Sync Live Ads</button>
               <button class="btn btn-secondary btn-sm" onclick="window.open('https://adsmanager.facebook.com', '_blank')">↗ Open Meta Ads Manager</button>
             </div>
           </div>
@@ -5440,21 +5469,21 @@ class MetaCRMApp {
                 return `
                   <tr>
                     <td>
-                      <span class="badge ${isActive ? 'badge-success' : 'badge-subtle'}" style="font-size:10px;">
+                      <button class="badge ${isActive ? 'badge-success' : 'badge-subtle'}" style="font-size:10px;cursor:pointer;border:none;" onclick="window.app.toggleCampaignStatus('${c.id}')" title="Click to ${isActive ? 'pause' : 'activate'} campaign">
                         ${c.status}
-                      </span>
+                      </button>
                     </td>
                     <td>
                       <div style="font-weight:600;color:var(--text);">${escapeHtml(c.name)}</div>
                       <div class="text-xs text-gray font-mono">${c.id}</div>
                     </td>
                     <td class="text-xs" style="text-transform:uppercase;">${(c.objective || 'OUTCOME_LEADS').replace('OUTCOME_', '')}</td>
-                    <td class="text-xs font-medium">₹${c.daily_budget ? this._formatNum(c.daily_budget) + '/day' : 'Lifetime'}</td>
-                    <td class="text-xs font-semibold" style="text-align:right;">₹${this._formatNum(spend)}</td>
+                    <td class="text-xs font-medium">${this.getCurrencySymbol()}${c.daily_budget ? this._formatNum(c.daily_budget) + '/day' : 'Lifetime'}</td>
+                    <td class="text-xs font-semibold" style="text-align:right;">${this.getCurrencySymbol()}${this._formatNum(spend)}</td>
                     <td class="text-xs" style="text-align:right;">${this._formatNum(clicks)}</td>
                     <td class="text-xs" style="text-align:right;">${ctr}%</td>
                     <td class="text-xs font-semibold" style="text-align:right;color:var(--primary);">${leads}</td>
-                    <td class="text-xs font-semibold" style="text-align:right;">${cpl !== '—' ? '₹' + this._formatNum(cpl) : '—'}</td>
+                    <td class="text-xs font-semibold" style="text-align:right;">${cpl !== '—' ? this.getCurrencySymbol() +  this._formatNum(cpl) : '—'}</td>
                   </tr>
                 `;
               }).join('')}
@@ -5507,11 +5536,11 @@ class MetaCRMApp {
                   </td>
                   <td class="text-xs">${escapeHtml(a.campaign_name || a.campaign_id || 'Campaign')}</td>
                   <td class="text-xs">${escapeHtml(a.optimization_goal || 'LEAD_GENERATION')}</td>
-                  <td class="text-xs">${a.daily_budget ? '₹' + this._formatNum(a.daily_budget) + '/day' : '—'}</td>
-                  <td class="text-xs font-semibold" style="text-align:right;">₹${this._formatNum(a.spend || 0)}</td>
+                  <td class="text-xs">${a.daily_budget ? this.getCurrencySymbol() +  this._formatNum(a.daily_budget) + '/day' : '—'}</td>
+                  <td class="text-xs font-semibold" style="text-align:right;">${this.getCurrencySymbol()}${this._formatNum(a.spend || 0)}</td>
                   <td class="text-xs" style="text-align:right;">${a.clicks || 0}</td>
                   <td class="text-xs font-semibold" style="text-align:right;color:var(--primary);">${a.leads || 0}</td>
-                  <td class="text-xs font-semibold" style="text-align:right;">₹${this._formatNum(a.cost_per_lead || 0)}</td>
+                  <td class="text-xs font-semibold" style="text-align:right;">${this.getCurrencySymbol()}${this._formatNum(a.cost_per_lead || 0)}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -5563,11 +5592,11 @@ class MetaCRMApp {
                   </td>
                   <td class="text-xs">${escapeHtml(ad.adset_name || ad.adset_id || 'Decision Makers')}</td>
                   <td class="text-xs">${escapeHtml(ad.format || 'Single Image Lead Form')}</td>
-                  <td class="text-xs font-semibold" style="text-align:right;">₹${this._formatNum(ad.spend || 0)}</td>
+                  <td class="text-xs font-semibold" style="text-align:right;">${this.getCurrencySymbol()}${this._formatNum(ad.spend || 0)}</td>
                   <td class="text-xs" style="text-align:right;">${ad.clicks || 0}</td>
                   <td class="text-xs" style="text-align:right;">${ad.ctr || 0}%</td>
                   <td class="text-xs font-semibold" style="text-align:right;color:var(--primary);">${ad.leads || 0}</td>
-                  <td class="text-xs font-semibold" style="text-align:right;">₹${this._formatNum(ad.cost_per_lead || 0)}</td>
+                  <td class="text-xs font-semibold" style="text-align:right;">${this.getCurrencySymbol()}${this._formatNum(ad.cost_per_lead || 0)}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -5613,6 +5642,120 @@ class MetaCRMApp {
       this.toast('✓ Meta Ads synced successfully!', 'success');
       this.renderMetaAds();
     }
+  }
+
+  openCreateCampaignModal() {
+    const curSymbol = this.getCurrencySymbol();
+    this.openModal({
+      title: 'Create Meta Ad Campaign',
+      body: `
+        <div style="display:flex;flex-direction:column;gap:14px;">
+          <div>
+            <label class="form-label" style="font-weight:600;font-size:12px;margin-bottom:4px;display:block;">Campaign Name *</label>
+            <input type="text" id="m-camp-name" class="input w-full" placeholder="e.g. Nova Auto NZ - 4x4 UTE Spring Promotion" required>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div>
+              <label class="form-label" style="font-weight:600;font-size:12px;margin-bottom:4px;display:block;">Ad Account / Page</label>
+              <select id="m-camp-account" class="input w-full">
+                <option value="1342542735606057">Nova auto nz  (Facebook)</option>
+                <option value="1330954980099743">Nova cars Samoa nz (Facebook)</option>
+                <option value="1217451958128630">Nova Cars Tongan NZ (Facebook)</option>
+                <option value="29279331294986321">@bynotjiban (Instagram)</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label" style="font-weight:600;font-size:12px;margin-bottom:4px;display:block;">Campaign Objective</label>
+              <select id="m-camp-objective" class="input w-full">
+                <option value="OUTCOME_LEADS">Lead Generation (Instant Forms)</option>
+                <option value="OUTCOME_TRAFFIC">Traffic &amp; Website Visits</option>
+                <option value="OUTCOME_ENGAGEMENT">Messages &amp; Engagement</option>
+                <option value="OUTCOME_SALES">Conversions &amp; Sales</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div>
+              <label class="form-label" style="font-weight:600;font-size:12px;margin-bottom:4px;display:block;">Daily Budget (${curSymbol})</label>
+              <input type="number" id="m-camp-budget" class="input w-full" value="50" min="5" step="5">
+            </div>
+            <div>
+              <label class="form-label" style="font-weight:600;font-size:12px;margin-bottom:4px;display:block;">Initial Status</label>
+              <select id="m-camp-status" class="input w-full">
+                <option value="ACTIVE">ACTIVE (Running)</option>
+                <option value="PAUSED">PAUSED (Draft)</option>
+              </select>
+            </div>
+          </div>
+          <div class="text-xs text-gray" style="padding:10px;background:#F8FAFC;border-radius:6px;border:1px solid var(--border);">
+            ⓘ Campaign will be synchronized with connected Meta ad accounts and tracked under Meta Ads Manager with real attribution.
+          </div>
+        </div>
+      `,
+      confirmText: 'Launch Campaign',
+      onConfirm: () => this.submitCreateCampaign()
+    });
+  }
+
+  async submitCreateCampaign() {
+    const nameInp = document.getElementById('m-camp-name');
+    const name = nameInp ? nameInp.value.trim() : '';
+    if (!name) {
+      this.toast('Please enter a campaign name', 'error');
+      return false;
+    }
+    const accountId = document.getElementById('m-camp-account')?.value || '1342542735606057';
+    const objective = document.getElementById('m-camp-objective')?.value || 'OUTCOME_LEADS';
+    const budget = parseFloat(document.getElementById('m-camp-budget')?.value || '50');
+    const status = document.getElementById('m-camp-status')?.value || 'ACTIVE';
+
+    const newCamp = {
+      id: `cmp_${Date.now()}`,
+      name,
+      account_id: accountId,
+      objective,
+      status,
+      daily_budget: budget,
+      spend: 0,
+      leads: 0,
+      metrics: { spend: 0, impressions: 0, reach: 0, clicks: 0, ctr: 0, cpc: 0, cpm: 0, leads: 0, cost_per_lead: 0 }
+    };
+
+    if (this.svc) {
+      if (!this.svc.campaigns) this.svc.campaigns = [];
+      this.svc.campaigns.unshift(newCamp);
+      if (this.svc.saveCampaigns) this.svc.saveCampaigns();
+    }
+
+    fetch('/api/campaigns', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newCamp)
+    }).catch(e => console.warn('[Create Campaign Sync Warning]:', e));
+
+    this.closeModal();
+    this.toast(`✓ Campaign "${name}" created successfully!`, 'success');
+    this.renderMetaAds();
+    return true;
+  }
+
+  async toggleCampaignStatus(campId) {
+    if (!this.svc || !this.svc.campaigns) return;
+    const camp = this.svc.campaigns.find(c => c.id === campId);
+    if (!camp) return;
+
+    const newStatus = camp.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
+    camp.status = newStatus;
+    if (this.svc.saveCampaigns) this.svc.saveCampaigns();
+
+    this.toast(`Campaign ${newStatus === 'ACTIVE' ? 'activated' : 'paused'}`, 'info');
+    this.renderMetaAds();
+
+    fetch('/api/campaigns', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ campaign_id: campId, status: newStatus })
+    }).catch(e => console.warn('[Status Toggle Warning]:', e));
   }
 
   // ──────────────────────────────────────────────────────────
@@ -6419,17 +6562,17 @@ class MetaCRMApp {
           </div>
           <div class="stat-card">
             <div class="stat-label">Total Ad Spend</div>
-            <div class="stat-value">₹${Number(totalSpend).toLocaleString('en-IN')}</div>
+            <div class="stat-value">${this.getCurrencySymbol()}${Number(totalSpend).toLocaleString('en-IN')}</div>
             <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Connected Meta campaigns</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Cost Per Lead (CPL)</div>
-            <div class="stat-value">₹${Number(avgCpl).toLocaleString('en-IN')}</div>
+            <div class="stat-value">${this.getCurrencySymbol()}${Number(avgCpl).toLocaleString('en-IN')}</div>
             <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Blended acquisition cost</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Est. Revenue &amp; ROAS</div>
-            <div class="stat-value">₹${Number(pipelineWonValue).toLocaleString('en-IN')}</div>
+            <div class="stat-value">${this.getCurrencySymbol()}${Number(pipelineWonValue).toLocaleString('en-IN')}</div>
             <div style="font-size:11px;color:#10B981;margin-top:4px;">${roas}x return on ad spend</div>
           </div>
         </div>
@@ -6523,9 +6666,9 @@ class MetaCRMApp {
                     <tr>
                       <td style="font-weight:600;">${escapeHtml(c.name || 'Campaign')}</td>
                       <td><span class="badge ${c.status === 'ACTIVE' ? 'badge-green' : 'badge-gray'}">${escapeHtml(c.status || 'PAUSED')}</span></td>
-                      <td style="text-align:right;">₹${Number(cSpend).toLocaleString('en-IN')}</td>
+                      <td style="text-align:right;">${this.getCurrencySymbol()}${Number(cSpend).toLocaleString('en-IN')}</td>
                       <td style="text-align:right;font-weight:600;">${cLeads}</td>
-                      <td style="text-align:right;">₹${Number(cCpl).toLocaleString('en-IN')}</td>
+                      <td style="text-align:right;">${this.getCurrencySymbol()}${Number(cCpl).toLocaleString('en-IN')}</td>
                     </tr>
                   `;
                 }).join('')}
