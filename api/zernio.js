@@ -554,4 +554,7 @@ async function zernioUnifiedHandler(req, res) {
   });
 }
 
-module.exports = createVercelHandler(zernioUnifiedHandler);
+const handler = createVercelHandler(zernioUnifiedHandler);
+handler.zernioUnifiedHandler = zernioUnifiedHandler;
+module.exports = handler;
+
