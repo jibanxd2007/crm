@@ -1,4 +1,4 @@
-const { verifyMetaSignature, createVercelHandler } = require('../_utils.js');
+const { verifyMetaSignature, createVercelHandler } = require('../_utils/index.js');
 let createClient = null;
 try {
   createClient = require('@supabase/supabase-js').createClient;
@@ -110,7 +110,7 @@ async function metaWebhookHandler(req, res) {
           const pageToken = (global.META_PAGE_TOKENS && global.META_PAGE_TOKENS[entryPageId]?.accessToken) || process.env.META_ACCESS_TOKEN || process.env.META_SYSTEM_USER_ACCESS_TOKEN;
           if (pageToken && leadgenId) {
             try {
-              const { httpsRequest } = require('../_utils.js');
+              const { httpsRequest } = require('../_utils/index.js');
               const graphLead = await httpsRequest(`https://graph.facebook.com/v24.0/${leadgenId}?fields=id,created_time,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id,field_data&access_token=${pageToken}`);
               if (graphLead && Array.isArray(graphLead.field_data)) {
                 if (graphLead.campaign_name) campaignName = graphLead.campaign_name;
@@ -137,15 +137,10 @@ async function metaWebhookHandler(req, res) {
           const supabase = getSupabaseAdmin();
           if (supabase) {
             try {
-              // Deduplication check
-              const { data: existing } = await supabase
+              // Idempotent upsert deduplicating on meta_lead_id
+              const { error: insErr } = await supabase
                 .from('leads')
-                .select('id')
-                .eq('meta_lead_id', String(leadgenId))
-                .maybeSingle();
-
-              if (!existing) {
-                await supabase.from('leads').insert({
+                .upsert({
                   full_name: leadName,
                   email: leadEmail || null,
                   phone: leadPhone || null,
@@ -161,7 +156,10 @@ async function metaWebhookHandler(req, res) {
                   ad_id: adId ? String(adId) : null,
                   ad_name: adName || null,
                   created_at: createdTime
-                });
+                }, { onConflict: 'meta_lead_id', ignoreDuplicates: true });
+
+              if (insErr) {
+                console.warn(`[Lead DB Ingest Warning]: ${insErr.message}`);
               }
             } catch (leadDbErr) {
               console.warn(`[Lead DB Ingest Note]: ${leadDbErr.message}`);

@@ -7,7 +7,7 @@
  * - PATCH /api/email/messages: Mark read/unread or toggle folder
  */
 
-const { resolveUser, createVercelHandler, httpsRequest } = require('../_utils.js');
+const { resolveUser, createVercelHandler, httpsRequest } = require('../_utils/index.js');
 let createClient = null;
 try {
   createClient = require('@supabase/supabase-js').createClient;
@@ -139,11 +139,13 @@ async function emailMessagesHandler(req, res) {
     let deliveryStatus = 'delivered';
     let apiError = null;
 
+    const fromEmail = process.env.RESEND_FROM_EMAIL || body.from || 'onboarding@resend.dev';
+    const isSenderUnverified = !process.env.RESEND_FROM_EMAIL || process.env.RESEND_FROM_EMAIL.trim() === '' || process.env.RESEND_FROM_EMAIL.trim().toLowerCase() === 'onboarding@resend.dev';
+
     // Dispatch via Resend API if RESEND_API_KEY is set (Primary direct transactional email engine)
     const resendApiKey = process.env.RESEND_API_KEY;
     if (resendApiKey) {
       try {
-        const fromEmail = process.env.RESEND_FROM_EMAIL || body.from || 'onboarding@resend.dev';
         const resendPayload = {
           from: fromEmail,
           to: Array.isArray(to) ? to : [to],
@@ -211,7 +213,7 @@ async function emailMessagesHandler(req, res) {
       thread_id: `th_${Date.now()}`,
       folder: 'sent',
       direction: 'outgoing',
-      from_address: 'sales@technova.io',
+      from_address: fromEmail,
       from_name: user.name || 'Staff Member',
       to_addresses: to,
       cc_addresses: cc,
@@ -242,12 +244,23 @@ async function emailMessagesHandler(req, res) {
 
     inMemoryEmails.unshift(newEmailRecord);
 
+    if (deliveryStatus === 'failed') {
+      return res.status(400).json({
+        status: 'error',
+        error: apiError || 'Failed to dispatch email via provider',
+        warning: isSenderUnverified ? 'SENDER_NOT_VERIFIED' : undefined,
+        delivery_status: 'failed',
+        messageId: newMsgId,
+        message: newEmailRecord
+      });
+    }
+
     return res.status(200).json({
-      status: deliveryStatus === 'delivered' ? 'success' : 'partial_success',
-      delivery_status: deliveryStatus,
+      status: 'success',
+      delivery_status: 'delivered',
       messageId: newMsgId,
       message: newEmailRecord,
-      warning: apiError
+      warning: isSenderUnverified ? 'SENDER_NOT_VERIFIED' : undefined
     });
   }
 

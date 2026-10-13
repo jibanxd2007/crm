@@ -1,5 +1,6 @@
 const https = require('https');
-const { resolveUser, httpsRequest, createVercelHandler } = require('./_utils.js');
+const crypto = require('crypto');
+const { resolveUser, httpsRequest, createVercelHandler } = require('./_utils/index.js');
 let createClient = null;
 try {
   createClient = require('@supabase/supabase-js').createClient;
@@ -106,25 +107,23 @@ async function messagesHandler(req, res) {
     return res.status(200).json({ status: "success", conversation: { id: convId, ...updates } });
   }
 
-  // 4. File Upload to Supabase Storage bucket 'message-attachments'
-  if (req.method === 'POST' && (req.query?.action === 'upload' || req.body?.action === 'upload')) {
-    const { fileData, fileName, fileType, conversationId, pageId } = req.body || {};
-    if (!fileData) {
-      return res.status(400).json({ error: "No file data provided" });
+  // 4. Request Direct Signed Upload URL (bypass Vercel 4.5MB body limit)
+  if (req.method === 'POST' && (req.query?.action === 'upload-url' || req.body?.action === 'upload-url')) {
+    const { conversation_id, conversationId, file_name, fileName, mime_type, mimeType, size } = req.body || {};
+    const convId = conversation_id || conversationId;
+    const name = file_name || fileName || 'attachment';
+    const mime = (mime_type || mimeType || '').toLowerCase().trim();
+    const fileSize = parseInt(size, 10);
+
+    if (!convId) {
+      return res.status(400).json({ error: "Missing conversation_id" });
     }
 
-    // Estimate file size from base64 string
-    const base64Data = fileData.replace(/^data:.*?;base64,/, '');
-    const byteLength = Math.floor((base64Data.length * 3) / 4);
-    if (byteLength > 25 * 1024 * 1024) {
-      return res.status(400).json({ error: "File exceeds Meta's 25MB attachment limit" });
-    }
-
-    const mime = fileType || 'application/octet-stream';
-    const isSupported = mime.startsWith('image/') || mime.startsWith('video/') || mime.startsWith('audio/') ||
-      mime.includes('pdf') || mime.includes('word') || mime.includes('document') || mime.includes('text');
-    if (!isSupported) {
-      return res.status(400).json({ error: `File type ${mime} is not supported by Meta` });
+    // Verify caller has access to conversation
+    if (user.role !== 'admin' && !user.pages.includes('*')) {
+      if (user.convs && user.convs.length > 0 && !user.convs.includes(convId)) {
+        return res.status(403).json({ error: "Forbidden: Cannot access messages for unassigned conversation" });
+      }
     }
 
     const supabase = getSupabaseAdmin();
@@ -132,33 +131,66 @@ async function messagesHandler(req, res) {
       return res.status(500).json({ error: "Supabase client unavailable" });
     }
 
-    try {
-      const buffer = Buffer.from(base64Data, 'base64');
-      const safeName = (fileName || 'attachment').replace(/[^a-zA-Z0-9._-]/g, '_');
-      const storagePath = `outbound/${pageId || 'global'}/${conversationId || 'general'}/${Date.now()}_${safeName}`;
+    if (user.role !== 'admin' && !user.pages.includes('*')) {
+      const { data: convData } = await supabase
+        .from('conversations')
+        .select('id, page_id')
+        .eq('id', convId)
+        .maybeSingle();
 
-      const { error: upErr } = await supabase.storage
-        .from('message-attachments')
-        .upload(storagePath, buffer, {
-          contentType: mime,
-          upsert: true
-        });
-
-      if (upErr) {
-        return res.status(500).json({ error: `Storage upload failed: ${upErr.message}` });
+      if (convData && convData.page_id && !user.pages.includes(convData.page_id)) {
+        return res.status(403).json({ error: "Forbidden: Cannot access conversation for unassigned page" });
       }
+    }
 
-      const { data: pubData } = supabase.storage
+    // Reject size > 25MB (26,214,400 bytes)
+    if (!fileSize || isNaN(fileSize) || fileSize <= 0) {
+      return res.status(400).json({ error: "Invalid file size" });
+    }
+    if (fileSize > 26214400) {
+      return res.status(400).json({ error: "File exceeds 25MB attachment limit (maximum 26,214,400 bytes)" });
+    }
+
+    // Explicit MIME allowlist: images, video/mp4, video/quicktime, audio/*, application/pdf, common office docs
+    const ALLOWED_MIME_PATTERNS = [
+      /^image\//,
+      /^video\/(mp4|quicktime)$/,
+      /^audio\//,
+      /^application\/pdf$/,
+      /^application\/msword$/,
+      /^application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document$/,
+      /^application\/vnd\.ms-excel$/,
+      /^application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet$/,
+      /^application\/vnd\.ms-powerpoint$/,
+      /^application\/vnd\.openxmlformats-officedocument\.presentationml\.presentation$/,
+      /^text\/plain$/,
+      /^text\/csv$/
+    ];
+
+    const isAllowed = ALLOWED_MIME_PATTERNS.some(pattern => pattern.test(mime));
+    if (!isAllowed) {
+      return res.status(400).json({
+        error: `File type "${mime}" is not allowed. Supported types: images, MP4/QuickTime video, audio, PDF, and common office documents.`
+      });
+    }
+
+    try {
+      const safeName = name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const uploadPath = `${convId}/${crypto.randomUUID()}-${safeName}`;
+
+      const { data: signData, error: signErr } = await supabase.storage
         .from('message-attachments')
-        .getPublicUrl(storagePath);
+        .createSignedUploadUrl(uploadPath);
+
+      if (signErr) {
+        return res.status(500).json({ error: `Storage signed URL failed: ${signErr.message}` });
+      }
 
       return res.status(200).json({
         status: "success",
-        url: pubData?.publicUrl,
-        storagePath: storagePath,
-        name: fileName || safeName,
-        type: mime,
-        size: byteLength
+        path: signData.path || uploadPath,
+        token: signData.token,
+        signedUrl: signData.signedUrl
       });
     } catch (upEx) {
       return res.status(500).json({ error: upEx.message });

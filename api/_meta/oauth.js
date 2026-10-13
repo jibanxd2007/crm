@@ -1,4 +1,4 @@
-const { httpsRequest, createVercelHandler } = require('../_utils.js');
+const { httpsRequest, createVercelHandler } = require('../_utils/index.js');
 
 async function metaOAuthUnifiedHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');

@@ -6,7 +6,7 @@
  */
 
 const { createClient } = require('@supabase/supabase-js');
-const { createVercelHandler } = require('../_utils.js');
+const { createVercelHandler } = require('../_utils/index.js');
 
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;

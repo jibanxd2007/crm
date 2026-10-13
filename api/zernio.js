@@ -1,6 +1,6 @@
 const https = require('https');
 const { createClient } = require('@supabase/supabase-js');
-const { createVercelHandler, resolveUser, httpsRequest } = require('./_utils.js');
+const { createVercelHandler, resolveUser, httpsRequest } = require('./_utils/index.js');
 
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -600,13 +600,23 @@ async function zernioUnifiedHandler(req, res) {
 
           const { data: created, error: dbErr } = await supabase
             .from('leads')
-            .insert(insertData)
+            .upsert(insertData, { onConflict: 'meta_lead_id', ignoreDuplicates: true })
             .select()
-            .single();
+            .maybeSingle();
 
           if (dbErr) {
             console.error('[Zernio Lead Ingest DB Error]:', dbErr);
             return res.status(500).json({ error: dbErr.message });
+          }
+
+          if (!created) {
+            console.log('[Zernio Lead Ingest]: Ignored duplicate lead for meta_lead_id:', leadId);
+            return res.status(200).json({
+              status: 'success',
+              provider: 'zernio',
+              isDuplicate: true,
+              lead: { meta_lead_id: String(leadId), name: fullName }
+            });
           }
 
           console.log('[Zernio Lead Ingest Success]: Stored lead:', leadId, fullName, 'Page:', resolvedPageId);
@@ -639,7 +649,8 @@ async function zernioUnifiedHandler(req, res) {
     }
 
     const supabase = getSupabaseAdmin();
-    let syncedCount = 0;
+    let newLeads = 0;
+    let skippedLeads = 0;
     const errors = [];
 
     try {
@@ -679,15 +690,10 @@ async function zernioUnifiedHandler(req, res) {
               const lId = item.id || item.leadgen_id;
               if (!lId || !supabase) continue;
 
-              const { data: existing } = await supabase
+              const targetPg = connectedPages.find(p => p.page_id === item.page_id || p.id === item.page_id) || connectedPages[0];
+              const { data: upRes, error: insErr } = await supabase
                 .from('leads')
-                .select('id')
-                .eq('meta_lead_id', String(lId))
-                .maybeSingle();
-
-              if (!existing) {
-                const targetPg = connectedPages.find(p => p.page_id === item.page_id || p.id === item.page_id) || connectedPages[0];
-                const { error: insErr } = await supabase.from('leads').insert({
+                .upsert({
                   page_id: targetPg?.id || null,
                   meta_lead_id: String(lId),
                   full_name: item.full_name || item.name || 'Meta Lead',
@@ -697,8 +703,12 @@ async function zernioUnifiedHandler(req, res) {
                   status: 'New',
                   raw_data: item,
                   created_at: item.created_time || item.created_at || new Date().toISOString()
-                });
-                if (!insErr) syncedCount++;
+                }, { onConflict: 'meta_lead_id', ignoreDuplicates: true })
+                .select('id');
+
+              if (!insErr) {
+                if (upRes && upRes.length > 0) newLeads++;
+                else skippedLeads++;
               }
             }
           }
@@ -724,28 +734,23 @@ async function zernioUnifiedHandler(req, res) {
             for (const rLead of rawLeads) {
               if (!rLead.id || !supabase) continue;
 
-              const { data: exist } = await supabase
-                .from('leads')
-                .select('id')
-                .eq('meta_lead_id', String(rLead.id))
-                .maybeSingle();
-
-              if (!exist) {
-                let lName = '';
-                let lEmail = '';
-                let lPhone = '';
-                if (Array.isArray(rLead.field_data)) {
-                  for (const f of rLead.field_data) {
-                    const fn = (f.name || '').toLowerCase();
-                    const fv = Array.isArray(f.values) ? f.values[0] : f.values;
-                    if (!lName && (fn.includes('full_name') || fn === 'name')) lName = fv;
-                    else if (!lName && fn.includes('first_name')) lName = fv;
-                    else if (!lEmail && fn.includes('email')) lEmail = fv;
-                    else if (!lPhone && (fn.includes('phone') || fn.includes('mobile'))) lPhone = fv;
-                  }
+              let lName = '';
+              let lEmail = '';
+              let lPhone = '';
+              if (Array.isArray(rLead.field_data)) {
+                for (const f of rLead.field_data) {
+                  const fn = (f.name || '').toLowerCase();
+                  const fv = Array.isArray(f.values) ? f.values[0] : f.values;
+                  if (!lName && (fn.includes('full_name') || fn === 'name')) lName = fv;
+                  else if (!lName && fn.includes('first_name')) lName = fv;
+                  else if (!lEmail && fn.includes('email')) lEmail = fv;
+                  else if (!lPhone && (fn.includes('phone') || fn.includes('mobile'))) lPhone = fv;
                 }
+              }
 
-                const { error: insErr } = await supabase.from('leads').insert({
+              const { data: upRes, error: insErr } = await supabase
+                .from('leads')
+                .upsert({
                   page_id: page.id,
                   meta_lead_id: String(rLead.id),
                   full_name: lName || 'Meta Lead',
@@ -757,10 +762,14 @@ async function zernioUnifiedHandler(req, res) {
                   form_name: form.name,
                   raw_data: rLead,
                   created_at: rLead.created_time || new Date().toISOString()
-                });
+                }, { onConflict: 'meta_lead_id', ignoreDuplicates: true })
+                .select('id');
 
-                if (!insErr) syncedCount++;
-                else console.error('[Meta Lead Backfill Insert Error]:', insErr.message);
+              if (!insErr) {
+                if (upRes && upRes.length > 0) newLeads++;
+                else skippedLeads++;
+              } else {
+                console.error('[Meta Lead Backfill Insert Error]:', insErr.message);
               }
             }
           }
@@ -770,10 +779,13 @@ async function zernioUnifiedHandler(req, res) {
         }
       }
 
-      console.log(`[Zernio / Meta Lead Backfill Finished]: Synced ${syncedCount} new leads.`);
+      console.log(`[Zernio / Meta Lead Backfill Finished]: Synced ${newLeads} new leads, skipped ${skippedLeads} existing leads.`);
       return res.status(200).json({
         status: "success",
-        syncedCount: syncedCount,
+        syncedCount: newLeads,
+        newLeads: newLeads,
+        skippedLeads: skippedLeads,
+        totalProcessed: newLeads + skippedLeads,
         connectedPagesProcessed: connectedPages.length,
         errors: errors.length > 0 ? errors : undefined,
         timestamp: new Date().toISOString()

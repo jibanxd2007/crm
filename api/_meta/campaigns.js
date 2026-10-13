@@ -9,7 +9,7 @@
 
 const { MetaClient } = require('../_services/meta-client.js');
 const { createClient } = require('@supabase/supabase-js');
-const { createVercelHandler, httpsRequest } = require('../_utils.js');
+const { createVercelHandler, httpsRequest } = require('../_utils/index.js');
 
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -180,7 +180,7 @@ async function metaCampaignsUnifiedHandler(req, res) {
   // C. ROI MODE (/api/meta/roi)
   // --------------------------------------------------------------------------
   if (action === 'roi' || url.includes('/roi')) {
-    const { resolveUser } = require('../_utils.js');
+    const { resolveUser } = require('../_utils/index.js');
     const user = resolveUser(req.headers);
     if (!user) {
       return res.status(401).json({ error: "Unauthorized: Authentication required" });

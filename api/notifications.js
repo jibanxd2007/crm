@@ -1,5 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
-const { resolveUser, createVercelHandler } = require('./_utils.js');
+const { resolveUser, createVercelHandler } = require('./_utils/index.js');
 
 async function notificationsHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');

@@ -1,4 +1,4 @@
-const { resolveUser, createVercelHandler } = require('./_utils.js');
+const { resolveUser, createVercelHandler } = require('./_utils/index.js');
 let createClient = null;
 try {
   createClient = require('@supabase/supabase-js').createClient;

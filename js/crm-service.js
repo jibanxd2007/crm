@@ -84,6 +84,18 @@ class CRMService {
     this.lastSyncTimestamp = new Date();
     this.isSyncing = false;
 
+    // FX Rates Table
+    this.fxRates = {
+      base: 'INR',
+      INR: 1.0,
+      USD: 0.012,
+      NZD: 0.020,
+      EUR: 0.011,
+      GBP: 0.0095,
+      updated: '2026-10-14'
+    };
+    this.loadFxRates();
+
     // Realtime event listeners
     if (typeof window !== "undefined") {
       window.addEventListener("crm:remote_lead_received", (e) => this.handleInboundMetaLead(e.detail));
@@ -115,7 +127,7 @@ class CRMService {
 
   getCurrency() {
     const saved = localStorage.getItem('metacrm_currency');
-    if (!saved || saved === 'INR') {
+    if (!saved) {
       localStorage.setItem('metacrm_currency', 'USD');
       return 'USD';
     }
@@ -127,6 +139,7 @@ class CRMService {
     if (cur === 'EUR') return '€';
     if (cur === 'GBP') return '£';
     if (cur === 'INR') return '₹';
+    if (cur === 'NZD') return 'NZ$';
     return '$';
   }
 
@@ -136,25 +149,65 @@ class CRMService {
     return curr;
   }
 
-  formatMoney(amount, currency = null) {
+  async loadFxRates() {
+    try {
+      const res = await fetch('/api/config');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.fxRates) {
+          this.fxRates = data.fxRates;
+          if (typeof window !== 'undefined' && window.app && window.app.updateCurrencyDropdownTooltip) {
+            window.app.updateCurrencyDropdownTooltip();
+          }
+        }
+        if (typeof window !== 'undefined') {
+          window.CONFIG = data;
+        }
+      }
+    } catch (e) {}
+  }
+
+  convertAmount(amount, targetCurrency = null, sourceCurrency = null) {
+    const target = targetCurrency || this.getCurrency();
+    const source = sourceCurrency || (this.fxRates && this.fxRates.base) || 'INR';
+    const num = Number(amount) || 0;
+    if (num === 0) return 0;
+    if (target === source) return num;
+
+    const rates = this.fxRates || { base: 'INR', INR: 1.0, USD: 0.012, NZD: 0.020 };
+    const base = rates.base || 'INR';
+
+    // 1. Convert source -> base (default: stored in INR)
+    let baseAmount = num;
+    if (source !== base) {
+      const sourceRate = rates[source] || 1;
+      baseAmount = sourceRate !== 0 ? num / sourceRate : num;
+    }
+
+    // 2. Convert base -> target
+    const targetRate = rates[target] !== undefined ? rates[target] : (target === 'USD' ? 0.012 : (target === 'NZD' ? 0.020 : 1.0));
+    return baseAmount * targetRate;
+  }
+
+  formatMoney(amount, currency = null, sourceCurrency = null) {
     const curr = currency || this.getCurrency();
-    const val = Number(amount) || 0;
+    const converted = this.convertAmount(amount, curr, sourceCurrency);
     try {
       const locale = curr === 'INR' ? 'en-IN' : (curr === 'NZD' ? 'en-NZ' : (curr === 'EUR' ? 'de-DE' : (curr === 'GBP' ? 'en-GB' : 'en-US')));
-      const hasDecimals = (val % 1 !== 0) && Math.abs(val) < 1000;
+      const hasDecimals = (converted % 1 !== 0) && Math.abs(converted) < 1000;
       return new Intl.NumberFormat(locale, {
         style: 'currency',
         currency: curr,
         maximumFractionDigits: hasDecimals ? 2 : 0
-      }).format(val);
+      }).format(converted);
     } catch (e) {
       const sym = this.getCurrencySymbol(curr);
-      return `${sym}${val.toLocaleString('en-US')}`;
+      return `${sym}${converted.toLocaleString('en-US')}`;
     }
   }
 
-  formatCurrency(amount, currency = null) {
-    return this.formatMoney(amount, currency);
+  formatCurrency(amount, currency = null, sourceCurrency = null) {
+    return this.formatMoney(amount, currency, sourceCurrency);
   }
 
   loadPages() {
@@ -3633,15 +3686,22 @@ class CRMService {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newMsg)
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.message) {
-          this.emailMessages.unshift(data.message);
-          this.saveEmailMessages();
-          return { success: true, message: data.message };
-        }
+      const data = await res.json().catch(() => null);
+      if (!res.ok || (data && data.status === 'error')) {
+        const errMsg = data?.error || data?.detail || 'Failed to dispatch email';
+        throw new Error(errMsg);
       }
-    } catch (e) {}
+      if (data && data.message) {
+        this.emailMessages.unshift(data.message);
+        this.saveEmailMessages();
+        return { success: true, message: data.message, warning: data.warning };
+      }
+    } catch (e) {
+      if (e.message && !e.message.includes('Failed to fetch')) {
+        throw e;
+      }
+      console.warn('[CRMService sendEmail note]:', e.message);
+    }
 
     // Fallback store locally
     this.emailMessages.unshift(newMsg);

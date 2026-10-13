@@ -94,10 +94,27 @@ class MetaCRMApp {
   }
 
   setCurrency(curr) {
-    if (this.svc && this.svc.setCurrency) this.svc.setCurrency(curr || 'USD');
-    else localStorage.setItem('metacrm_currency', curr || 'USD');
-    this.toast(`Currency set to ${curr || 'USD'} (${this.getCurrencySymbol(curr)})`, 'info');
+    const selected = curr || 'USD';
+    if (this.svc && this.svc.setCurrency) this.svc.setCurrency(selected);
+    else localStorage.setItem('metacrm_currency', selected);
+    this.updateCurrencyDropdownTooltip();
+    this.toast(`Currency set to ${selected} (${this.getCurrencySymbol(selected)})`, 'info');
     if (this.currentRoute) this.navigate(this.currentRoute);
+  }
+
+  updateCurrencyDropdownTooltip() {
+    const sel = document.getElementById('topbar-currency-select');
+    if (!sel) return;
+    const curr = this.getCurrency();
+    sel.value = curr;
+    const rates = (this.svc && this.svc.fxRates) || { base: 'INR', USD: 0.012, NZD: 0.020, INR: 1.0, updated: '2026-10-14' };
+    const base = rates.base || 'INR';
+    const rate = rates[curr] !== undefined ? rates[curr] : (curr === 'USD' ? 0.012 : (curr === 'NZD' ? 0.020 : 1.0));
+    const tipText = curr === base 
+      ? `Base: 1 ${base} (FX rates updated: ${rates.updated || '2026-10-14'})`
+      : `Rate: 1 ${base} = ${rate} ${curr} (Updated: ${rates.updated || '2026-10-14'})`;
+    sel.title = tipText;
+    if (sel.parentElement) sel.parentElement.title = tipText;
   }
 
   formatMoney(amount, currency = null) {
@@ -181,6 +198,7 @@ class MetaCRMApp {
     this.fetchRealInstagramConversations();
     const curSel = document.getElementById('topbar-currency-select');
     if (curSel) curSel.value = this.getCurrency();
+    this.updateCurrencyDropdownTooltip();
     this.renderSidebar();
     this.renderNotifications();
     this._route();
@@ -1948,7 +1966,9 @@ class MetaCRMApp {
         if (this.svc && this.svc.fetchRemoteLeads) {
           await this.svc.fetchRemoteLeads();
         }
-        this.toast(`✓ Leads sync complete! Synced ${data.syncedCount || 0} recent leads.`, 'success');
+        const newCount = data.newLeads !== undefined ? data.newLeads : (data.syncedCount || 0);
+        const skipCount = data.skippedLeads !== undefined ? data.skippedLeads : 0;
+        this.toast(`✓ Leads sync complete: ${newCount} new, ${skipCount} skipped.`, 'success');
         this.renderLeads();
       } else {
         this.toast(`⚠️ Leads sync: ${data.message || data.error || 'No new leads found'}`, 'info');
@@ -2186,7 +2206,7 @@ class MetaCRMApp {
           <div class="attr-row">
             <span class="attr-label">Deal Value</span>
             <div style="display:flex;align-items:center;gap:6px;">
-              <span class="text-xs text-gray">${this.getCurrencySymbol(lead.currency)}</span>
+              <span class="text-xs text-gray">${this.getCurrencySymbol()}</span>
               <input type="number" class="input input-sm" style="width:110px;font-weight:600;" value="${lead.lead_value || lead.value || 0}" onchange="window.app.updateLeadValue('${lead.id}', this.value)" placeholder="0">
             </div>
           </div>
@@ -2434,11 +2454,11 @@ class MetaCRMApp {
         if (!lead.activities) lead.activities = [];
         lead.activities.push({
           type: 'VALUE_UPDATED',
-          description: `Deal value set to ${this.getCurrencySymbol()}${this._formatNum(numVal)}`,
+          description: `Deal value set to ${this.formatMoney(numVal)}`,
           timestamp: new Date().toISOString()
         });
         if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
-        this.toast(`Deal value updated to ${this.getCurrencySymbol()}${this._formatNum(numVal)}`);
+        this.toast(`Deal value updated to ${this.formatMoney(numVal)}`);
       }
     }
   }
@@ -3426,78 +3446,131 @@ class MetaCRMApp {
     }
   }
 
+  async _getSupabaseClient() {
+    if (window.supabaseService && window.supabaseService.client) {
+      return window.supabaseService.client;
+    }
+    let cfg = window.supabaseService?.config;
+    if (!cfg || !cfg.url || !cfg.anonKey) {
+      try {
+        const res = await fetch('/api/config');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.supabaseUrl && data.supabaseAnonKey) {
+            cfg = { url: data.supabaseUrl, anonKey: data.supabaseAnonKey };
+            if (window.supabaseService) window.supabaseService.config = cfg;
+          }
+        }
+      } catch (e) {}
+    }
+    if (window.supabase && cfg && cfg.url && cfg.anonKey) {
+      const client = window.supabase.createClient(cfg.url, cfg.anonKey);
+      if (window.supabaseService) window.supabaseService.client = client;
+      return client;
+    }
+    return null;
+  }
+
   async processSelectedFile(file) {
     if (!file) return;
 
-    // Check Meta 25MB file size limit
-    if (file.size > 25 * 1024 * 1024) {
-      this.toast(`File is ${Math.round(file.size / 1024 / 1024)}MB. Meta limits attachments to 25MB.`, 'error');
+    if (!this.activeConvId) {
+      this.toast('Please select a conversation before attaching files', 'warning');
+      return;
+    }
+
+    // Check Meta & Supabase 25MB file size limit (26,214,400 bytes)
+    if (file.size > 26214400) {
+      this.toast(`File is ${(file.size / (1024 * 1024)).toFixed(1)}MB. Maximum allowed file size is 25MB.`, 'error');
+      const fileInp = document.getElementById('inbox-file-input');
+      if (fileInp) fileInp.value = '';
       return;
     }
 
     const previewBar = document.getElementById('inbox-attachment-preview-bar');
     const sendBtn = document.getElementById('inbox-send-btn');
+    const isImg = file.type.startsWith('image/');
+    const localPreviewUrl = isImg ? URL.createObjectURL(file) : null;
+
     if (previewBar) {
       previewBar.style.display = 'flex';
       previewBar.innerHTML = `
         <div style="display:flex;align-items:center;gap:10px;width:100%;">
-          <span class="spinner" style="width:14px;height:14px;border-width:2px;"></span>
+          ${localPreviewUrl ? `<img src="${localPreviewUrl}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;border:1px solid #E2E8F0;">` : `<span class="spinner" style="width:14px;height:14px;border-width:2px;"></span>`}
           <div style="flex:1;min-width:0;font-size:12px;">
             <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(file.name)}</div>
-            <div style="color:#64748B;font-size:11px;">Uploading to secure storage (${(file.size / 1024).toFixed(0)} KB)…</div>
+            <div style="color:#64748B;font-size:11px;">Uploading directly to secure storage (${(file.size / 1024).toFixed(0)} KB)…</div>
           </div>
           <button type="button" onclick="window.app.clearPendingAttachment()" style="background:none;border:none;color:#94A3B8;cursor:pointer;font-size:16px;padding:2px 6px;" title="Remove attachment">✕</button>
         </div>
       `;
     }
+    if (sendBtn) sendBtn.disabled = true;
 
-    // Read file to base64
-    const dataUrl = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-
-    const isImg = file.type.startsWith('image/');
     this._pendingAttachment = {
       name: file.name,
-      type: file.type,
+      type: file.type || 'application/octet-stream',
       size: file.size,
-      dataUrl: dataUrl,
       uploading: true
     };
 
     try {
-      const activeConv = (this.svc && this.svc.conversations) ? this.svc.conversations.find(c => String(c.id) === String(this.activeConvId)) : null;
-      const res = await fetch('/api/messages?action=upload', {
+      // 1. Request signed upload URL from backend without sending file bytes
+      const res = await fetch('/api/messages?action=upload-url', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-User-Id': (this.user && this.user.id) || 'admin'
         },
         body: JSON.stringify({
-          fileData: dataUrl,
-          fileName: file.name,
-          fileType: file.type,
-          conversationId: this.activeConvId,
-          pageId: activeConv ? activeConv.page_id : null
+          conversation_id: this.activeConvId,
+          file_name: file.name,
+          mime_type: file.type || 'application/octet-stream',
+          size: file.size
         })
       });
 
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        throw new Error(data.error || 'Upload failed');
+      const urlData = await res.json();
+      if (!res.ok || urlData.error) {
+        throw new Error(urlData.error || 'Failed to obtain upload authorization');
       }
 
-      this._pendingAttachment.url = data.url;
-      this._pendingAttachment.storagePath = data.storagePath;
-      this._pendingAttachment.uploading = false;
+      const { path, token } = urlData;
+
+      // 2. Direct browser-to-Supabase Storage upload using signed URL token
+      const sbClient = await this._getSupabaseClient();
+      if (!sbClient) {
+        throw new Error('Supabase Storage client unavailable');
+      }
+
+      const { error: upErr } = await sbClient.storage
+        .from('message-attachments')
+        .uploadToSignedUrl(path, token, file);
+
+      if (upErr) {
+        throw new Error(upErr.message || 'Storage upload failed');
+      }
+
+      // 3. Resolve public URL for attachment rendering and message payload
+      const { data: pubData } = sbClient.storage
+        .from('message-attachments')
+        .getPublicUrl(path);
+
+      const fileUrl = pubData?.publicUrl || '';
+
+      this._pendingAttachment = {
+        name: file.name,
+        type: file.type || 'application/octet-stream',
+        size: file.size,
+        url: fileUrl,
+        storagePath: path,
+        uploading: false
+      };
 
       if (previewBar) {
         previewBar.innerHTML = `
           <div style="display:flex;align-items:center;gap:10px;width:100%;">
-            ${isImg ? `<img src="${escapeHtml(data.url || dataUrl)}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;border:1px solid #E2E8F0;">` : `<span style="font-size:20px;">📎</span>`}
+            ${isImg ? `<img src="${escapeHtml(fileUrl || localPreviewUrl)}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;border:1px solid #E2E8F0;">` : `<span style="font-size:20px;">📎</span>`}
             <div style="flex:1;min-width:0;font-size:12px;">
               <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(file.name)}</div>
               <div style="color:#10B981;font-size:11px;">✓ Ready to send (${(file.size / 1024).toFixed(0)} KB)</div>
@@ -4109,8 +4182,7 @@ class MetaCRMApp {
     }
     const d = new Date(this.lastDashboardRefresh);
     try {
-      return d.toLocaleTimeString('en-IN', {
-        timeZone: 'Asia/Kolkata',
+      return d.toLocaleTimeString([], {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
@@ -6620,21 +6692,33 @@ class MetaCRMApp {
       }
 
       this.el.mConfirm.innerHTML = '<span class="spinner"></span> Dispatching…';
-      if (this.svc) {
-        await this.svc.sendEmail({
-          accountId: accId,
-          to: toEmail,
-          cc: ccEmail ? [ccEmail] : [],
-          subject: sub,
-          body: body,
-          leadId: leadId
-        });
-      }
+      this.el.mConfirm.disabled = true;
+      try {
+        let sendResult = null;
+        if (this.svc) {
+          sendResult = await this.svc.sendEmail({
+            accountId: accId,
+            to: toEmail,
+            cc: ccEmail ? [ccEmail] : [],
+            subject: sub,
+            body: body,
+            leadId: leadId
+          });
+        }
 
-      this.closeModal();
-      this.toast(`✓ Email dispatched successfully to ${toEmail}!`, 'success');
-      if (this.currentRoute === 'email') this.renderEmailInbox();
-      if (leadId && this.el.drawer.classList.contains('open')) this.openLeadDrawer(leadId);
+        this.closeModal();
+        if (sendResult && sendResult.warning === 'SENDER_NOT_VERIFIED') {
+          this.toast(`✓ Email dispatched to ${toEmail} (Warning: Sender unverified — only reaches account owner)`, 'warning');
+        } else {
+          this.toast(`✓ Email dispatched successfully to ${toEmail}!`, 'success');
+        }
+        if (this.currentRoute === 'email') this.renderEmailInbox();
+        if (leadId && this.el.drawer.classList.contains('open')) this.openLeadDrawer(leadId);
+      } catch (err) {
+        this.el.mConfirm.innerHTML = 'Send Email';
+        this.el.mConfirm.disabled = false;
+        this.toast(`Resend Error: ${err.message}`, 'error');
+      }
     };
 
     this.el.mOverlay.classList.add('open');
@@ -6767,10 +6851,18 @@ class MetaCRMApp {
                 High-deliverability direct email delivery via Resend API. Dispatches notifications, lead follow-ups, and customer replies without OAuth prompts.
               </p>
 
+              ${(!window.CONFIG || !window.CONFIG.resendSenderVerified) ? `
+              <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:6px;padding:10px 12px;font-size:11px;color:#92400E;margin-bottom:12px;line-height:1.4;display:flex;align-items:flex-start;gap:8px;">
+                <span style="font-size:14px;line-height:1;">⚠️</span>
+                <div>
+                  <strong>Sender Unverified:</strong> Emails will only reach the Resend account owner until a domain is verified and RESEND_FROM_EMAIL is set.
+                </div>
+              </div>` : ''}
+
               <div style="background:#F8FAFC;border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:11px;margin-bottom:16px;">
                 <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
                   <span class="text-gray">Sender:</span>
-                  <strong>onboarding@resend.dev</strong>
+                  <span><strong>${escapeHtml((window.CONFIG && window.CONFIG.resendFromEmail) || 'onboarding@resend.dev')}</strong> ${(!window.CONFIG || !window.CONFIG.resendSenderVerified) ? '<span class="badge badge-warning" style="font-size:9px;padding:1px 4px;margin-left:4px;">Unverified</span>' : '<span class="badge badge-success" style="font-size:9px;padding:1px 4px;margin-left:4px;">Verified</span>'}</span>
                 </div>
                 <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
                   <span class="text-gray">Target:</span>
@@ -6992,11 +7084,16 @@ class MetaCRMApp {
     this.toast(`Dispatching test email via Resend to ${targetEmail}…`, 'info');
     try {
       const resp = await fetch(`/api/email?path=test-resend&to=${encodeURIComponent(targetEmail)}`);
-      const data = await resp.json();
+      const data = await resp.json().catch(() => ({}));
       if (resp.ok && data.status === 'success') {
-        this.toast(`✓ Test email delivered to ${targetEmail}!`, 'success');
+        if (data.warning === 'SENDER_NOT_VERIFIED') {
+          this.toast(`✓ Test email delivered to ${targetEmail} (Warning: Sender unverified — only reaches account owner)`, 'warning');
+        } else {
+          this.toast(`✓ Test email delivered to ${targetEmail}!`, 'success');
+        }
       } else {
-        this.toast(`⚠️ Resend: ${data.error || 'Failed to send'}`, 'error');
+        const errorMsg = data.error || data.detail || 'Failed to dispatch email';
+        this.toast(`⚠️ Resend: ${errorMsg}`, 'error');
       }
     } catch (e) {
       this.toast(`Network error sending via Resend: ${e.message}`, 'error');

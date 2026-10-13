@@ -1,5 +1,5 @@
--- Migration: 20261013_fix_default_currency_inr.sql
--- Description: Update default currency for ad_accounts table to 'INR' (Indian Rupee)
+-- Migration: 20261013_multi_currency_support.sql
+-- Description: Multi-currency support and default base currency alignment for ad_accounts
 
 ALTER TABLE IF EXISTS public.ad_accounts 
   ALTER COLUMN currency SET DEFAULT 'INR';

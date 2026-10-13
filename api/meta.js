@@ -6,7 +6,7 @@
  * - OAuth: /api/auth/meta/*, /api/meta/callback (or path=oauth)
  * - Campaigns, Insights, Assets, ROI: /api/campaigns, /api/meta/*
  */
-const { createVercelHandler } = require('./_utils.js');
+const { createVercelHandler } = require('./_utils/index.js');
 
 async function metaUnifiedHandler(req, res) {
   const url = req.url || '';

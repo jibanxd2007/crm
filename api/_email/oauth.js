@@ -7,7 +7,7 @@
  * - GET /api/email/oauth/callback: Handles OAuth redirect, exchanges code for tokens, persists connection
  */
 
-const { httpsRequest, createVercelHandler } = require('../_utils.js');
+const { httpsRequest, createVercelHandler } = require('../_utils/index.js');
 let createClient = null;
 try {
   createClient = require('@supabase/supabase-js').createClient;
