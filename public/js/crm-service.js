@@ -2170,7 +2170,8 @@ class CRMService {
   _resolveConvTimestamp(conv) {
     if (!conv) return 0;
     // 1. Explicit ISO last_message_at
-    if (conv.last_message_at && conv.last_message_at !== "Just now") {
+    if (conv.last_message_at) {
+      if (conv.last_message_at === "Just now") return Date.now();
       const t = new Date(conv.last_message_at).getTime();
       if (!isNaN(t) && t > 0) return t;
     }
@@ -2178,7 +2179,8 @@ class CRMService {
     if (conv.messages && conv.messages.length > 0) {
       const lastMsg = conv.messages[conv.messages.length - 1];
       const mTime = lastMsg.created_at || lastMsg.sentAt || lastMsg.timestamp;
-      if (mTime && mTime !== "Just now") {
+      if (mTime) {
+        if (mTime === "Just now") return Date.now();
         const t = new Date(mTime).getTime();
         if (!isNaN(t) && t > 0) return t;
       }
@@ -2198,6 +2200,11 @@ class CRMService {
       const dMatch = conv.time.match(/(\d+)\s*d/i);
       if (dMatch) return Date.now() - parseInt(dMatch[1], 10) * 86400 * 1000;
       const t = new Date(conv.time).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    // 5. Fallback created_at
+    if (conv.created_at) {
+      const t = new Date(conv.created_at).getTime();
       if (!isNaN(t) && t > 0) return t;
     }
     return 0;

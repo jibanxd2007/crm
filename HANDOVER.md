@@ -47,6 +47,7 @@ Execute the following migration scripts in order via the **Supabase SQL Editor**
 9. `supabase/migrations/20261014_storage_signed_uploads_limit.sql` — Bucket 25MB file limit, MIME allowlist, and signed upload RLS policies.
 10. `supabase/migrations/20261014_lead_meta_id_unique.sql` — Database-level lead deduplication, foreign key reparenting, and UNIQUE constraint on `meta_lead_id`.
 11. `supabase/migrations/20261014_realtime_publications.sql` — Realtime publication registration for `leads`, `messages`, and `conversations`.
+12. `supabase/migrations/20261014_inbox_conversation_recency_trigger.sql` — Automated conversation recency trigger on `messages` insert and index on `last_message_at DESC`.
 
 ---
 

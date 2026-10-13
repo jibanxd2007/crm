@@ -314,9 +314,12 @@ async function zernioUnifiedHandler(req, res) {
             const parsed = JSON.parse(data);
             const convList = parsed.data || parsed.conversations || [];
             if (Array.isArray(convList)) {
+              convList.forEach(c => {
+                c.last_message_at = c.last_message_at || c.lastMessageAt || c.updatedTime || c.updated_at || c.time || new Date().toISOString();
+              });
               convList.sort((a, b) => {
-                const timeA = new Date(a.updatedTime || a.lastMessageAt || a.updated_at || 0).getTime();
-                const timeB = new Date(b.updatedTime || b.lastMessageAt || b.updated_at || 0).getTime();
+                const timeA = new Date(a.last_message_at || 0).getTime();
+                const timeB = new Date(b.last_message_at || 0).getTime();
                 return timeB - timeA;
               });
             }
@@ -463,6 +466,80 @@ async function zernioUnifiedHandler(req, res) {
       const supabase = getSupabaseAdmin();
 
       const payload = body.data || body.payload || body;
+
+      // Handle real messaging webhook event from Zernio / Instagram Direct
+      const isMessageEvent = body.event === 'message.received' || body.event === 'message' || body.type === 'message' || payload.type === 'message' || (payload.conversationId && (payload.message || payload.text)) || (payload.conversation_id && (payload.message || payload.text));
+
+      if (isMessageEvent) {
+        const convId = payload.conversationId || payload.conversation_id || payload.conversation?.id || ('zn_conv_' + Date.now());
+        const msgText = payload.message?.text || (typeof payload.message === 'string' ? payload.message : (payload.text || ''));
+        const sender = payload.sender || payload.from || {};
+        const senderName = sender.name || sender.username || payload.senderName || 'Contact';
+        const senderId = sender.id || payload.senderId || payload.sender_id || null;
+        const msgTime = payload.timestamp ? new Date(payload.timestamp).toISOString() : (payload.created_at || new Date().toISOString());
+        const rawAtt = payload.attachment || (Array.isArray(payload.attachments) ? payload.attachments[0] : null) || (payload.message?.attachment || null);
+
+        if (supabase) {
+          try {
+            const { data: existingConv } = await supabase
+              .from('conversations')
+              .select('id, unread_count')
+              .eq('id', convId)
+              .maybeSingle();
+
+            if (!existingConv) {
+              await supabase
+                .from('conversations')
+                .insert({
+                  id: convId,
+                  customer_name: senderName,
+                  customer_psid: senderId,
+                  channel: payload.platform || 'instagram',
+                  last_message: msgText || (rawAtt ? '📎 Attachment' : 'Message'),
+                  last_message_at: msgTime,
+                  unread_count: 1,
+                  is_archived: false,
+                  updated_at: new Date().toISOString()
+                })
+                .catch(() => {});
+            } else {
+              await supabase
+                .from('conversations')
+                .update({
+                  last_message: msgText || (rawAtt ? '📎 Attachment' : 'Message'),
+                  last_message_at: msgTime,
+                  unread_count: (existingConv.unread_count || 0) + 1,
+                  is_archived: false,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', convId)
+                .catch(() => {});
+            }
+
+            await supabase
+              .from('messages')
+              .insert({
+                conversation_id: convId,
+                sender_type: 'customer',
+                sender_name: senderName,
+                sender_id: senderId,
+                text: msgText || (rawAtt ? '📎 Attachment' : '[Message]'),
+                message_text: msgText || (rawAtt ? '📎 Attachment' : '[Message]'),
+                direction: 'inbound',
+                attachment_url: rawAtt?.url || null,
+                attachments: rawAtt ? [rawAtt] : [],
+                created_at: msgTime
+              })
+              .catch(() => {});
+
+            return res.status(200).json({ status: 'success', processed: true, type: 'message', conversation_id: convId });
+          } catch (mErr) {
+            console.warn('[Zernio Message Ingest Warning]:', mErr.message);
+          }
+        }
+        return res.status(200).json({ status: 'success', processed: true, type: 'message' });
+      }
+
       const leadId = payload.leadgen_id || payload.id || payload.lead_id || payload.meta_lead_id || ('zn_lead_' + Date.now());
       const platform = payload.platform || (payload.source && payload.source.toLowerCase().includes('instagram') ? 'Instagram Ads' : 'Facebook Lead Ad');
       const pageId = payload.page_id || payload.pageId || (payload.page && payload.page.id) || null;

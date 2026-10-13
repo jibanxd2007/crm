@@ -412,6 +412,78 @@ async function messagesHandler(req, res) {
   const supabase = getSupabaseAdmin();
   if (supabase) {
     try {
+      // Helper to extract relative storage path from Supabase storage URL or path
+      function extractStoragePath(urlOrPath) {
+        if (!urlOrPath || typeof urlOrPath !== 'string') return null;
+        if (!urlOrPath.startsWith('http://') && !urlOrPath.startsWith('https://')) {
+          return urlOrPath.replace(/^\/+/, '');
+        }
+        const match = urlOrPath.match(/\/message-attachments\/([^?#]+)/);
+        if (match) return decodeURIComponent(match[1]);
+        return null;
+      }
+
+      // Check for dedicated backfill action
+      if (req.query?.action === 'backfill-attachments' || req.body?.action === 'backfill-attachments') {
+        const { data: candidateMsgs } = await supabase
+          .from('messages')
+          .select('id, conversation_id, attachment_url, attachments, attachment_storage_path')
+          .is('attachment_storage_path', null)
+          .not('attachment_url', 'is', null)
+          .limit(100);
+
+        let backfilledCount = 0;
+        let failedCount = 0;
+
+        if (Array.isArray(candidateMsgs)) {
+          for (const m of candidateMsgs) {
+            const rawUrl = m.attachment_url || (Array.isArray(m.attachments) && (m.attachments[0]?.url || m.attachments[0]?.payload?.url));
+            const isMetaCdn = rawUrl && (
+              rawUrl.includes('lookaside.fbsbx.com') ||
+              rawUrl.includes('fbcdn.net') ||
+              rawUrl.includes('cdn.fbsbx.com') ||
+              rawUrl.includes('instagram.com')
+            );
+            if (isMetaCdn) {
+              try {
+                if (typeof fetch === 'function') {
+                  const dlRes = await fetch(rawUrl);
+                  if (dlRes.ok) {
+                    const contentType = dlRes.headers.get('content-type') || 'application/octet-stream';
+                    const ab = await dlRes.arrayBuffer();
+                    const buffer = Buffer.from(ab);
+                    const ext = contentType.includes('png') ? 'png' : (contentType.includes('webp') ? 'webp' : 'jpg');
+                    const newPath = `inbound/backfill/${m.conversation_id || 'general'}/${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${ext}`;
+                    const { error: upErr } = await supabase.storage
+                      .from('message-attachments')
+                      .upload(newPath, buffer, { contentType, upsert: true });
+
+                    if (!upErr) {
+                      await supabase
+                        .from('messages')
+                        .update({ attachment_storage_path: newPath })
+                        .eq('id', m.id);
+                      backfilledCount++;
+                      continue;
+                    }
+                  }
+                }
+                failedCount++;
+              } catch (e) {
+                failedCount++;
+              }
+            }
+          }
+        }
+
+        return res.status(200).json({
+          status: "success",
+          checked: candidateMsgs ? candidateMsgs.length : 0,
+          backfilled: backfilledCount,
+          failedOrExpired: failedCount
+        });
+      }
+
       if (requestedConv) {
         // Fetch thread messages in chronological order
         const { data: threadMsgs, error: threadErr } = await supabase
@@ -422,6 +494,84 @@ async function messagesHandler(req, res) {
           .range(offset, offset + limit - 1);
 
         if (!threadErr && threadMsgs && threadMsgs.length > 0) {
+          // Resolve 1-hour signed URLs for attachments in private bucket & perform on-the-fly backfill
+          for (const msg of threadMsgs) {
+            let storagePath = msg.attachment_storage_path || extractStoragePath(msg.attachment_url);
+            let rawUrl = msg.attachment_url;
+            let attachments = Array.isArray(msg.attachments) ? [...msg.attachments] : [];
+
+            if (!storagePath && attachments.length > 0) {
+              const firstAtt = attachments[0];
+              storagePath = firstAtt?.storagePath || firstAtt?.storage_path || extractStoragePath(firstAtt?.url || firstAtt?.payload?.url);
+              if (!rawUrl) rawUrl = firstAtt?.url || firstAtt?.payload?.url;
+            }
+
+            // On-the-fly backfill for live Meta CDN attachments not yet persisted to Supabase Storage
+            const isMetaCdn = rawUrl && (
+              rawUrl.includes('lookaside.fbsbx.com') ||
+              rawUrl.includes('fbcdn.net') ||
+              rawUrl.includes('cdn.fbsbx.com') ||
+              rawUrl.includes('instagram.com')
+            );
+
+            if (!storagePath && isMetaCdn) {
+              try {
+                if (typeof fetch === 'function') {
+                  const dlRes = await fetch(rawUrl);
+                  if (dlRes.ok) {
+                    const contentType = dlRes.headers.get('content-type') || 'application/octet-stream';
+                    const ab = await dlRes.arrayBuffer();
+                    const buffer = Buffer.from(ab);
+                    if (buffer.length > 0) {
+                      let ext = 'jpg';
+                      if (contentType.includes('png')) ext = 'png';
+                      else if (contentType.includes('webp')) ext = 'webp';
+                      else if (contentType.includes('mp4')) ext = 'mp4';
+                      const newPath = `inbound/backfill/${requestedConv}/${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${ext}`;
+                      const { error: upErr } = await supabase.storage
+                        .from('message-attachments')
+                        .upload(newPath, buffer, { contentType, upsert: true });
+
+                      if (!upErr) {
+                        storagePath = newPath;
+                        msg.attachment_storage_path = newPath;
+                        await supabase
+                          .from('messages')
+                          .update({ attachment_storage_path: newPath })
+                          .eq('id', msg.id)
+                          .catch(() => {});
+                      }
+                    }
+                  }
+                }
+              } catch (dlErr) {
+                console.warn('[Meta CDN on-the-fly backfill skipped]:', dlErr.message);
+              }
+            }
+
+            // Sign URL with 1-hour expiration
+            if (storagePath) {
+              try {
+                const { data: signData, error: signErr } = await supabase.storage
+                  .from('message-attachments')
+                  .createSignedUrl(storagePath, 3600);
+
+                if (!signErr && signData?.signedUrl) {
+                  msg.attachment_url = signData.signedUrl;
+                  if (attachments.length > 0) {
+                    attachments[0] = {
+                      ...attachments[0],
+                      url: signData.signedUrl,
+                      signedUrl: signData.signedUrl,
+                      storage_path: storagePath
+                    };
+                    msg.attachments = attachments;
+                  }
+                }
+              } catch (sErr) {}
+            }
+          }
+
           return res.status(200).json({
             status: "success",
             conversationId: requestedConv,
@@ -444,11 +594,19 @@ async function messagesHandler(req, res) {
 
         const sortMode = req.query?.sort || 'latest';
         if (sortMode === 'unread') {
-          convQuery = convQuery.order('unread_count', { ascending: false }).order('last_message_at', { ascending: false, nullsFirst: false });
+          convQuery = convQuery
+            .order('unread_count', { ascending: false })
+            .order('last_message_at', { ascending: false, nullsFirst: false })
+            .order('updated_at', { ascending: false });
         } else if (sortMode === 'oldest') {
-          convQuery = convQuery.order('last_message_at', { ascending: true, nullsFirst: false });
+          convQuery = convQuery
+            .order('last_message_at', { ascending: true, nullsFirst: false })
+            .order('created_at', { ascending: true });
         } else {
-          convQuery = convQuery.order('last_message_at', { ascending: false, nullsFirst: false });
+          convQuery = convQuery
+            .order('last_message_at', { ascending: false, nullsFirst: false })
+            .order('updated_at', { ascending: false })
+            .order('created_at', { ascending: false });
         }
 
         convQuery = convQuery.range(offset, offset + limit - 1);

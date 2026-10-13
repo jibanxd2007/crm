@@ -3342,6 +3342,11 @@ class MetaCRMApp {
     if (conv && (!conv.messages || conv.messages.length === 0)) {
       await this.fetchRealConversationMessages(conv);
     }
+
+    const thread = document.getElementById('inbox-thread');
+    if (thread) {
+      setTimeout(() => { thread.scrollTop = thread.scrollHeight; }, 30);
+    }
   }
 
   async toggleConversationUnread(convId) {
@@ -3551,12 +3556,12 @@ class MetaCRMApp {
         throw new Error(upErr.message || 'Storage upload failed');
       }
 
-      // 3. Resolve public URL for attachment rendering and message payload
-      const { data: pubData } = sbClient.storage
+      // 3. Resolve 1-hour signed URL for attachment rendering and message payload
+      const { data: signData } = await sbClient.storage
         .from('message-attachments')
-        .getPublicUrl(path);
+        .createSignedUrl(path, 3600);
 
-      const fileUrl = pubData?.publicUrl || '';
+      const fileUrl = signData?.signedUrl || '';
 
       this._pendingAttachment = {
         name: file.name,
@@ -3564,6 +3569,7 @@ class MetaCRMApp {
         size: file.size,
         url: fileUrl,
         storagePath: path,
+        storage_path: path,
         uploading: false
       };
 
@@ -3625,8 +3631,54 @@ class MetaCRMApp {
     `;
   }
 
+  _extractAttachment(m) {
+    if (!m) return null;
+    let raw = m.attachment || (Array.isArray(m.attachments) && m.attachments[0]) || null;
+    let url = null;
+    let type = null;
+    let name = null;
+    let storagePath = null;
+
+    if (raw) {
+      url = raw.url || raw.signedUrl || raw.signed_url || (raw.payload && raw.payload.url) || raw.src || null;
+      type = raw.type || raw.mimeType || raw.mime_type || (raw.payload && raw.payload.type) || null;
+      name = raw.name || raw.filename || (raw.payload && raw.payload.name) || null;
+      storagePath = raw.storagePath || raw.storage_path || null;
+    }
+
+    if (!url) {
+      url = m.attachment_url || m.media_url || m.mediaUrl || m.image_url || m.imageUrl || m.file_url || m.fileUrl || null;
+    }
+    if (!storagePath) {
+      storagePath = m.attachment_storage_path || null;
+    }
+    if (!url && storagePath) {
+      url = storagePath;
+    }
+    if (!url) return null;
+
+    type = (type || '').toLowerCase();
+    const cleanUrl = url.split('?')[0].toLowerCase();
+    if (!type || type === 'file') {
+      if (cleanUrl.match(/\.(jpeg|jpg|png|gif|webp|bmp|svg)$/i) || m.isImage || m.imageUrl || m.image_url) {
+        type = 'image';
+      } else if (cleanUrl.match(/\.(mp4|mov|webm|quicktime)$/i)) {
+        type = 'video';
+      } else if (cleanUrl.match(/\.(mp3|wav|ogg|m4a|aac)$/i)) {
+        type = 'audio';
+      }
+    }
+
+    return {
+      url,
+      type: type || 'file',
+      name: name || (type.startsWith('image') ? 'Photo' : 'Attachment'),
+      storagePath
+    };
+  }
+
   _renderAttachmentInBubble(m, isOutgoing = false) {
-    const att = m.attachment || (m.attachments && m.attachments[0]) || (m.attachment_url ? { url: m.attachment_url, type: 'file', name: 'Attachment' } : null);
+    const att = this._extractAttachment(m);
     if (!att || !att.url) return '';
 
     const url = att.url;
@@ -3639,7 +3691,13 @@ class MetaCRMApp {
     if (isImg) {
       return `
         <div class="msg-attachment-render" style="margin-bottom:6px;">
-          <img src="${escapeHtml(url)}" alt="${escapeHtml(name)}" style="max-width:260px;max-height:220px;border-radius:8px;object-fit:cover;cursor:pointer;display:block;box-shadow:0 1px 3px rgba(0,0,0,0.12);" onclick="window.app.openImageModal('${escapeHtml(url)}', '${escapeHtml(name)}')">
+          <img src="${escapeHtml(url)}" 
+               alt="${escapeHtml(name)}" 
+               data-storage-path="${escapeHtml(att.storagePath || '')}"
+               style="max-width:260px;max-height:220px;border-radius:8px;object-fit:cover;cursor:pointer;display:block;box-shadow:0 1px 3px rgba(0,0,0,0.12);" 
+               onclick="window.app.openImageModal('${escapeHtml(url)}', '${escapeHtml(name)}')"
+               onload="window.app._onImageLoadedInThread()"
+               onerror="window.app.handleAttachmentImageError(this, '${escapeHtml(name)}')">
         </div>
       `;
     }
@@ -3665,6 +3723,43 @@ class MetaCRMApp {
         </a>
       </div>
     `;
+  }
+
+  async handleAttachmentImageError(imgEl, name = 'Photo') {
+    if (!imgEl) return;
+    imgEl.onerror = null;
+
+    const storagePath = imgEl.getAttribute('data-storage-path');
+    if (storagePath && !imgEl._hasRetried) {
+      imgEl._hasRetried = true;
+      try {
+        const sbClient = await this._getSupabaseClient();
+        if (sbClient) {
+          const { data, error } = await sbClient.storage
+            .from('message-attachments')
+            .createSignedUrl(storagePath, 3600);
+          if (!error && data?.signedUrl) {
+            imgEl.src = data.signedUrl;
+            imgEl.setAttribute('onclick', `window.app.openImageModal('${escapeHtml(data.signedUrl)}', '${escapeHtml(name)}')`);
+            return;
+          }
+        }
+      } catch (e) {}
+    }
+
+    const parent = imgEl.parentElement;
+    if (parent) {
+      parent.innerHTML = `
+        <div class="msg-attachment-unavailable" style="display:inline-flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(0,0,0,0.04);border:1px dashed #CBD5E1;border-radius:8px;font-size:12px;color:#64748B;" title="Attachment unavailable or link expired">
+          <span style="font-size:16px;">📷</span>
+          <span>Photo unavailable</span>
+        </div>
+      `;
+    }
+  }
+
+  _onImageLoadedInThread() {
+    this._scrollThreadToBottom(false);
   }
 
   clearInboxSearch() {
@@ -3708,7 +3803,7 @@ class MetaCRMApp {
       if (Array.isArray(rawMsgs) && rawMsgs.length > 0) {
         conv.messages = rawMsgs.map(m => {
           let text = m.message || m.message_text || m.text || '';
-          const att = m.attachment || (m.attachments && m.attachments[0]) || (m.attachment_url ? { url: m.attachment_url, type: 'file', name: 'Attachment' } : null);
+          const att = this._extractAttachment(m);
           if (!text || !text.trim()) {
             if (m.isStoryMention) text = 'Replied to your story 📸';
             else if (att) text = (att.type && att.type.startsWith('image')) ? 'Sent a photo 📷' : '📎 Attachment';
@@ -3721,9 +3816,18 @@ class MetaCRMApp {
             incoming: incoming,
             attachment: att,
             attachments: m.attachments || (att ? [att] : []),
-            attachment_url: m.attachment_url || att?.url,
+            attachment_url: att?.url || m.attachment_url,
+            attachment_storage_path: att?.storagePath || m.attachment_storage_path,
+            created_at: m.created_at || m.createdAt || m.sentAt,
             time: new Date(m.sentAt || m.createdAt || m.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           };
+        });
+
+        // Always sort messages oldest to newest within open conversation
+        conv.messages.sort((a, b) => {
+          const tA = new Date(a.created_at || a.time || 0).getTime();
+          const tB = new Date(b.created_at || b.time || 0).getTime();
+          return tA - tB;
         });
 
         if (this.svc) {
@@ -3734,6 +3838,10 @@ class MetaCRMApp {
 
         if (this.activeConvId === conv.id) {
           this.renderInbox();
+          const thread = document.getElementById('inbox-thread');
+          if (thread) {
+            setTimeout(() => { thread.scrollTop = thread.scrollHeight; }, 30);
+          }
         }
       }
     } catch (e) {
@@ -3927,9 +4035,18 @@ class MetaCRMApp {
 
     if (this.svc && this.svc.conversations) {
       const idx = this.svc.conversations.findIndex(c => String(c.id) === String(convId));
-      if (idx > 0) {
-        const [moved] = this.svc.conversations.splice(idx, 1);
-        this.svc.conversations.unshift(moved);
+      if (idx !== -1) {
+        const target = this.svc.conversations[idx];
+        const nowIso = new Date().toISOString();
+        target.last_message_at = nowIso;
+        target.time = timeText || 'Just now';
+        if (preview) target.preview = preview;
+        if (unreadCount !== null) target.unread = unreadCount;
+        if (idx > 0) {
+          this.svc.conversations.splice(idx, 1);
+          this.svc.conversations.unshift(target);
+        }
+        if (this.svc._saveToStorage) this.svc._saveToStorage();
       }
     }
   }

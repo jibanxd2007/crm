@@ -261,13 +261,14 @@ async function metaWebhookHandler(req, res) {
                           .upload(storagePath, buffer, { contentType, upsert: true });
 
                         if (!upErr) {
-                          const { data: pubData } = supabase.storage
+                          const { data: signData } = await supabase.storage
                             .from('message-attachments')
-                            .getPublicUrl(storagePath);
+                            .createSignedUrl(storagePath, 3600);
 
                           storedAttachments.push({
                             type: attType,
-                            url: pubData?.publicUrl || cdnUrl,
+                            url: signData?.signedUrl || cdnUrl,
+                            signedUrl: signData?.signedUrl,
                             storage_path: storagePath,
                             name: filename,
                             size: buffer.length
