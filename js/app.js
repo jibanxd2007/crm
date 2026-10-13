@@ -542,6 +542,23 @@ class MetaCRMApp {
       if (window.history && window.history.replaceState) {
         window.history.replaceState({}, document.title, window.location.pathname + '#connections');
       }
+    } else if (fullUrl.includes('email_auth=success')) {
+      const emailMatch = fullUrl.match(/email=([^&]+)/);
+      const email = emailMatch ? decodeURIComponent(emailMatch[1]) : 'Email Account';
+      const provMatch = fullUrl.match(/provider=([^&]+)/);
+      const prov = provMatch ? decodeURIComponent(provMatch[1]) : 'Email';
+      this.toast(`✅ ${prov === 'google' ? 'Google Workspace' : 'Microsoft 365'} (${email}) connected successfully!`, 'success');
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, document.title, window.location.pathname + '#integrations');
+      }
+      this.render();
+    } else if (fullUrl.includes('email_auth=error')) {
+      const msgMatch = fullUrl.match(/msg=([^&]+)/);
+      const msg = msgMatch ? decodeURIComponent(msgMatch[1]) : 'Authorization declined or cancelled';
+      this.toast(`⚠️ Email authorization error: ${msg}`, 'error');
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, document.title, window.location.pathname + '#integrations');
+      }
     }
   }
 
@@ -6767,7 +6784,8 @@ class MetaCRMApp {
             </div>
 
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button class="btn btn-secondary btn-sm flex-1" onclick="window.app.syncIntegrationUI('int_google_email_01')">Sync Now</button>
+              <button class="btn btn-primary btn-sm flex-1" onclick="window.app.connectEmailOAuth('google')">Connect / Re-authorize</button>
+              <button class="btn btn-secondary btn-sm" onclick="window.app.syncIntegrationUI('int_google_email_01')">Sync</button>
               ${isAdmin ? `
                 <button class="btn btn-secondary btn-sm" onclick="window.app.openAssignStaffModal('int_google_email_01')">Assign Staff</button>
                 <button class="btn btn-ghost btn-sm text-red-500" onclick="window.app.disconnectIntegrationUI('int_google_email_01')">Disconnect</button>
@@ -6812,7 +6830,8 @@ class MetaCRMApp {
             </div>
 
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button class="btn btn-secondary btn-sm flex-1" onclick="window.app.syncIntegrationUI('int_ms_email_01')">Sync Now</button>
+              <button class="btn btn-primary btn-sm flex-1" onclick="window.app.connectEmailOAuth('microsoft')">Connect / Re-authorize</button>
+              <button class="btn btn-secondary btn-sm" onclick="window.app.syncIntegrationUI('int_ms_email_01')">Sync</button>
               ${isAdmin ? `
                 <button class="btn btn-secondary btn-sm" onclick="window.app.openAssignStaffModal('int_ms_email_01')">Assign Staff</button>
                 <button class="btn btn-ghost btn-sm text-red-500" onclick="window.app.disconnectIntegrationUI('int_ms_email_01')">Disconnect</button>
@@ -6918,6 +6937,14 @@ class MetaCRMApp {
       this.toast('✓ Synchronization completed successfully!', 'success');
       this.renderIntegrations();
     }
+  }
+
+  connectEmailOAuth(provider = 'google') {
+    const provName = provider === 'google' ? 'Google Workspace (Gmail)' : 'Microsoft 365 (Outlook)';
+    this.toast(`Redirecting to ${provName} authorization portal…`, 'info');
+    setTimeout(() => {
+      window.location.href = `/api/email/oauth?provider=${encodeURIComponent(provider)}&redirect=true`;
+    }, 400);
   }
 
   async disconnectIntegrationUI(id) {
