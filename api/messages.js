@@ -1,3 +1,4 @@
+const https = require('https');
 const { resolveUser, httpsRequest, createVercelHandler } = require('./_utils.js');
 let createClient = null;
 try {
@@ -276,22 +277,47 @@ async function messagesHandler(req, res) {
         let accountId = req.query?.accountId || req.query?.account_id || req.query?.page_id || req.query?.pageId;
         if (!accountId) {
           try {
-            const zConvs = await httpsRequest('https://zernio.com/api/v1/inbox/conversations', {
-              headers: { 'Authorization': `Bearer ${zernioApiKey}` }
+            const convsResp = await new Promise((resolve) => {
+              https.get({
+                hostname: 'zernio.com',
+                port: 443,
+                path: '/api/v1/inbox/conversations',
+                headers: { 'Authorization': `Bearer ${zernioApiKey}`, 'Accept': 'application/json' }
+              }, (cResp) => {
+                let cData = '';
+                cResp.on('data', d => cData += d);
+                cResp.on('end', () => {
+                  try { resolve(JSON.parse(cData)); } catch(e) { resolve(null); }
+                });
+              }).on('error', () => resolve(null));
             });
-            const list = Array.isArray(zConvs) ? zConvs : (zConvs.conversations || zConvs.data || []);
+            const list = convsResp ? (convsResp.conversations || convsResp.data || []) : [];
             const match = Array.isArray(list) ? list.find(c => String(c.id) === String(requestedConv)) : null;
             if (match && match.accountId) {
               accountId = match.accountId;
             }
           } catch (e) {}
         }
-        const accParam = accountId ? `?accountId=${encodeURIComponent(accountId)}` : '';
-        const zUrl = `https://zernio.com/api/v1/inbox/conversations/${requestedConv}/messages${accParam}`;
-        const zRes = await httpsRequest(zUrl, {
-          headers: { 'Authorization': `Bearer ${zernioApiKey}` }
+        if (!accountId) accountId = '6aca1c00e12ba0b652e62f45';
+
+        const rawMsgs = await new Promise((resolve) => {
+          https.get({
+            hostname: 'zernio.com',
+            port: 443,
+            path: `/api/v1/inbox/conversations/${requestedConv}/messages?accountId=${encodeURIComponent(accountId)}`,
+            headers: { 'Authorization': `Bearer ${zernioApiKey}`, 'Accept': 'application/json' }
+          }, (mResp) => {
+            let mData = '';
+            mResp.on('data', d => mData += d);
+            mResp.on('end', () => {
+              try {
+                const parsed = JSON.parse(mData);
+                resolve(parsed.messages || parsed.data || (Array.isArray(parsed) ? parsed : []));
+              } catch(e) { resolve([]); }
+            });
+          }).on('error', () => resolve([]));
         });
-        const rawMsgs = Array.isArray(zRes) ? zRes : (zRes.messages || zRes.data || []);
+
         if (Array.isArray(rawMsgs)) {
           const formatted = rawMsgs.map(m => ({
             id: m.id,
@@ -310,13 +336,26 @@ async function messagesHandler(req, res) {
           });
         }
       } else {
-        const zUrl = 'https://zernio.com/api/v1/inbox/conversations';
-        const zRes = await httpsRequest(zUrl, {
-          headers: { 'Authorization': `Bearer ${zernioApiKey}` }
+        const rawConvs = await new Promise((resolve) => {
+          https.get({
+            hostname: 'zernio.com',
+            port: 443,
+            path: '/api/v1/inbox/conversations',
+            headers: { 'Authorization': `Bearer ${zernioApiKey}`, 'Accept': 'application/json' }
+          }, (cResp) => {
+            let cData = '';
+            cResp.on('data', d => cData += d);
+            cResp.on('end', () => {
+              try {
+                const parsed = JSON.parse(cData);
+                resolve(parsed.conversations || parsed.data || (Array.isArray(parsed) ? parsed : []));
+              } catch(e) { resolve([]); }
+            });
+          }).on('error', () => resolve([]));
         });
-        const rawList = Array.isArray(zRes) ? zRes : (zRes.conversations || zRes.data || []);
-        if (Array.isArray(rawList) && rawList.length > 0) {
-          const liveConvs = rawList.map(c => {
+
+        if (Array.isArray(rawConvs) && rawConvs.length > 0) {
+          const liveConvs = rawConvs.map(c => {
             const isFb = c.platform === 'facebook' || c.platform === 'messenger';
             const pName = c.participantName || c.participantUsername || (isFb ? 'Facebook User' : 'Instagram User');
             return {
@@ -326,6 +365,7 @@ async function messagesHandler(req, res) {
               participant_username: c.participantUsername,
               channel: isFb ? 'messenger' : 'instagram',
               page_id: c.accountId,
+              accountId: c.accountId,
               unread_count: c.unreadCount || 0,
               last_message: c.lastMessage || 'Direct message',
               last_message_at: c.updatedTime || new Date().toISOString()
