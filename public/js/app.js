@@ -83,21 +83,20 @@ class MetaCRMApp {
   getCurrencySymbol(currency = null) {
     if (this.svc && this.svc.getCurrencySymbol) return this.svc.getCurrencySymbol(currency);
     const cur = currency || this.getCurrency();
-    if (cur === 'INR') return '₹';
     if (cur === 'EUR') return '€';
     if (cur === 'GBP') return '£';
-    if (cur === 'USD' || cur === 'NZD' || cur === 'AUD' || cur === 'CAD') return '$';
-    return '₹';
+    if (cur === 'INR') return '₹';
+    return '$';
   }
 
   getCurrency() {
-    return (this.svc && this.svc.getCurrency) ? this.svc.getCurrency() : (localStorage.getItem('metacrm_currency') || 'INR');
+    return (this.svc && this.svc.getCurrency) ? this.svc.getCurrency() : (localStorage.getItem('metacrm_currency') || 'USD');
   }
 
   setCurrency(curr) {
-    if (this.svc && this.svc.setCurrency) this.svc.setCurrency(curr || 'INR');
-    else localStorage.setItem('metacrm_currency', curr || 'INR');
-    this.toast(`Currency set to ${curr || 'INR'} (${this.getCurrencySymbol(curr)})`, 'info');
+    if (this.svc && this.svc.setCurrency) this.svc.setCurrency(curr || 'USD');
+    else localStorage.setItem('metacrm_currency', curr || 'USD');
+    this.toast(`Currency set to ${curr || 'USD'} (${this.getCurrencySymbol(curr)})`, 'info');
     if (this.currentRoute) this.navigate(this.currentRoute);
   }
 
@@ -117,7 +116,7 @@ class MetaCRMApp {
       }).format(val);
     } catch (e) {
       const sym = this.getCurrencySymbol(curr);
-      return `${sym}${val.toLocaleString('en-IN')}`;
+      return `${sym}${val.toLocaleString('en-US')}`;
     }
   }
 

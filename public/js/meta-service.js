@@ -631,7 +631,7 @@ class MetaService {
             "CAMPAIGN_BUDGET_UPDATED",
             `Campaign: ${c ? c.name : campaignId}`,
             "SUCCESS",
-            `Daily budget updated to ${window.formatMoney ? window.formatMoney(budgetAmountDollars) : '₹' + budgetAmountDollars}`
+            `Daily budget updated to ${window.formatMoney ? window.formatMoney(budgetAmountDollars) : '$' + budgetAmountDollars}`
           );
         }
 

@@ -114,20 +114,24 @@ class CRMService {
   }
 
   getCurrency() {
-    return localStorage.getItem('metacrm_currency') || 'INR';
+    const saved = localStorage.getItem('metacrm_currency');
+    if (!saved || saved === 'INR') {
+      localStorage.setItem('metacrm_currency', 'USD');
+      return 'USD';
+    }
+    return saved;
   }
 
   getCurrencySymbol(currency = null) {
     const cur = currency || this.getCurrency();
-    if (cur === 'INR') return '₹';
     if (cur === 'EUR') return '€';
     if (cur === 'GBP') return '£';
-    if (cur === 'USD' || cur === 'NZD' || cur === 'AUD' || cur === 'CAD') return '$';
-    return '₹';
+    if (cur === 'INR') return '₹';
+    return '$';
   }
 
   setCurrency(curr) {
-    localStorage.setItem('metacrm_currency', curr || 'INR');
+    localStorage.setItem('metacrm_currency', curr || 'USD');
     this.notifyChange('currency_changed');
     return curr;
   }
@@ -145,7 +149,7 @@ class CRMService {
       }).format(val);
     } catch (e) {
       const sym = this.getCurrencySymbol(curr);
-      return `${sym}${val.toLocaleString('en-IN')}`;
+      return `${sym}${val.toLocaleString('en-US')}`;
     }
   }
 
@@ -3691,7 +3695,7 @@ class CRMService {
 // Global initialization
 if (typeof window !== "undefined") {
   window.crmService = new CRMService();
-  window.formatMoney = (amount, currency = 'INR') => window.crmService.formatMoney(amount, currency);
+  window.formatMoney = (amount, currency = 'USD') => window.crmService.formatMoney(amount, currency);
 }
 
 if (typeof module !== "undefined" && module.exports) {
