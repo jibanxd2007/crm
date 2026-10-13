@@ -7,7 +7,7 @@
  * - PATCH /api/email/messages: Mark read/unread or toggle folder
  */
 
-const { resolveUser, createVercelHandler } = require('../_utils.js');
+const { resolveUser, createVercelHandler, httpsRequest } = require('../_utils.js');
 let createClient = null;
 try {
   createClient = require('@supabase/supabase-js').createClient;
@@ -139,8 +139,42 @@ async function emailMessagesHandler(req, res) {
     let deliveryStatus = 'delivered';
     let apiError = null;
 
-    // Dispatch via real Gmail API if live access token is available
-    if (process.env.GMAIL_ACCESS_TOKEN && accountId.includes('google')) {
+    // Dispatch via Resend API if RESEND_API_KEY is set (Primary direct transactional email engine)
+    const resendApiKey = process.env.RESEND_API_KEY;
+    if (resendApiKey) {
+      try {
+        const fromEmail = process.env.RESEND_FROM_EMAIL || body.from || 'onboarding@resend.dev';
+        const resendPayload = {
+          from: fromEmail,
+          to: Array.isArray(to) ? to : [to],
+          subject: subject,
+          html: bodyHtml || `<p>${bodyText}</p>`
+        };
+        if (cc && cc.length > 0) resendPayload.cc = cc;
+        if (bcc && bcc.length > 0) resendPayload.bcc = bcc;
+
+        const resendRes = await httpsRequest('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${resendApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: resendPayload
+        });
+
+        if (resendRes && resendRes.id) {
+          deliveryStatus = 'delivered';
+          providerMsgId = resendRes.id;
+        } else if (resendRes && resendRes.error) {
+          deliveryStatus = 'failed';
+          apiError = resendRes.error.message || JSON.stringify(resendRes.error);
+        }
+      } catch (e) {
+        deliveryStatus = 'failed';
+        apiError = e.message;
+      }
+    } else if (process.env.GMAIL_ACCESS_TOKEN && accountId.includes('google')) {
+      // Dispatch via real Gmail API if live access token is available
       try {
         const rawMime = [
           `To: ${to.join(', ')}`,

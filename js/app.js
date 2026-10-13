@@ -6747,7 +6747,48 @@ class MetaCRMApp {
             </div>
           </div>
 
-          <!-- CARD 2: GOOGLE WORKSPACE / GMAIL -->
+          <!-- CARD 2: RESEND EMAIL ENGINE -->
+          <div class="card" style="padding:20px;display:flex;flex-direction:column;justify-content:space-between;border-top:3px solid #000000;">
+            <div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <div style="width:36px;height:36px;border-radius:8px;background:#F1F5F9;display:flex;align-items:center;justify-content:center;color:#000;">
+                    <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M1.5 8.67v8.58a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3V8.67l-8.928 5.493a3 3 0 0 1-3.144 0L1.5 8.67Z"/><path d="M22.5 6.908V6a3 3 0 0 0-3-3h-15a3 3 0 0 0-3 3v.908l10.286 6.33a.5.5 0 0 0 .528 0L22.5 6.908Z"/></svg>
+                  </div>
+                  <div>
+                    <h4 style="font-size:14px;font-weight:700;margin:0;">Resend Email Engine</h4>
+                    <span class="text-xs text-gray">Modern Transactional Email API</span>
+                  </div>
+                </div>
+                <span class="badge badge-success" style="font-size:11px;">Active</span>
+              </div>
+
+              <p class="text-xs text-gray" style="line-height:1.5;margin-bottom:12px;">
+                High-deliverability direct email delivery via Resend API. Dispatches notifications, lead follow-ups, and customer replies without OAuth prompts.
+              </p>
+
+              <div style="background:#F8FAFC;border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:11px;margin-bottom:16px;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                  <span class="text-gray">Sender:</span>
+                  <strong>onboarding@resend.dev</strong>
+                </div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                  <span class="text-gray">Target:</span>
+                  <span>crm567625@gmail.com</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;">
+                  <span class="text-gray">Provider Status:</span>
+                  <span class="text-green font-medium">Ready via RESEND_API_KEY</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-primary btn-sm flex-1" onclick="window.app.sendResendTestEmail('crm567625@gmail.com')">Send Test Email</button>
+            </div>
+          </div>
+
+          <!-- CARD 3: GOOGLE WORKSPACE / GMAIL -->
           <div class="card" style="padding:20px;display:flex;flex-direction:column;justify-content:space-between;border-top:3px solid #EA4335;">
             <div>
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
@@ -6945,6 +6986,21 @@ class MetaCRMApp {
     setTimeout(() => {
       window.location.href = `/api/email/oauth?provider=${encodeURIComponent(provider)}&redirect=true`;
     }, 400);
+  }
+
+  async sendResendTestEmail(targetEmail = 'crm567625@gmail.com') {
+    this.toast(`Dispatching test email via Resend to ${targetEmail}…`, 'info');
+    try {
+      const resp = await fetch(`/api/email?path=test-resend&to=${encodeURIComponent(targetEmail)}`);
+      const data = await resp.json();
+      if (resp.ok && data.status === 'success') {
+        this.toast(`✓ Test email delivered to ${targetEmail}!`, 'success');
+      } else {
+        this.toast(`⚠️ Resend: ${data.error || 'Failed to send'}`, 'error');
+      }
+    } catch (e) {
+      this.toast(`Network error sending via Resend: ${e.message}`, 'error');
+    }
   }
 
   async disconnectIntegrationUI(id) {
