@@ -230,7 +230,7 @@ async function messagesHandler(req, res) {
           .order('created_at', { ascending: true })
           .range(offset, offset + limit - 1);
 
-        if (!threadErr && threadMsgs) {
+        if (!threadErr && threadMsgs && threadMsgs.length > 0) {
           return res.status(200).json({
             status: "success",
             conversationId: requestedConv,
@@ -253,7 +253,7 @@ async function messagesHandler(req, res) {
         }
 
         const { data: convData, count: totalCount, error: convErr } = await convQuery;
-        if (!convErr && convData) {
+        if (!convErr && convData && convData.length > 0) {
           return res.status(200).json({
             status: "success",
             authorized: true,
@@ -265,6 +265,84 @@ async function messagesHandler(req, res) {
       }
     } catch (dbErr) {
       console.warn("[Supabase Inbox Query Warning]:", dbErr.message);
+    }
+  }
+
+  // Live Gateway Fallback: query Zernio connected inbox if DB has no stored rows yet
+  const zernioApiKey = process.env.ZERNIO_API_KEY;
+  if (zernioApiKey) {
+    try {
+      if (requestedConv) {
+        let accountId = req.query?.accountId || req.query?.account_id || req.query?.page_id || req.query?.pageId;
+        if (!accountId) {
+          try {
+            const zConvs = await httpsRequest('https://zernio.com/api/v1/inbox/conversations', {
+              headers: { 'Authorization': `Bearer ${zernioApiKey}` }
+            });
+            const list = Array.isArray(zConvs) ? zConvs : (zConvs.conversations || zConvs.data || []);
+            const match = Array.isArray(list) ? list.find(c => String(c.id) === String(requestedConv)) : null;
+            if (match && match.accountId) {
+              accountId = match.accountId;
+            }
+          } catch (e) {}
+        }
+        const accParam = accountId ? `?accountId=${encodeURIComponent(accountId)}` : '';
+        const zUrl = `https://zernio.com/api/v1/inbox/conversations/${requestedConv}/messages${accParam}`;
+        const zRes = await httpsRequest(zUrl, {
+          headers: { 'Authorization': `Bearer ${zernioApiKey}` }
+        });
+        const rawMsgs = Array.isArray(zRes) ? zRes : (zRes.messages || zRes.data || []);
+        if (Array.isArray(rawMsgs)) {
+          const formatted = rawMsgs.map(m => ({
+            id: m.id,
+            conversation_id: requestedConv,
+            sender_id: m.senderId,
+            sender_name: m.senderName,
+            message_text: m.message,
+            direction: m.direction,
+            created_at: m.sentAt || m.createdAt
+          }));
+          return res.status(200).json({
+            status: "success",
+            conversationId: requestedConv,
+            messages: formatted,
+            pagination: { limit, offset, count: formatted.length }
+          });
+        }
+      } else {
+        const zUrl = 'https://zernio.com/api/v1/inbox/conversations';
+        const zRes = await httpsRequest(zUrl, {
+          headers: { 'Authorization': `Bearer ${zernioApiKey}` }
+        });
+        const rawList = Array.isArray(zRes) ? zRes : (zRes.conversations || zRes.data || []);
+        if (Array.isArray(rawList) && rawList.length > 0) {
+          const liveConvs = rawList.map(c => {
+            const isFb = c.platform === 'facebook' || c.platform === 'messenger';
+            const pName = c.participantName || c.participantUsername || (isFb ? 'Facebook User' : 'Instagram User');
+            return {
+              id: String(c.id),
+              name: isFb ? pName : (pName.startsWith('@') ? pName : `@${pName}`),
+              participant_name: pName,
+              participant_username: c.participantUsername,
+              channel: isFb ? 'messenger' : 'instagram',
+              page_id: c.accountId,
+              unread_count: c.unreadCount || 0,
+              last_message: c.lastMessage || 'Direct message',
+              last_message_at: c.updatedTime || new Date().toISOString()
+            };
+          });
+          liveConvs.sort((a, b) => new Date(b.last_message_at) - new Date(a.last_message_at));
+          return res.status(200).json({
+            status: "success",
+            authorized: true,
+            userRole: user.role,
+            conversations: liveConvs,
+            pagination: { limit, offset, total: liveConvs.length }
+          });
+        }
+      }
+    } catch (zErr) {
+      console.warn("[Zernio Inbox Fallback Warning]:", zErr.message);
     }
   }
 

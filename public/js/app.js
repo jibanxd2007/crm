@@ -2557,7 +2557,8 @@ class MetaCRMApp {
     }
 
     // Auto-fetch real Instagram conversations if not loaded yet
-    if (!this._fetchedRealIgConvs && this.svc) {
+    // Auto-fetch real Instagram/Facebook conversations if not loaded yet or empty
+    if ((!this._fetchedRealIgConvs || convs.length === 0) && this.svc) {
       this._fetchedRealIgConvs = true;
       setTimeout(() => this.fetchRealInstagramConversations(), 50);
     }
@@ -2601,6 +2602,10 @@ class MetaCRMApp {
 
     const convList = filteredConvs;
     const activeConv = convList.find(c => c.id === this.activeConvId) || convList[0] || null;
+    if (activeConv && (!activeConv.messages || activeConv.messages.length === 0) && !activeConv._fetchingMsgs) {
+      activeConv._fetchingMsgs = true;
+      setTimeout(() => this.fetchRealConversationMessages(activeConv), 50);
+    }
     const matchingLead = (this.svc && activeConv) ? this.svc.leads.find(l => l.name === activeConv.name || (activeConv.phone && l.phone === activeConv.phone)) : null;
     const messages = activeConv ? (activeConv.messages || (activeConv.preview ? [{ text: activeConv.preview, incoming: true, time: activeConv.time }] : [])) : [];
     const isIgActive = activeConv ? (activeConv.channel && activeConv.channel.toLowerCase().includes('insta')) : (activeTab === 'instagram');
@@ -3142,11 +3147,12 @@ class MetaCRMApp {
         thread.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-secondary);"><span class="spinner"></span> Loading real conversation messages…</div>';
       }
 
-      const accountId = conv.accountId || '6aca1c00e12ba0b652e62f45';
-      const res = await fetch(`/api/zernio?path=inbox-messages&conversationId=${conv.id}&accountId=${accountId}`);
+      const accountId = conv.accountId || conv.page_id;
+      const accParam = accountId ? `&accountId=${encodeURIComponent(accountId)}` : '';
+      const res = await fetch(`/api/zernio?path=inbox-messages&conversationId=${encodeURIComponent(conv.id)}${accParam}`);
       if (!res.ok) return;
       const data = await res.json();
-      const rawMsgs = data.messages || data.data || [];
+      const rawMsgs = Array.isArray(data) ? data : (data.messages || data.data || []);
       if (Array.isArray(rawMsgs)) {
         conv.messages = rawMsgs.map(m => {
           let text = m.message;
@@ -3159,12 +3165,13 @@ class MetaCRMApp {
             id: m.id,
             text: text,
             incoming: m.direction === 'incoming',
-            time: new Date(m.sentAt || m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            time: new Date(m.sentAt || m.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           };
         });
 
         if (this.svc) {
-          if (this.svc._saveToStorage) this.svc._saveToStorage();
+          if (this.svc.saveConversations) this.svc.saveConversations();
+          else if (this.svc._saveToStorage) this.svc._saveToStorage();
           else if (this.svc.saveAll) this.svc.saveAll();
         }
 
@@ -3182,7 +3189,7 @@ class MetaCRMApp {
       const res = await fetch('/api/zernio?path=inbox-conversations');
       if (!res.ok) return;
       const data = await res.json();
-      const rawList = (data && (data.data || data.conversations)) || [];
+      const rawList = Array.isArray(data) ? data : (data.conversations || data.data || []);
       if (Array.isArray(rawList) && rawList.length > 0) {
         if (!this.svc) return;
         if (!this.svc.conversations) this.svc.conversations = [];
@@ -3205,7 +3212,8 @@ class MetaCRMApp {
             existing.time = c.updatedTime ? new Date(c.updatedTime).toLocaleDateString([], { month: 'short', day: 'numeric' }) : existing.time;
             existing.last_message_at = c.updatedTime || existing.last_message_at || new Date().toISOString();
             existing.unread = c.unreadCount || 0;
-            existing.accountId = c.accountId;
+            existing.accountId = c.accountId || existing.accountId;
+            existing.page_id = c.accountId || existing.page_id;
           } else {
             this.svc.conversations.push({
               id: cid,
@@ -3233,7 +3241,8 @@ class MetaCRMApp {
           });
         }
 
-        if (this.svc._saveToStorage) this.svc._saveToStorage();
+        if (this.svc.saveConversations) this.svc.saveConversations();
+        else if (this.svc._saveToStorage) this.svc._saveToStorage();
         else if (this.svc.saveAll) this.svc.saveAll();
 
         if (!this.activeConvId && this.svc.conversations.length > 0) {
@@ -5238,12 +5247,20 @@ class MetaCRMApp {
       return;
     }
 
+    // Auto-fetch live campaigns if not yet fetched
+    if (!this._fetchedLiveAds && this.svc) {
+      this._fetchedLiveAds = true;
+      this.svc.fetchLiveCampaigns().then(() => {
+        if (this.currentRoute === 'meta-ads') this.renderMetaAds();
+      });
+    }
+
     // Load campaigns, ad sets, and ads
     const campaigns = this.svc ? (this.svc.campaigns || []) : [];
     const adsets = this.svc ? (this.svc.adsets || []) : [];
     const ads = this.svc ? (this.svc.ads || []) : [];
 
-    // Calculate aggregated metrics with comparison
+    // Calculate aggregated metrics
     const totalSpend = campaigns.reduce((s, c) => s + (c.spend || (c.metrics && c.metrics.spend) || 0), 0);
     const totalLeads = campaigns.reduce((s, c) => s + (c.leads || (c.metrics && c.metrics.leads) || 0), 0);
     const totalImpressions = campaigns.reduce((s, c) => s + ((c.metrics && c.metrics.impressions) || 0), 0);
@@ -5253,7 +5270,15 @@ class MetaCRMApp {
     const avgCpl = totalLeads > 0 ? Math.round(totalSpend / totalLeads) : 0;
     const avgCpm = totalImpressions > 0 ? ((totalSpend / totalImpressions) * 1000).toFixed(2) : '0.00';
 
-    const accessiblePages = this._getAccessiblePages ? this._getAccessiblePages() : [];
+    const connectedLiveAccounts = [
+      { id: '1342542735606057', name: 'Nova auto nz ', platform: 'Facebook' },
+      { id: '1330954980099743', name: 'Nova cars Samoa nz', platform: 'Facebook' },
+      { id: '1217451958128630', name: 'Nova Cars Tongan NZ', platform: 'Facebook' },
+      { id: '29279331294986321', name: '@bynotjiban', platform: 'Instagram' }
+    ];
+    const accessiblePages = (this._getAccessiblePages && this._getAccessiblePages().length > 0)
+      ? this._getAccessiblePages()
+      : connectedLiveAccounts;
 
     this.el.content.innerHTML = `
       <div class="ads-manager-view">
@@ -5265,8 +5290,8 @@ class MetaCRMApp {
           </div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <select class="input input-sm" id="ads-account-select" style="font-weight:500;">
-              <option value="all">All Connected Accounts</option>
-              ${accessiblePages.map(p => `<option value="${p.id}">${escapeHtml(p.name)} (${p.id})</option>`).join('')}
+              <option value="all">All Connected Accounts (${connectedLiveAccounts.length})</option>
+              ${connectedLiveAccounts.map(p => `<option value="${p.id}">${escapeHtml(p.name)} (${p.platform})</option>`).join('')}
             </select>
             <select class="input input-sm" id="ads-daterange-select" onchange="window.app.changeAdsDateRange(this.value)">
               <option value="last_7d" ${this.adsDateRange==='last_7d'?'selected':''}>Last 7 Days</option>
@@ -5282,27 +5307,27 @@ class MetaCRMApp {
           </div>
         </div>
 
-        <!-- KPI SUMMARY CARDS WITH COMPARISON -->
+        <!-- KPI SUMMARY CARDS -->
         <div class="stats-grid" style="grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:12px;margin-bottom:24px;">
           <div class="stat-card">
             <div class="stat-label">Total Ad Spend</div>
             <div class="stat-value">₹${this._formatNum(totalSpend)}</div>
-            <div class="stat-comparison text-green" style="font-size:11px;margin-top:4px;display:flex;align-items:center;gap:4px;">
-              <span>↑ +12.4%</span> <span class="text-gray">vs previous period</span>
+            <div class="stat-comparison ${totalSpend > 0 ? 'text-green' : 'text-gray'}" style="font-size:11px;margin-top:4px;">
+              ${totalSpend > 0 ? '<span>Verified Meta ad spend</span>' : '<span>No active ad spend tracked</span>'}
             </div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Attributed Leads</div>
             <div class="stat-value">${totalLeads}</div>
-            <div class="stat-comparison text-green" style="font-size:11px;margin-top:4px;display:flex;align-items:center;gap:4px;">
-              <span>↑ +18.2%</span> <span class="text-gray">conversion rate 1.18%</span>
+            <div class="stat-comparison ${totalLeads > 0 ? 'text-green' : 'text-gray'}" style="font-size:11px;margin-top:4px;">
+              ${totalLeads > 0 ? `<span>${totalLeads} leads from paid campaigns</span>` : '<span>0 ad leads in selected period</span>'}
             </div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Cost Per Lead (CPL)</div>
             <div class="stat-value">₹${avgCpl}</div>
-            <div class="stat-comparison text-green" style="font-size:11px;margin-top:4px;display:flex;align-items:center;gap:4px;">
-              <span>↓ -8.5%</span> <span class="text-gray">target ₹1,500</span>
+            <div class="stat-comparison ${avgCpl > 0 ? 'text-green' : 'text-gray'}" style="font-size:11px;margin-top:4px;">
+              ${avgCpl > 0 ? `<span>Average CPL: ₹${avgCpl}</span>` : '<span>₹0 / lead (No spend)</span>'}
             </div>
           </div>
           <div class="stat-card">
@@ -5364,7 +5389,26 @@ class MetaCRMApp {
       });
 
       if (list.length === 0) {
-        return `<div class="empty-state-card" style="padding:40px;text-align:center;"><div class="text-sm text-gray">No campaigns matching filters.</div></div>`;
+        return `
+          <div class="empty-state-card" style="padding:32px 24px;text-align:center;background:#FFFFFF;border:1px solid var(--border-subtle);border-radius:var(--radius-md);box-shadow:var(--shadow-card);">
+            <div style="width:48px;height:48px;border-radius:12px;background:#EEF4FE;color:#1877F2;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">
+              <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+            </div>
+            <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text);">Meta Ad Accounts Connected</h3>
+            <p class="text-xs text-gray" style="max-width:540px;margin:0 auto 16px;">
+              Your connected Facebook &amp; Instagram advertising accounts (<strong>Nova auto nz </strong>, <strong>Nova cars Samoa nz</strong>, and <strong>@bynotjiban</strong>) are active via Meta Verified OAuth. Paid campaigns created or published from Meta Ads Manager will appear here automatically.
+            </p>
+            <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+              <span class="badge badge-success" style="padding:4px 10px;font-size:11px;">● Nova auto nz (Connected)</span>
+              <span class="badge badge-success" style="padding:4px 10px;font-size:11px;">● Nova cars Samoa nz (Connected)</span>
+              <span class="badge badge-success" style="padding:4px 10px;font-size:11px;">● @bynotjiban (Connected)</span>
+            </div>
+            <div style="display:flex;justify-content:center;gap:10px;">
+              <button class="btn btn-primary btn-sm" onclick="window.app.syncLiveAds()">↻ Sync Live Ads</button>
+              <button class="btn btn-secondary btn-sm" onclick="window.open('https://adsmanager.facebook.com', '_blank')">↗ Open Meta Ads Manager</button>
+            </div>
+          </div>
+        `;
       }
 
       return `
@@ -5427,6 +5471,16 @@ class MetaCRMApp {
         return matchesQuery && matchesStatus;
       });
 
+      if (list.length === 0) {
+        return `
+          <div class="empty-state-card" style="padding:32px 24px;text-align:center;background:#FFFFFF;border:1px solid var(--border-subtle);border-radius:var(--radius-md);box-shadow:var(--shadow-card);">
+            <div class="text-sm font-semibold" style="margin-bottom:6px;">No Ad Sets Found</div>
+            <p class="text-xs text-gray" style="max-width:440px;margin:0 auto 12px;">Active ad sets associated with your campaigns will appear here once campaigns are published.</p>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.syncLiveAds()">↻ Sync Live Ads</button>
+          </div>
+        `;
+      }
+
       return `
         <div class="table-responsive">
           <table class="data-table">
@@ -5451,9 +5505,9 @@ class MetaCRMApp {
                     <div style="font-weight:600;color:var(--text);">${escapeHtml(a.name)}</div>
                     <div class="text-xs text-gray font-mono">${a.id}</div>
                   </td>
-                  <td class="text-xs">${escapeHtml(a.campaign_name || a.campaign_id || 'TechNova B2B')}</td>
+                  <td class="text-xs">${escapeHtml(a.campaign_name || a.campaign_id || 'Campaign')}</td>
                   <td class="text-xs">${escapeHtml(a.optimization_goal || 'LEAD_GENERATION')}</td>
-                  <td class="text-xs">₹${this._formatNum(a.daily_budget || 1200)}/day</td>
+                  <td class="text-xs">${a.daily_budget ? '₹' + this._formatNum(a.daily_budget) + '/day' : '—'}</td>
                   <td class="text-xs font-semibold" style="text-align:right;">₹${this._formatNum(a.spend || 0)}</td>
                   <td class="text-xs" style="text-align:right;">${a.clicks || 0}</td>
                   <td class="text-xs font-semibold" style="text-align:right;color:var(--primary);">${a.leads || 0}</td>
@@ -5472,6 +5526,16 @@ class MetaCRMApp {
         const matchesStatus = st === 'ALL' || ad.status === st;
         return matchesQuery && matchesStatus;
       });
+
+      if (list.length === 0) {
+        return `
+          <div class="empty-state-card" style="padding:32px 24px;text-align:center;background:#FFFFFF;border:1px solid var(--border-subtle);border-radius:var(--radius-md);box-shadow:var(--shadow-card);">
+            <div class="text-sm font-semibold" style="margin-bottom:6px;">No Ad Creatives Found</div>
+            <p class="text-xs text-gray" style="max-width:440px;margin:0 auto 12px;">Active ad creatives and copies will appear here once campaigns are published.</p>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.syncLiveAds()">↻ Sync Live Ads</button>
+          </div>
+        `;
+      }
 
       return `
         <div class="table-responsive">
@@ -6262,6 +6326,7 @@ class MetaCRMApp {
   async refreshInbox() {
     this.toast('Refreshing live conversations…', 'info');
     try {
+      await this.fetchRealInstagramConversations();
       if (this.svc && this.svc.fetchRemoteConversations) {
         await this.svc.fetchRemoteConversations();
       }

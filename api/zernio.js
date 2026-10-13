@@ -166,12 +166,38 @@ async function zernioUnifiedHandler(req, res) {
       return res.status(200).json({ status: "error", error: "ZERNIO_API_KEY not configured", messages: [] });
     }
 
-    const conversationId = query.conversationId || (url.match(/conversations\/([^/?]+)/) ? url.match(/conversations\/([^/?]+)/)[1] : null);
-    const accountId = query.accountId || (req.body && req.body.accountId) || '6aca1c00e12ba0b652e62f45';
+    let conversationId = query.conversationId || (url.match(/conversations\/([^/?]+)/) ? url.match(/conversations\/([^/?]+)/)[1] : null);
+    let accountId = query.accountId || (req.body && req.body.accountId);
 
     if (!conversationId) {
       return res.status(400).json({ error: "Missing conversationId" });
     }
+
+    // If accountId is not provided, look up the owning account from the live conversations list
+    if (!accountId) {
+      try {
+        const convsResp = await new Promise((resolve) => {
+          https.get({
+            hostname: 'zernio.com',
+            port: 443,
+            path: '/api/v1/inbox/conversations',
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Accept': 'application/json' }
+          }, (cResp) => {
+            let cData = '';
+            cResp.on('data', d => cData += d);
+            cResp.on('end', () => {
+              try { resolve(JSON.parse(cData)); } catch(e) { resolve(null); }
+            });
+          }).on('error', () => resolve(null));
+        });
+        const list = convsResp ? (convsResp.conversations || convsResp.data || []) : [];
+        const match = Array.isArray(list) ? list.find(c => String(c.id) === String(conversationId)) : null;
+        if (match && match.accountId) {
+          accountId = match.accountId;
+        }
+      } catch (err) {}
+    }
+    if (!accountId) accountId = '6aca1c00e12ba0b652e62f45';
 
     if (req.method === 'POST') {
       const text = (req.body && (req.body.message || req.body.text)) || '';
@@ -221,7 +247,7 @@ async function zernioUnifiedHandler(req, res) {
     const options = {
       hostname: 'zernio.com',
       port: 443,
-      path: `/api/v1/inbox/conversations/${conversationId}/messages?accountId=${accountId}`,
+      path: `/api/v1/inbox/conversations/${conversationId}/messages?accountId=${encodeURIComponent(accountId)}`,
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${apiKey}`,

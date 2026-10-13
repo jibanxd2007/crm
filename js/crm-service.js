@@ -373,19 +373,56 @@ class CRMService {
       const res = await fetch('/api/messages', { headers }).catch(() => null);
       if (res && res.ok) {
         const data = await res.json();
-        if (data && Array.isArray(data.conversations)) {
+        if (data && Array.isArray(data.conversations) && data.conversations.length > 0) {
           this.conversations = data.conversations.map(c => ({
-            id: c.id,
-            name: c.participant_name || 'Anonymous',
+            id: String(c.id),
+            conversationId: String(c.id),
+            name: c.participant_name || c.name || 'Anonymous',
             channel: c.channel || 'messenger',
-            page_id: c.page_id,
-            unread: c.unread_count || 0,
-            unread_count: c.unread_count || 0,
-            last_message_at: c.last_message_at || c.created_at,
-            preview: c.last_message || '',
-            last_message: c.last_message || '',
+            page_id: c.page_id || c.accountId,
+            accountId: c.accountId || c.page_id,
+            unread: c.unread_count || c.unread || 0,
+            unread_count: c.unread_count || c.unread || 0,
+            last_message_at: c.last_message_at || c.created_at || new Date().toISOString(),
+            time: c.last_message_at ? new Date(c.last_message_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'Recently',
+            preview: c.last_message || c.preview || 'Direct message',
+            last_message: c.last_message || c.preview || 'Direct message',
             messages: c.messages || []
           }));
+          this.conversations.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
+          this.saveConversations();
+          this.notifyChange('conversations_updated');
+          return this.conversations;
+        }
+      }
+
+      // Gateway fallback directly to Zernio endpoint if /api/messages had no stored records
+      const zRes = await fetch('/api/zernio?path=inbox-conversations').catch(() => null);
+      if (zRes && zRes.ok) {
+        const zData = await zRes.json();
+        const rawList = Array.isArray(zData) ? zData : (zData.conversations || zData.data || []);
+        if (Array.isArray(rawList) && rawList.length > 0) {
+          this.conversations = rawList.map(c => {
+            const isFb = c.platform === 'facebook' || c.platform === 'messenger';
+            const pName = c.participantName || c.participantUsername || (isFb ? 'Facebook User' : 'Instagram User');
+            return {
+              id: String(c.id),
+              conversationId: String(c.id),
+              name: isFb ? pName : (pName.startsWith('@') ? pName : `@${pName}`),
+              participant_name: pName,
+              participantUsername: c.participantUsername,
+              channel: isFb ? 'messenger' : 'instagram',
+              page_id: c.accountId,
+              accountId: c.accountId,
+              preview: c.lastMessage || 'Direct message',
+              last_message: c.lastMessage || 'Direct message',
+              time: c.updatedTime ? new Date(c.updatedTime).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'Recently',
+              last_message_at: c.updatedTime || new Date().toISOString(),
+              unread: c.unreadCount || 0,
+              unread_count: c.unreadCount || 0,
+              messages: []
+            };
+          });
           this.conversations.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
           this.saveConversations();
           this.notifyChange('conversations_updated');
@@ -3421,6 +3458,30 @@ class CRMService {
     return { success: true };
   }
 
+  saveCampaigns() {
+    try {
+      localStorage.setItem(this.campaignsKey, JSON.stringify(this.campaigns));
+    } catch(e) {}
+  }
+
+  saveAdSets() {
+    try {
+      localStorage.setItem(this.adsetsKey, JSON.stringify(this.adsets));
+    } catch(e) {}
+  }
+
+  saveAds() {
+    try {
+      localStorage.setItem(this.adsKey, JSON.stringify(this.ads));
+    } catch(e) {}
+  }
+
+  saveConversations() {
+    try {
+      localStorage.setItem(this.conversationsKey, JSON.stringify(this.conversations));
+    } catch(e) {}
+  }
+
   async fetchLiveCampaigns(adAccountId = "", datePreset = "last_30d") {
     try {
       const url = `/api/campaigns?accountId=${encodeURIComponent(adAccountId)}&datePreset=${encodeURIComponent(datePreset)}`;
@@ -3428,7 +3489,10 @@ class CRMService {
       if (res.ok) {
         const data = await res.json();
         if (data && Array.isArray(data.campaigns)) {
-          return data.campaigns;
+          this.campaigns = data.campaigns;
+          this.saveCampaigns();
+          this.notifyChange('campaigns_updated');
+          return this.campaigns;
         }
       }
     } catch (e) {}
@@ -3441,8 +3505,11 @@ class CRMService {
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
-        if (data && Array.isArray(data.adsets)) {
-          return data.adsets;
+        const list = (data && (data.adSets || data.adsets)) || [];
+        if (Array.isArray(list)) {
+          this.adsets = list;
+          this.saveAdSets();
+          return this.adsets;
         }
       }
     } catch (e) {}
@@ -3455,8 +3522,11 @@ class CRMService {
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
-        if (data && Array.isArray(data.ads)) {
-          return data.ads;
+        const list = (data && data.ads) || [];
+        if (Array.isArray(list)) {
+          this.ads = list;
+          this.saveAds();
+          return this.ads;
         }
       }
     } catch (e) {}
