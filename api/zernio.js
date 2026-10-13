@@ -1,6 +1,44 @@
 const https = require('https');
+const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { createVercelHandler, resolveUser, httpsRequest } = require('./_utils/index.js');
+
+function getRawBodyBuffer(req) {
+  return new Promise((resolve, reject) => {
+    if (Buffer.isBuffer(req.rawBody)) {
+      return resolve(req.rawBody);
+    }
+    if (typeof req.rawBody === 'string') {
+      return resolve(Buffer.from(req.rawBody, 'utf8'));
+    }
+    if (Buffer.isBuffer(req.body)) {
+      return resolve(req.body);
+    }
+
+    const chunks = [];
+    req.on('data', chunk => {
+      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+    });
+    req.on('end', () => {
+      if (chunks.length > 0) {
+        resolve(Buffer.concat(chunks));
+      } else if (req.body) {
+        const str = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+        resolve(Buffer.from(str, 'utf8'));
+      } else {
+        resolve(Buffer.from(''));
+      }
+    });
+    req.on('error', err => reject(err));
+
+    if (req.readableEnded || req.complete) {
+      if (chunks.length === 0) {
+        const str = typeof req.body === 'string' ? req.body : (req.body ? JSON.stringify(req.body) : '');
+        resolve(Buffer.from(str, 'utf8'));
+      }
+    }
+  });
+}
 
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -18,6 +56,17 @@ async function zernioUnifiedHandler(req, res) {
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
+  }
+
+  let rawBodyBuffer = Buffer.from('');
+  if (req.method === 'POST') {
+    rawBodyBuffer = await getRawBodyBuffer(req);
+    req.rawBody = rawBodyBuffer;
+    if (!req.body || typeof req.body !== 'object' || Object.keys(req.body).length === 0) {
+      try {
+        req.body = JSON.parse(rawBodyBuffer.toString('utf8'));
+      } catch (e) {}
+    }
   }
 
   const url = req.url || '';
@@ -462,36 +511,43 @@ async function zernioUnifiedHandler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const body = req.body || {};
-      const supabase = getSupabaseAdmin();
-
-      // Verify webhook secret/signature if ZERNIO_WEBHOOK_SECRET is configured
       const webhookSecret = process.env.ZERNIO_WEBHOOK_SECRET;
-      if (webhookSecret) {
-        const sig = req.headers['x-zernio-signature'] || req.headers['x-signature'] || req.headers['authorization'];
-        const querySec = query.secret || query.token;
-        let isAuthorized = false;
-        if (querySec && querySec === webhookSecret) {
-          isAuthorized = true;
-        } else if (sig) {
-          if (sig === webhookSecret || sig === `Bearer ${webhookSecret}`) {
-            isAuthorized = true;
-          } else {
-            try {
-              const bodyStr = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
-              const hmac = crypto.createHmac('sha256', webhookSecret).update(bodyStr).digest('hex');
-              const cleanSig = sig.replace(/^sha256=/, '');
-              if (crypto.timingSafeEqual(Buffer.from(cleanSig), Buffer.from(hmac))) {
-                isAuthorized = true;
-              }
-            } catch (sigErr) {}
-          }
-        }
-        if (!isAuthorized) {
-          return res.status(401).json({ error: "Unauthorized: Invalid Zernio webhook signature or secret" });
-        }
+      if (!webhookSecret) {
+        console.error('[Zernio Webhook Fatal]: ZERNIO_WEBHOOK_SECRET environment variable is missing. Webhook rejected.');
+        return res.status(500).json({ error: "Server misconfiguration: ZERNIO_WEBHOOK_SECRET is missing" });
       }
 
+      // Compute HMAC-SHA256 over raw request body bytes
+      const sigHeader = req.headers['x-zernio-signature'] || req.headers['x-late-signature'];
+      if (!sigHeader) {
+        console.warn('[Zernio Webhook Unauthorized]: Missing X-Zernio-Signature header.');
+        return res.status(401).json({ error: "Unauthorized: Missing X-Zernio-Signature header" });
+      }
+
+      const cleanSig = sigHeader.trim().replace(/^sha256=/, '');
+      const computedHash = crypto
+        .createHmac('sha256', webhookSecret)
+        .update(rawBodyBuffer)
+        .digest('hex');
+
+      let isValid = false;
+      try {
+        const sigBuf = Buffer.from(cleanSig, 'utf8');
+        const hashBuf = Buffer.from(computedHash, 'utf8');
+        if (sigBuf.length === hashBuf.length && crypto.timingSafeEqual(sigBuf, hashBuf)) {
+          isValid = true;
+        }
+      } catch (sigErr) {
+        isValid = false;
+      }
+
+      if (!isValid) {
+        console.warn('[Zernio Webhook Unauthorized]: Webhook signature mismatch.');
+        return res.status(401).json({ error: "Unauthorized: Invalid Zernio webhook signature" });
+      }
+
+      const body = req.body || {};
+      const supabase = getSupabaseAdmin();
       const payload = body.data || body.payload || body;
 
       // Handle real messaging webhook event from Zernio / Instagram Direct
@@ -911,5 +967,15 @@ async function zernioUnifiedHandler(req, res) {
 
 const handler = createVercelHandler(zernioUnifiedHandler);
 handler.zernioUnifiedHandler = zernioUnifiedHandler;
+handler.config = {
+  api: {
+    bodyParser: false,
+  },
+};
 module.exports = handler;
+module.exports.config = {
+  api: {
+    bodyParser: false,
+  },
+};
 

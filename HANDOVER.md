@@ -34,6 +34,9 @@ Internal helpers are located under `api/_utils/`, `api/_email/`, and `api/_meta/
 
 ## 3. Database Migrations (Run in Order)
 
+> [!IMPORTANT]
+> **Run all migrations BEFORE deploying this branch.**
+
 Execute the following migration scripts in order via the **Supabase SQL Editor**:
 
 1. `supabase/migrations/20261008_multi_user_meta_crm.sql` — Initial RBAC schema, multi-page scoping, core tables.
@@ -48,8 +51,9 @@ Execute the following migration scripts in order via the **Supabase SQL Editor**
 10. `supabase/migrations/20261014_lead_meta_id_unique.sql` — Database-level lead deduplication, foreign key reparenting, and UNIQUE constraint on `meta_lead_id`.
 11. `supabase/migrations/20261014_realtime_publications.sql` — Realtime publication registration for `leads`, `messages`, and `conversations`.
 12. `supabase/migrations/20261014_inbox_conversation_recency_trigger.sql` — Automated conversation recency trigger on `messages` insert and index on `last_message_at DESC`.
-13. `supabase/migrations/20261014_fix_conversation_recency_trigger.sql` — Trigger refinement with `GREATEST()` timestamp recency, inbound-only unread increment, and `meta_mid` UNIQUE constraint.
+13. `supabase/migrations/20261014_fix_conversation_recency_trigger.sql` — Trigger refinement with `GREATEST()` timestamp recency, inbound-only unread increment, duplicate cleanup, and `meta_mid` UNIQUE constraint.
 14. `supabase/migrations/20261014_backfill_clean_storage_paths.sql` — Backfill converting stored signed or public URLs in `messages` to relative storage paths.
+15. `supabase/migrations/20261014_storage_staff_read_policy.sql` — Storage RLS policy ensuring authenticated staff and public can read `message-attachments`.
 
 ---
 
@@ -66,6 +70,7 @@ Configure the following variables in **Vercel Project Settings → Environment V
 | `RESEND_FROM_EMAIL` | Outbound sender address (e.g. `notifications@yourverifieddomain.com`) | Required before go-live (verified domain) |
 | `FX_RATES_JSON` | Currency exchange rates table from base INR (e.g. `{"base":"INR","USD":0.012,"NZD":0.020,"updated":"2026-10-14"}`) | Optional (has sane built-in fallback) |
 | `ZERNIO_API_KEY` | Zernio gateway token for multi-channel intake | Configured |
+| `ZERNIO_WEBHOOK_SECRET` | Shared secret for verifying Zernio messaging webhook signatures (HMAC-SHA256) | Required |
 | `META_APP_SECRET` | Meta app secret for webhook signature validation | Configured |
 | `META_SYSTEM_USER_ACCESS_TOKEN` | System user token for Meta Graph API marketing sync | Configured |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google Workspace OAuth for Gmail | Optional |

@@ -3662,10 +3662,12 @@ class MetaCRMApp {
     if (!url && storagePath) {
       url = storagePath;
     }
-    if (!url) return null;
+    if (!url && !storagePath) return null;
+
+    const isExpired = storagePath === 'EXPIRED' || url === 'EXPIRED' || m.attachment_unavailable === true;
 
     type = (type || '').toLowerCase();
-    const cleanUrl = url.split('?')[0].toLowerCase();
+    const cleanUrl = (url || '').split('?')[0].toLowerCase();
     if (!type || type === 'file') {
       if (cleanUrl.match(/\.(jpeg|jpg|png|gif|webp|bmp|svg)$/i) || m.isImage || m.imageUrl || m.image_url) {
         type = 'image';
@@ -3680,13 +3682,25 @@ class MetaCRMApp {
       url,
       type: type || 'file',
       name: name || (type.startsWith('image') ? 'Photo' : 'Attachment'),
-      storagePath
+      storagePath,
+      isExpired
     };
   }
 
   _renderAttachmentInBubble(m, isOutgoing = false) {
     const att = this._extractAttachment(m);
-    if (!att || !att.url) return '';
+    if (!att || (!att.url && !att.storagePath)) return '';
+
+    if (att.isExpired || att.storagePath === 'EXPIRED' || m.attachment_storage_path === 'EXPIRED') {
+      return `
+        <div class="msg-attachment-render" style="margin-bottom:6px;">
+          <div class="msg-attachment-unavailable" style="display:inline-flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(0,0,0,0.04);border:1px dashed #CBD5E1;border-radius:8px;font-size:12px;color:#64748B;" title="Attachment unavailable or link expired">
+            <span style="font-size:16px;">📷</span>
+            <span>Attachment unavailable</span>
+          </div>
+        </div>
+      `;
+    }
 
     const url = m.localPreviewUrl || m.attachment?.localPreviewUrl || att.url;
     const name = att.name || 'Attachment';
@@ -3702,7 +3716,7 @@ class MetaCRMApp {
                alt="${escapeHtml(name)}" 
                data-storage-path="${escapeHtml(att.storagePath || (!url.startsWith('http') && !url.startsWith('blob:') ? url : ''))}"
                style="max-width:260px;max-height:220px;border-radius:8px;object-fit:cover;cursor:pointer;display:block;box-shadow:0 1px 3px rgba(0,0,0,0.12);" 
-               onclick="window.app.openImageModal('${escapeHtml(url)}', '${escapeHtml(name)}')">
+               onclick="window.app.openImageModal('${escapeHtml(url)}', '${escapeHtml(name)}')"
                onload="window.app._onImageLoadedInThread()"
                onerror="window.app.handleAttachmentImageError(this, '${escapeHtml(name)}')">
         </div>
@@ -3737,7 +3751,7 @@ class MetaCRMApp {
     imgEl.onerror = null;
 
     const storagePath = imgEl.getAttribute('data-storage-path');
-    if (storagePath && !imgEl._hasRetried) {
+    if (storagePath && storagePath !== 'EXPIRED' && !imgEl._hasRetried) {
       imgEl._hasRetried = true;
       try {
         const sbClient = await this._getSupabaseClient();
@@ -3759,7 +3773,7 @@ class MetaCRMApp {
       parent.innerHTML = `
         <div class="msg-attachment-unavailable" style="display:inline-flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(0,0,0,0.04);border:1px dashed #CBD5E1;border-radius:8px;font-size:12px;color:#64748B;" title="Attachment unavailable or link expired">
           <span style="font-size:16px;">📷</span>
-          <span>Photo unavailable</span>
+          <span>Attachment unavailable</span>
         </div>
       `;
     }

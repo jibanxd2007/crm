@@ -15,12 +15,24 @@ function copyDir(src, dest) {
   }
 }
 
+function copyFileIfExists(src, dest) {
+  if (fs.existsSync(src)) {
+    const destDir = path.dirname(dest);
+    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+    fs.copyFileSync(src, dest);
+  }
+}
+
 // Ensure public directory exists
 fs.mkdirSync('public', { recursive: true });
 
 // Copy static frontend assets into public/
-fs.copyFileSync('index.html', path.join('public', 'index.html'));
+copyFileIfExists('index.html', path.join('public', 'index.html'));
+copyFileIfExists('favicon.ico', path.join('public', 'favicon.ico'));
+copyFileIfExists('robots.txt', path.join('public', 'robots.txt'));
 copyDir('css', path.join('public', 'css'));
 copyDir('js', path.join('public', 'js'));
+copyDir('assets', path.join('public', 'assets'));
+copyDir('images', path.join('public', 'images'));
 
 console.log('Successfully prepared public directory for Vercel deployment');

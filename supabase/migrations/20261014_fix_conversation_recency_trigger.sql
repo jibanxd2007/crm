@@ -3,19 +3,18 @@
 
 DO $$
 BEGIN
-  -- 1. Deduplicate messages by meta_mid if any duplicates exist before creating unique constraint
-  DELETE FROM public.messages m1
-  WHERE m1.meta_mid IS NOT NULL
-    AND m1.id IN (
-      SELECT id FROM (
-        SELECT id, ROW_NUMBER() OVER (PARTITION BY meta_mid ORDER BY created_at ASC) as rnum
-        FROM public.messages
-        WHERE meta_mid IS NOT NULL
-      ) t
-      WHERE t.rnum > 1
-    );
+  -- 1. Deduplicate messages by meta_mid before creating unique constraint, keeping the oldest (created_at ASC, id ASC)
+  DELETE FROM public.messages
+  WHERE id IN (
+    SELECT id FROM (
+      SELECT id, ROW_NUMBER() OVER (PARTITION BY meta_mid ORDER BY created_at ASC, id ASC) as rnum
+      FROM public.messages
+      WHERE meta_mid IS NOT NULL
+    ) t
+    WHERE t.rnum > 1
+  );
 
-  -- 2. Drop partial index if exists and create plain UNIQUE constraint on messages.meta_mid for upsert onConflict
+  -- 2. Create plain UNIQUE constraint on messages.meta_mid for upsert onConflict (idempotent)
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'messages_meta_mid_unique'
   ) THEN
