@@ -80,27 +80,49 @@ class MetaCRMApp {
     this._init();
   }
 
-  getCurrencySymbol() {
-    return (this.svc && this.svc.getCurrencySymbol) ? this.svc.getCurrencySymbol() : (localStorage.getItem('metacrm_currency') === 'INR' ? '₹' : '$');
+  getCurrencySymbol(currency = null) {
+    if (this.svc && this.svc.getCurrencySymbol) return this.svc.getCurrencySymbol(currency);
+    const cur = currency || this.getCurrency();
+    if (cur === 'INR') return '₹';
+    if (cur === 'EUR') return '€';
+    if (cur === 'GBP') return '£';
+    if (cur === 'USD' || cur === 'NZD' || cur === 'AUD' || cur === 'CAD') return '$';
+    return '₹';
   }
 
   getCurrency() {
-    return (this.svc && this.svc.getCurrency) ? this.svc.getCurrency() : (localStorage.getItem('metacrm_currency') || 'NZD');
+    return (this.svc && this.svc.getCurrency) ? this.svc.getCurrency() : (localStorage.getItem('metacrm_currency') || 'INR');
   }
 
   setCurrency(curr) {
-    if (this.svc && this.svc.setCurrency) this.svc.setCurrency(curr);
-    else localStorage.setItem('metacrm_currency', curr);
-    this.toast(`Currency set to ${curr} (${this.getCurrencySymbol()})`, 'info');
+    if (this.svc && this.svc.setCurrency) this.svc.setCurrency(curr || 'INR');
+    else localStorage.setItem('metacrm_currency', curr || 'INR');
+    this.toast(`Currency set to ${curr || 'INR'} (${this.getCurrencySymbol(curr)})`, 'info');
     if (this.currentRoute) this.navigate(this.currentRoute);
   }
 
-  formatCurrency(amount, currency) {
-    if (this.svc && this.svc.formatCurrency) {
-      return this.svc.formatCurrency(amount, currency);
+  formatMoney(amount, currency = null) {
+    if (this.svc && this.svc.formatMoney) {
+      return this.svc.formatMoney(amount, currency);
     }
+    const curr = currency || this.getCurrency();
     const val = Number(amount) || 0;
-    return `${this.getCurrencySymbol()}${val.toLocaleString()}`;
+    try {
+      const locale = curr === 'INR' ? 'en-IN' : (curr === 'NZD' ? 'en-NZ' : (curr === 'EUR' ? 'de-DE' : (curr === 'GBP' ? 'en-GB' : 'en-US')));
+      const hasDecimals = (val % 1 !== 0) && Math.abs(val) < 1000;
+      return new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency: curr,
+        maximumFractionDigits: hasDecimals ? 2 : 0
+      }).format(val);
+    } catch (e) {
+      const sym = this.getCurrencySymbol(curr);
+      return `${sym}${val.toLocaleString('en-IN')}`;
+    }
+  }
+
+  formatCurrency(amount, currency = null) {
+    return this.formatMoney(amount, currency);
   }
 
   toggleMobileSidebar(open) {
@@ -212,6 +234,11 @@ class MetaCRMApp {
       if (dd && !e.target.closest('.workspace-switcher-wrapper')) {
         dd.style.display = 'none';
       }
+      document.querySelectorAll('.conv-item-dropdown').forEach(m => {
+        if (!e.target.closest('.conv-options-btn') && !m.contains(e.target)) {
+          m.style.display = 'none';
+        }
+      });
     });
 
     // Real-time notification handler
@@ -222,6 +249,9 @@ class MetaCRMApp {
       }
       this.renderNotifications();
     });
+
+    // Real-time Lead Intake Engine (Supabase Realtime & Webhook Delivery)
+    window.addEventListener('crm:remote_lead_received', (e) => this.handleRemoteLeadReceived(e.detail));
 
     // Real-time Inbox Messaging Engine (Instant Webhook & Supabase Realtime Delivery)
     window.addEventListener('crm:remote_message_received', (e) => this.handleRemoteMessageReceived(e.detail));
@@ -936,7 +966,17 @@ class MetaCRMApp {
     }
     setTimeout(() => {
       switch (this.currentRoute) {
-        case 'dashboard':    this.renderDashboard(); break;
+        case 'dashboard':
+          if (!this._lastAutoRefresh || (Date.now() - this._lastAutoRefresh > 20000)) {
+            this._lastAutoRefresh = Date.now();
+            if (this.svc && this.svc.fetchRemoteData) {
+              this.svc.fetchRemoteData().then(() => {
+                if (this.currentRoute === 'dashboard') this.renderDashboard();
+              }).catch(() => {});
+            }
+          }
+          this.renderDashboard();
+          break;
         case 'leads':        this.renderLeads(); break;
         case 'inbox':        this.renderInbox(); break;
         case 'email':        this.renderEmailInbox(); break;
@@ -1019,7 +1059,8 @@ class MetaCRMApp {
         <div class="topbar-greeting-sub">Here's what's happening with your leads and campaigns today.</div>
       </div>`;
 
-    // Topbar Actions Controls - matches reference image: Date range + Pages + Switch User
+    // Topbar Actions Controls - matches reference image: Date range + Pages + Refresh + Switch User
+    const lastUpdatedStr = this._formatLastUpdatedTime();
     this.el.actions.innerHTML = `
       <div class="topbar-pill-control" title="Change date range" onclick="this.querySelector('select').showPicker ? this.querySelector('select').showPicker() : this.querySelector('select').focus()">
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
@@ -1041,6 +1082,11 @@ class MetaCRMApp {
         <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
       </div>
 
+      <button id="dashboard-refresh-btn" class="topbar-pill-btn" onclick="window.app.refreshDashboardData(true)" title="Refresh dashboard data">
+        <svg width="14" height="14" id="dash-refresh-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+        <span id="dash-last-updated" style="font-size:11px;font-weight:500;color:var(--text-secondary);">${lastUpdatedStr}</span>
+      </button>
+
       <button class="topbar-pill-btn" onclick="window.app.openUserSwitchModal()" title="Switch user role or session">
         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
         <span>Switch User</span>
@@ -1051,8 +1097,10 @@ class MetaCRMApp {
       avatarEl.textContent = (this.user.name || 'A').charAt(0).toUpperCase();
     }
 
-    const leads = this._getFilteredLeads();
+    const leads = this._getFilteredLeads(true);
+    const allScopedLeads = this._getFilteredLeads(false);
     const newL = leads.filter(l => l.status === 'New' || l.status === 'New Lead');
+    const todayLeadsCount = allScopedLeads.filter(l => this._isDateInRangeIST(l.created_at || l.createdAt, 'today')).length;
     const qualL = leads.filter(l => l.status === 'Qualified');
     const wonL = leads.filter(l => l.status === 'Won' || l.status === 'Converted');
     const followL = leads.filter(l => l.status === 'Follow-up');
@@ -1090,8 +1138,8 @@ class MetaCRMApp {
           <td style="text-align:right;font-weight:600;">${pLeads.length}</td>
           <td style="text-align:right;">${pWon.length}</td>
           <td style="text-align:right;">${conv}%</td>
-          <td style="text-align:right;">${this.getCurrencySymbol()}${this._formatNum(spend)}</td>
-          <td style="text-align:right;">${this.getCurrencySymbol()}${pageCpl}</td>
+          <td style="text-align:right;">${this.formatMoney(spend)}</td>
+          <td style="text-align:right;">${this.formatMoney(pageCpl)}</td>
           <td style="text-align:right;color:var(--text-muted);">&gt;</td>
         </tr>`;
     }).join('');
@@ -1251,7 +1299,7 @@ class MetaCRMApp {
             <span class="kpi-arrow-icon">→</span>
           </div>
           <div class="overview-kpi-val">${leads.length}</div>
-          <div class="overview-kpi-desc">No change from last 30 days</div>
+          <div class="overview-kpi-desc">${this.selectedDateRange === 'today' ? 'Arrived today (IST)' : `Filtered by ${this.selectedDateRange.replace('_', ' ')}`}</div>
         </div>
 
         <!-- NEW LEADS -->
@@ -1266,7 +1314,7 @@ class MetaCRMApp {
             <span class="kpi-arrow-icon">→</span>
           </div>
           <div class="overview-kpi-val">${newL.length}</div>
-          <div class="overview-kpi-desc">No change from last 30 days</div>
+          <div class="overview-kpi-desc">${todayLeadsCount > 0 ? `${todayLeadsCount} new today (IST)` : '0 new today (IST)'}</div>
         </div>
 
         <!-- DEALS WON -->
@@ -1353,7 +1401,7 @@ class MetaCRMApp {
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
                 <span>Ad Spend</span><!-- AD SPEND -->
               </div>
-              <div class="submetric-val">${this.getCurrencySymbol()}${this._formatNum(roi.totalSpend || 0)}</div>
+              <div class="submetric-val">${this.formatMoney(roi.totalSpend || 0)}</div>
               <div class="submetric-sub">${roi.totalSpend > 0 ? `${roi.activeCampaignsCount || (campaigns.length || 1)} Active Campaign${(roi.activeCampaignsCount || campaigns.length || 1) === 1 ? '' : 's'}` : 'No spend yet'}</div>
             </div>
 
@@ -1362,7 +1410,7 @@ class MetaCRMApp {
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                 <span>Cost Per Lead (CPL)</span><!-- COST PER LEAD (CPL) -->
               </div>
-              <div class="submetric-val">${this.getCurrencySymbol()}${(roi.cpl || 0).toLocaleString('en-IN')}</div>
+              <div class="submetric-val">${this.formatMoney(roi.cpl || 0)}</div>
               <div class="submetric-sub">Live CPL</div>
             </div>
 
@@ -1371,7 +1419,7 @@ class MetaCRMApp {
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
                 <span>Cost Per Acquisition (CPA)</span><!-- COST PER ACQUISITION (CPA) -->
               </div>
-              <div class="submetric-val">${this.getCurrencySymbol()}${(roi.cpa || 0).toLocaleString('en-IN')}</div>
+              <div class="submetric-val">${this.formatMoney(roi.cpa || 0)}</div>
               <div class="submetric-sub">Spend / Won Deal</div>
             </div>
 
@@ -1614,11 +1662,17 @@ class MetaCRMApp {
     if (tab) this.currentLeadTab = tab;
     this.el.title.textContent = this.user.role === 'staff' ? 'My Leads' : 'Leads';
 
+    const isAdmin = this.user.role === 'admin' || this.user.role === 'super_admin';
     this.el.actions.innerHTML = `
       <div class="search-wrap">
         <svg class="search-icon" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input type="text" class="input search-input" placeholder="Search leads… (Ctrl+K)" id="lead-search-input" value="${this.leadSearchQuery}" oninput="window.app.onLeadSearch(this.value)">
       </div>
+      ${isAdmin ? `
+      <button class="btn btn-secondary" id="sync-leads-btn" onclick="window.app.syncZernioLeads()" title="Pull recent leads via Zernio & Meta">
+        <svg width="13" height="13" id="sync-leads-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+        <span>Sync Leads Now</span>
+      </button>` : ''}
       <button class="btn btn-secondary" onclick="window.app.exportLeadsCsv()">Export CSV</button>
       <button class="btn btn-primary" onclick="window.app.openAddLeadModal()">+ Add Lead</button>`;
 
@@ -1858,6 +1912,44 @@ class MetaCRMApp {
     this.toast(`Exported ${leads.length} selected leads to CSV! ✓`);
   }
 
+  async syncZernioLeads() {
+    const btn = document.getElementById('sync-leads-btn');
+    const icon = document.getElementById('sync-leads-icon');
+    if (icon) icon.style.animation = 'spin 1s linear infinite';
+    if (btn) btn.disabled = true;
+
+    this.toast('⏳ Pulling recent leads via Zernio & Meta…', 'info');
+
+    try {
+      const res = await fetch('/api/zernio?path=sync-leads', {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': (this.user && this.user.id) ? this.user.id : 'admin'
+        }
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        if (this.svc && this.svc.fetchRemoteLeads) {
+          await this.svc.fetchRemoteLeads();
+        }
+        this.toast(`✓ Leads sync complete! Synced ${data.syncedCount || 0} recent leads.`, 'success');
+        this.renderLeads();
+      } else {
+        this.toast(`⚠️ Leads sync: ${data.message || data.error || 'No new leads found'}`, 'info');
+        if (this.svc && this.svc.fetchRemoteLeads) {
+          await this.svc.fetchRemoteLeads();
+        }
+        this.renderLeads();
+      }
+    } catch (err) {
+      console.warn('Sync Zernio leads error:', err);
+      this.toast('Sync completed', 'info');
+    } finally {
+      if (icon) icon.style.animation = '';
+      if (btn) btn.disabled = false;
+    }
+  }
+
   exportLeadsCsv() {
     const leads = this._getFilteredLeads();
     let csv = 'ID,Name,Phone,Email,Page,Campaign,Status,AssignedTo,Created\n';
@@ -2078,7 +2170,7 @@ class MetaCRMApp {
           <div class="attr-row">
             <span class="attr-label">Deal Value</span>
             <div style="display:flex;align-items:center;gap:6px;">
-              <span class="text-xs text-gray">${this.getCurrencySymbol()}</span>
+              <span class="text-xs text-gray">${this.getCurrencySymbol(lead.currency)}</span>
               <input type="number" class="input input-sm" style="width:110px;font-weight:600;" value="${lead.lead_value || lead.value || 0}" onchange="window.app.updateLeadValue('${lead.id}', this.value)" placeholder="0">
             </div>
           </div>
@@ -2463,7 +2555,7 @@ class MetaCRMApp {
               </div>
               <div class="kanban-col-meta">
                 <span class="badge badge-gray">${cards.length}</span>
-                ${total ? `<span class="text-xs text-gray font-semibold">${this.getCurrencySymbol()}${this._formatNum(total)}</span>` : ''}
+                ${total ? `<span class="text-xs text-gray font-semibold">${this.formatMoney(total)}</span>` : ''}
               </div>
             </div>
             <div class="kanban-col-body">
@@ -2482,7 +2574,7 @@ class MetaCRMApp {
                   ${c.loss_reason && stage === 'Lost' ? `<div class="text-xs" style="color:#DC2626;margin-top:2px;">Lost: ${escapeHtml(c.loss_reason)}</div>` : ''}
                   <div class="kanban-card-footer">
                     <div class="staff-chip" title="${this._staffName(c.assigned_staff_id || c.assignedStaffId)}">${(this._staffName(c.assigned_staff_id || c.assignedStaffId)||'?').charAt(0)}</div>
-                    ${(c.value || c.dealValue || c.lead_value) ? `<span class="text-xs font-semibold">${this.getCurrencySymbol()}${this._formatNum(c.value || c.dealValue || c.lead_value)}</span>` : ''}
+                    ${(c.value || c.dealValue || c.lead_value) ? `<span class="text-xs font-semibold">${this.formatMoney(c.value || c.dealValue || c.lead_value, c.currency)}</span>` : ''}
                     <span class="text-xs text-gray ml-auto">${c.follow_up_date || c.followUpDate ? new Date(c.follow_up_date || c.followUpDate).toLocaleDateString('en-IN', {day:'numeric',month:'short'}) : 'No date'}</span>
                   </div>
                 </div>`;
@@ -2594,22 +2686,18 @@ class MetaCRMApp {
       ? convs
       : convs.filter(c => !c.page_id || userPages.includes(c.page_id) || userPages.includes(c.accountId));
 
-    // ALWAYS SORT CONVERSATIONS BY LATEST MESSAGE (Most Recently Received or Sent First)
-    accessibleConvs.sort((a, b) => {
-      const timeA = this.svc ? this.svc._resolveConvTimestamp(a) : new Date(a.last_message_at || a.time || 0).getTime();
-      const timeB = this.svc ? this.svc._resolveConvTimestamp(b) : new Date(b.last_message_at || b.time || 0).getTime();
-      return timeB - timeA;
-    });
-
-    const totalCount = accessibleConvs.length;
-    const unreadInboxCount = accessibleConvs.filter(c => (c.unread || 0) > 0).length;
-    const fbCount = accessibleConvs.filter(c => !c.channel || c.channel.toLowerCase().includes('mess') || c.channel.toLowerCase().includes('face')).length;
-    const igCount = accessibleConvs.filter(c => c.channel && c.channel.toLowerCase().includes('insta')).length;
-
+    const sortMode = this.inboxSortMode || 'latest';
     const activeTab = this.inboxTab || 'all';
-    let filteredConvs = accessibleConvs;
+
+    // Archived vs Active conversation filtering (Archived conversations are hidden by default)
+    const archivedCount = accessibleConvs.filter(c => c.is_archived === true).length;
+    let filteredConvs = (activeTab === 'archived')
+      ? accessibleConvs.filter(c => c.is_archived === true)
+      : accessibleConvs.filter(c => !c.is_archived);
+
+    // Filter by channel or unread
     if (activeTab === 'unread') {
-      filteredConvs = filteredConvs.filter(c => (c.unread || 0) > 0);
+      filteredConvs = filteredConvs.filter(c => (c.unread || c.unread_count || 0) > 0);
     } else if (activeTab === 'facebook' || activeTab === 'messenger') {
       filteredConvs = filteredConvs.filter(c => !c.channel || c.channel.toLowerCase().includes('mess') || c.channel.toLowerCase().includes('face'));
     } else if (activeTab === 'instagram') {
@@ -2624,6 +2712,28 @@ class MetaCRMApp {
         return text.includes(q);
       });
     }
+
+    // Sorting: Latest (newest message first) | Unread first | Oldest
+    filteredConvs.sort((a, b) => {
+      const timeA = this.svc ? this.svc._resolveConvTimestamp(a) : new Date(a.last_message_at || a.time || 0).getTime();
+      const timeB = this.svc ? this.svc._resolveConvTimestamp(b) : new Date(b.last_message_at || b.time || 0).getTime();
+      if (sortMode === 'unread') {
+        const uA = ((a.unread || a.unread_count || 0) > 0) ? 1 : 0;
+        const uB = ((b.unread || b.unread_count || 0) > 0) ? 1 : 0;
+        if (uB !== uA) return uB - uA;
+        return timeB - timeA;
+      }
+      if (sortMode === 'oldest') {
+        return timeA - timeB;
+      }
+      return timeB - timeA;
+    });
+
+    const activeScopedConvs = accessibleConvs.filter(c => !c.is_archived);
+    const totalCount = activeScopedConvs.length;
+    const unreadInboxCount = activeScopedConvs.filter(c => (c.unread || c.unread_count || 0) > 0).length;
+    const fbCount = activeScopedConvs.filter(c => !c.channel || c.channel.toLowerCase().includes('mess') || c.channel.toLowerCase().includes('face')).length;
+    const igCount = activeScopedConvs.filter(c => c.channel && c.channel.toLowerCase().includes('insta')).length;
 
     const convList = filteredConvs;
     const activeConv = convList.find(c => c.id === this.activeConvId) || convList[0] || null;
@@ -2663,6 +2773,17 @@ class MetaCRMApp {
               ${this.inboxSearchQuery ? `<button class="inbox-search-clear" onclick="window.app.clearInboxSearch()" title="Clear search">✕</button>` : ''}
             </div>
 
+            <div class="inbox-sort-bar">
+              <span style="font-weight:600;font-size:10px;text-transform:uppercase;color:#8C9196;">Sort</span>
+              <div style="display:flex;align-items:center;gap:4px;">
+                <button class="inbox-sort-btn ${sortMode === 'latest' ? 'active' : ''}" onclick="window.app.setInboxSort('latest')">Latest</button>
+                <span style="color:#CBD5E1;">·</span>
+                <button class="inbox-sort-btn ${sortMode === 'unread' ? 'active' : ''}" onclick="window.app.setInboxSort('unread')">Unread first</button>
+                <span style="color:#CBD5E1;">·</span>
+                <button class="inbox-sort-btn ${sortMode === 'oldest' ? 'active' : ''}" onclick="window.app.setInboxSort('oldest')">Oldest</button>
+              </div>
+            </div>
+
             <div class="inbox-filter-tabs" id="inbox-filter-tabs">
               <div class="inbox-tab ${activeTab === 'all' ? 'active' : ''}" onclick="window.app.setInboxTab('all')">
                 <span>All</span>
@@ -2680,6 +2801,10 @@ class MetaCRMApp {
                 <span>Instagram</span>
                 <span class="inbox-tab-count">${igCount}</span>
               </div>
+              <div class="inbox-tab ${activeTab === 'archived' ? 'active' : ''}" onclick="window.app.setInboxTab('archived')">
+                <span>Archived</span>
+                ${archivedCount > 0 ? `<span class="inbox-tab-count">${archivedCount}</span>` : ''}
+              </div>
             </div>
           </div>
 
@@ -2690,9 +2815,9 @@ class MetaCRMApp {
             ${convList.length === 0 ? `
               <div class="inbox-conv-empty">
                 <div class="inbox-conv-empty-icon" style="display:flex;justify-content:center;">${activeTab === 'instagram' ? this._icon('instagram', 32) : this._icon('facebook', 32)}</div>
-                <strong class="inbox-conv-empty-title">No conversations yet</strong>
+                <strong class="inbox-conv-empty-title">${activeTab === 'archived' ? 'No archived conversations' : 'No conversations yet'}</strong>
                 <p class="inbox-conv-empty-desc">
-                  Incoming messages from your connected ${activeTab === 'instagram' ? 'Instagram' : (activeTab === 'facebook' ? 'Facebook' : 'Facebook & Instagram')} account will appear here automatically.
+                  ${activeTab === 'archived' ? 'Conversations you archive will appear here.' : `Incoming messages from your connected ${activeTab === 'instagram' ? 'Instagram' : (activeTab === 'facebook' ? 'Facebook' : 'Facebook & Instagram')} account will appear here automatically.`}
                 </p>
                 <button class="btn btn-secondary btn-sm" onclick="window.app.refreshInbox()">
                   ↻ Refresh Messages
@@ -2702,7 +2827,7 @@ class MetaCRMApp {
               const isIg = c.channel && c.channel.toLowerCase().includes('insta');
               const initials = this._getContactInitials(c.name);
               const color = this._getAvatarColor(c.name);
-              const isUnread = (c.unread || 0) > 0;
+              const isUnread = (c.unread || c.unread_count || 0) > 0;
               const isCurrentActive = activeConv && String(c.id) === String(activeConv.id);
               const searchText = `${c.name || ''} ${c.preview || ''} ${c.participantUsername || ''}`.toLowerCase();
               const displayTime = this._formatMessageTime(c.last_message_at || c.time);
@@ -2716,7 +2841,10 @@ class MetaCRMApp {
                 <div class="conv-info">
                   <div class="conv-name-row">
                     <span class="conv-name">${escapeHtml(c.name)}</span>
-                    <span class="conv-time">${displayTime}</span>
+                    <div style="display:flex;align-items:center;gap:4px;">
+                      <span class="conv-time">${displayTime}</span>
+                      <button class="conv-options-btn" onclick="window.app.toggleConvMenu('${c.id}', event)" title="Conversation options">⋮</button>
+                    </div>
                   </div>
                   <div class="conv-preview ${isUnread ? 'is-unread' : ''}">${escapeHtml(c.preview || '')}</div>
                   <div class="conv-channel-row">
@@ -2725,7 +2853,21 @@ class MetaCRMApp {
                     </span>
                     <span class="conv-channel-sep">·</span>
                     <span class="conv-page-name">${escapeHtml(this._pageName(c.page_id))}</span>
-                    ${isUnread ? `<span class="conv-unread">${c.unread}</span>` : ''}
+                    ${isUnread ? `<span class="conv-unread">${c.unread || c.unread_count || 1}</span>` : ''}
+                  </div>
+                </div>
+                <div id="conv-menu-${c.id}" class="conv-item-dropdown" style="display:none;" onclick="event.stopPropagation()">
+                  ${isUnread ? `
+                    <div class="conv-dropdown-item" onclick="window.app.markConversationRead('${c.id}')">
+                      <span>✓</span> <span>Mark as read</span>
+                    </div>
+                  ` : `
+                    <div class="conv-dropdown-item" onclick="window.app.markConversationUnread('${c.id}')">
+                      <span>●</span> <span>Mark as unread</span>
+                    </div>
+                  `}
+                  <div class="conv-dropdown-item" onclick="window.app.toggleArchiveConversation('${c.id}')">
+                    <span>${c.is_archived ? '📦' : '📁'}</span> <span>${c.is_archived ? 'Unarchive' : 'Archive'}</span>
                   </div>
                 </div>
               </div>`;
@@ -2779,17 +2921,7 @@ class MetaCRMApp {
                             ${activeInitials}
                           </div>
                           <div class="msg-bubble">
-                            ${m.attachment ? `
-                              <div class="msg-attachment-render" style="margin-bottom:6px;">
-                                ${(m.attachment.type && m.attachment.type.startsWith('image/')) || (m.attachment.url && m.attachment.url.match(/\.(jpeg|jpg|gif|png|webp)/i)) ? `
-                                  <img src="${escapeHtml(m.attachment.url)}" alt="${escapeHtml(m.attachment.name || 'Attachment')}" style="max-width:240px;max-height:200px;border-radius:8px;object-fit:cover;cursor:pointer;display:block;" onclick="window.open('${escapeHtml(m.attachment.url)}', '_blank')">
-                                ` : `
-                                  <a href="${escapeHtml(m.attachment.url)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:rgba(0,0,0,0.06);border-radius:6px;color:inherit;text-decoration:none;font-size:12px;">
-                                    📎 <span>${escapeHtml(m.attachment.name || 'Download File')}</span>
-                                  </a>
-                                `}
-                              </div>
-                            ` : ''}
+                            ${this._renderAttachmentInBubble(m, false)}
                             ${isMedia ? `<div class="msg-media-preview">${m.text.includes('story') ? '📸 Story Mention' : '📎 Media Attachment'}</div>` : ''}
                             ${escapeHtml(m.text || '')}
                           </div>
@@ -2803,17 +2935,7 @@ class MetaCRMApp {
                     return `
                       <div class="msg msg-out ${isSending ? 'msg-sending' : ''} ${isFailed ? 'msg-failed' : ''}" data-msg-id="${m.id || ''}">
                         <div class="msg-bubble">
-                          ${m.attachment ? `
-                            <div class="msg-attachment-render" style="margin-bottom:6px;">
-                              ${(m.attachment.type && m.attachment.type.startsWith('image/')) || (m.attachment.url && m.attachment.url.match(/\.(jpeg|jpg|gif|png|webp)/i)) ? `
-                                <img src="${escapeHtml(m.attachment.url)}" alt="${escapeHtml(m.attachment.name || 'Attachment')}" style="max-width:240px;max-height:200px;border-radius:8px;object-fit:cover;cursor:pointer;display:block;" onclick="window.open('${escapeHtml(m.attachment.url)}', '_blank')">
-                              ` : `
-                                <a href="${escapeHtml(m.attachment.url)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;background:rgba(255,255,255,0.15);border-radius:6px;color:inherit;text-decoration:none;font-size:12px;">
-                                  📎 <span>${escapeHtml(m.attachment.name || 'Download File')}</span>
-                                </a>
-                              `}
-                            </div>
-                          ` : ''}
+                          ${this._renderAttachmentInBubble(m, true)}
                           ${escapeHtml(m.text || '')}
                         </div>
                         <span class="msg-time">
@@ -2858,9 +2980,9 @@ class MetaCRMApp {
               `}
             </div>
 
-            <div class="inbox-composer">
-              <input type="file" id="inbox-file-input" style="display:none;" accept="image/*,.pdf,.doc,.docx" onchange="window.app.handleFileSelected(event)">
-              <div id="inbox-attachment-preview-bar" style="display:none;padding:6px 14px;background:rgba(0,0,0,0.04);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;"></div>
+            <div class="inbox-composer" ondragover="event.preventDefault(); this.classList.add('drag-over');" ondragleave="this.classList.remove('drag-over');" ondrop="window.app.handleComposerDrop(event)">
+              <input type="file" id="inbox-file-input" style="display:none;" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt" onchange="window.app.handleFileSelected(event)">
+              <div id="inbox-attachment-preview-bar" style="display:none;padding:8px 14px;background:#F8FAFC;border-bottom:1px solid var(--border);align-items:center;gap:10px;"></div>
               <div class="composer-top-bar">
                 <div class="composer-channel-info">
                   ${isIgActive ? this._icon('instagram', 13) : this._icon('facebook', 13)}
@@ -2878,10 +3000,10 @@ class MetaCRMApp {
                 </div>
               </div>
               <div class="composer-input-row">
-                <button class="btn-composer-attach" onclick="window.app.handleAttachmentClick()" title="Attach image or media" type="button">
+                <button class="btn-composer-attach" onclick="window.app.handleAttachmentClick()" title="Attach photo, video or document (max 25MB)" type="button">
                   <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                 </button>
-                <textarea class="inbox-msg-textarea" id="inbox-msg-input" placeholder="Type a message to reply on ${isIgActive ? 'Instagram Direct' : 'Messenger'}…" rows="2" onkeydown="window.app.handleComposerKeydown(event)" oninput="window.app.handleComposerInput(this)"></textarea>
+                <textarea class="inbox-msg-textarea" id="inbox-msg-input" placeholder="Type a reply or paste/drag an image…" rows="2" onkeydown="window.app.handleComposerKeydown(event)" oninput="window.app.handleComposerInput(this)" onpaste="window.app.handleComposerPaste(event)"></textarea>
                 <button class="btn-send-msg" id="inbox-send-btn" onclick="window.app.sendInboxMessage()">
                   <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
                   <span>Send</span>
@@ -3080,6 +3202,86 @@ class MetaCRMApp {
     this.renderInbox();
   }
 
+  setInboxSort(sort) {
+    this.inboxSortMode = sort;
+    this.renderInbox();
+  }
+
+  toggleConvMenu(convId, event) {
+    if (event) event.stopPropagation();
+    const allMenus = document.querySelectorAll('.conv-item-dropdown');
+    const targetMenu = document.getElementById(`conv-menu-${convId}`);
+    const wasOpen = targetMenu && targetMenu.style.display === 'block';
+    allMenus.forEach(m => m.style.display = 'none');
+    if (targetMenu && !wasOpen) {
+      targetMenu.style.display = 'block';
+    }
+  }
+
+  async markConversationRead(convId) {
+    const allMenus = document.querySelectorAll('.conv-item-dropdown');
+    allMenus.forEach(m => m.style.display = 'none');
+    const conv = (this.svc && this.svc.conversations) ? this.svc.conversations.find(c => String(c.id) === String(convId)) : null;
+    if (conv) {
+      conv.unread = 0;
+      conv.unread_count = 0;
+    }
+    try {
+      await fetch('/api/messages', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversation_id: convId, unread_count: 0 })
+      });
+    } catch (e) {
+      console.warn('Failed to mark read on server:', e);
+    }
+    if (this.svc && this.svc._saveToStorage) this.svc._saveToStorage();
+    this.renderInbox();
+  }
+
+  async markConversationUnread(convId) {
+    const allMenus = document.querySelectorAll('.conv-item-dropdown');
+    allMenus.forEach(m => m.style.display = 'none');
+    const conv = (this.svc && this.svc.conversations) ? this.svc.conversations.find(c => String(c.id) === String(convId)) : null;
+    if (conv) {
+      conv.unread = 1;
+      conv.unread_count = 1;
+    }
+    try {
+      await fetch('/api/messages', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversation_id: convId, unread_count: 1 })
+      });
+    } catch (e) {
+      console.warn('Failed to mark unread on server:', e);
+    }
+    if (this.svc && this.svc._saveToStorage) this.svc._saveToStorage();
+    this.renderInbox();
+  }
+
+  async toggleArchiveConversation(convId) {
+    const allMenus = document.querySelectorAll('.conv-item-dropdown');
+    allMenus.forEach(m => m.style.display = 'none');
+    const conv = (this.svc && this.svc.conversations) ? this.svc.conversations.find(c => String(c.id) === String(convId)) : null;
+    const newArchived = conv ? !conv.is_archived : true;
+    if (conv) {
+      conv.is_archived = newArchived;
+    }
+    try {
+      await fetch('/api/messages', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversation_id: convId, is_archived: newArchived })
+      });
+      this.toast(newArchived ? 'Conversation archived' : 'Conversation unarchived', 'info');
+    } catch (e) {
+      console.warn('Failed to archive on server:', e);
+    }
+    if (this.svc && this.svc._saveToStorage) this.svc._saveToStorage();
+    this.renderInbox();
+  }
+
   async selectInboxConv(convId) {
     this.activeConvId = convId;
     this.mobileInboxView = 'chat';
@@ -3090,6 +3292,13 @@ class MetaCRMApp {
       conv.unread_count = 0;
       if (this.svc && this.svc._saveToStorage) this.svc._saveToStorage();
       else if (this.svc && this.svc.saveAll) this.svc.saveAll();
+      try {
+        fetch('/api/messages', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversation_id: convId, unread_count: 0 })
+        }).catch(() => {});
+      } catch (e) {}
     }
 
     this.renderInbox();
@@ -3099,14 +3308,24 @@ class MetaCRMApp {
     }
   }
 
-  toggleConversationUnread(convId) {
+  async toggleConversationUnread(convId) {
     if (!this.svc || !this.svc.conversations) return;
     const conv = this.svc.conversations.find(c => String(c.id) === String(convId));
     if (conv) {
-      conv.unread = (conv.unread && conv.unread > 0) ? 0 : 1;
+      const isUnread = (conv.unread && conv.unread > 0) || (conv.unread_count && conv.unread_count > 0);
+      const newCount = isUnread ? 0 : 1;
+      conv.unread = newCount;
+      conv.unread_count = newCount;
+      try {
+        await fetch('/api/messages', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversation_id: convId, unread_count: newCount })
+        });
+      } catch (e) {}
       if (this.svc._saveToStorage) this.svc._saveToStorage(); else if (this.svc.saveAll) this.svc.saveAll();
       this.renderInbox();
-      this.toast(conv.unread > 0 ? 'Conversation marked as unread' : 'Conversation marked as read', 'info');
+      this.toast(newCount > 0 ? 'Conversation marked as unread' : 'Conversation marked as read', 'info');
     }
   }
 
@@ -3154,7 +3373,209 @@ class MetaCRMApp {
   }
 
   handleAttachmentClick() {
-    this.toast('Attachment picker: Select photos or documents to send via Meta Graph API', 'info');
+    const fileInput = document.getElementById('inbox-file-input');
+    if (fileInput) fileInput.click();
+  }
+
+  handleFileSelected(event) {
+    const file = event.target?.files?.[0];
+    if (file) {
+      this.processSelectedFile(file);
+    }
+  }
+
+  handleComposerPaste(event) {
+    const items = (event.clipboardData || window.clipboardData)?.items;
+    if (items) {
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].kind === 'file') {
+          const file = items[i].getAsFile();
+          if (file) {
+            event.preventDefault();
+            this.processSelectedFile(file);
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  handleComposerDrop(event) {
+    event.preventDefault();
+    const composer = event.currentTarget || document.querySelector('.inbox-composer');
+    if (composer) composer.classList.remove('drag-over');
+    const files = event.dataTransfer?.files;
+    if (files && files.length > 0) {
+      this.processSelectedFile(files[0]);
+    }
+  }
+
+  async processSelectedFile(file) {
+    if (!file) return;
+
+    // Check Meta 25MB file size limit
+    if (file.size > 25 * 1024 * 1024) {
+      this.toast(`File is ${Math.round(file.size / 1024 / 1024)}MB. Meta limits attachments to 25MB.`, 'error');
+      return;
+    }
+
+    const previewBar = document.getElementById('inbox-attachment-preview-bar');
+    const sendBtn = document.getElementById('inbox-send-btn');
+    if (previewBar) {
+      previewBar.style.display = 'flex';
+      previewBar.innerHTML = `
+        <div style="display:flex;align-items:center;gap:10px;width:100%;">
+          <span class="spinner" style="width:14px;height:14px;border-width:2px;"></span>
+          <div style="flex:1;min-width:0;font-size:12px;">
+            <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(file.name)}</div>
+            <div style="color:#64748B;font-size:11px;">Uploading to secure storage (${(file.size / 1024).toFixed(0)} KB)…</div>
+          </div>
+          <button type="button" onclick="window.app.clearPendingAttachment()" style="background:none;border:none;color:#94A3B8;cursor:pointer;font-size:16px;padding:2px 6px;" title="Remove attachment">✕</button>
+        </div>
+      `;
+    }
+
+    // Read file to base64
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    const isImg = file.type.startsWith('image/');
+    this._pendingAttachment = {
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      dataUrl: dataUrl,
+      uploading: true
+    };
+
+    try {
+      const activeConv = (this.svc && this.svc.conversations) ? this.svc.conversations.find(c => String(c.id) === String(this.activeConvId)) : null;
+      const res = await fetch('/api/messages?action=upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': (this.user && this.user.id) || 'admin'
+        },
+        body: JSON.stringify({
+          fileData: dataUrl,
+          fileName: file.name,
+          fileType: file.type,
+          conversationId: this.activeConvId,
+          pageId: activeConv ? activeConv.page_id : null
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Upload failed');
+      }
+
+      this._pendingAttachment.url = data.url;
+      this._pendingAttachment.storagePath = data.storagePath;
+      this._pendingAttachment.uploading = false;
+
+      if (previewBar) {
+        previewBar.innerHTML = `
+          <div style="display:flex;align-items:center;gap:10px;width:100%;">
+            ${isImg ? `<img src="${escapeHtml(data.url || dataUrl)}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;border:1px solid #E2E8F0;">` : `<span style="font-size:20px;">📎</span>`}
+            <div style="flex:1;min-width:0;font-size:12px;">
+              <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(file.name)}</div>
+              <div style="color:#10B981;font-size:11px;">✓ Ready to send (${(file.size / 1024).toFixed(0)} KB)</div>
+            </div>
+            <button type="button" onclick="window.app.clearPendingAttachment()" style="background:none;border:none;color:#94A3B8;cursor:pointer;font-size:16px;padding:2px 6px;" title="Remove attachment">✕</button>
+          </div>
+        `;
+      }
+      if (sendBtn) sendBtn.disabled = false;
+      this.toast('Attachment uploaded and ready to send', 'success');
+    } catch (err) {
+      console.error('[Attachment upload error]:', err);
+      this.toast(`Failed to prepare attachment: ${err.message}`, 'error');
+      this.clearPendingAttachment();
+    }
+  }
+
+  clearPendingAttachment() {
+    this._pendingAttachment = null;
+    const fileInp = document.getElementById('inbox-file-input');
+    if (fileInp) fileInp.value = '';
+    const previewBar = document.getElementById('inbox-attachment-preview-bar');
+    if (previewBar) {
+      previewBar.style.display = 'none';
+      previewBar.innerHTML = '';
+    }
+    const msgInp = document.getElementById('inbox-msg-input');
+    const sendBtn = document.getElementById('inbox-send-btn');
+    if (sendBtn) {
+      sendBtn.disabled = !msgInp || !msgInp.value.trim();
+    }
+  }
+
+  openImageModal(url, title = 'Photo') {
+    let modal = document.getElementById('inbox-media-lightbox');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'inbox-media-lightbox';
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;cursor:zoom-out;';
+      modal.onclick = () => modal.remove();
+      document.body.appendChild(modal);
+    }
+    modal.innerHTML = `
+      <div style="position:relative;max-width:90vw;max-height:90vh;display:flex;flex-direction:column;align-items:center;" onclick="event.stopPropagation()">
+        <button style="position:absolute;top:-36px;right:0;background:none;border:none;color:#fff;font-size:24px;cursor:pointer;" onclick="document.getElementById('inbox-media-lightbox')?.remove()">✕</button>
+        <img src="${escapeHtml(url)}" alt="${escapeHtml(title)}" style="max-width:90vw;max-height:85vh;border-radius:8px;object-fit:contain;box-shadow:0 8px 30px rgba(0,0,0,0.5);">
+        <div style="margin-top:10px;color:#fff;font-size:13px;display:flex;align-items:center;gap:12px;">
+          <span>${escapeHtml(title)}</span>
+          <a href="${escapeHtml(url)}" target="_blank" rel="noopener" download style="color:#60A5FA;text-decoration:underline;">Download original</a>
+        </div>
+      </div>
+    `;
+  }
+
+  _renderAttachmentInBubble(m, isOutgoing = false) {
+    const att = m.attachment || (m.attachments && m.attachments[0]) || (m.attachment_url ? { url: m.attachment_url, type: 'file', name: 'Attachment' } : null);
+    if (!att || !att.url) return '';
+
+    const url = att.url;
+    const name = att.name || 'Attachment';
+    const type = (att.type || '').toLowerCase();
+    const isImg = type.startsWith('image') || url.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i);
+    const isVideo = type.startsWith('video') || url.match(/\.(mp4|mov|webm)($|\?)/i);
+    const isAudio = type.startsWith('audio') || url.match(/\.(mp3|wav|ogg|m4a|aac)($|\?)/i);
+
+    if (isImg) {
+      return `
+        <div class="msg-attachment-render" style="margin-bottom:6px;">
+          <img src="${escapeHtml(url)}" alt="${escapeHtml(name)}" style="max-width:260px;max-height:220px;border-radius:8px;object-fit:cover;cursor:pointer;display:block;box-shadow:0 1px 3px rgba(0,0,0,0.12);" onclick="window.app.openImageModal('${escapeHtml(url)}', '${escapeHtml(name)}')">
+        </div>
+      `;
+    }
+    if (isVideo) {
+      return `
+        <div class="msg-attachment-render" style="margin-bottom:6px;">
+          <video src="${escapeHtml(url)}" controls playsinline style="max-width:280px;max-height:220px;border-radius:8px;display:block;"></video>
+        </div>
+      `;
+    }
+    if (isAudio) {
+      return `
+        <div class="msg-attachment-render" style="margin-bottom:6px;">
+          <audio src="${escapeHtml(url)}" controls style="max-width:240px;display:block;margin:4px 0;"></audio>
+        </div>
+      `;
+    }
+    const pillBg = isOutgoing ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.06)';
+    return `
+      <div class="msg-attachment-render" style="margin-bottom:6px;">
+        <a href="${escapeHtml(url)}" target="_blank" rel="noopener" download="${escapeHtml(name)}" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:${pillBg};border-radius:6px;color:inherit;text-decoration:none;font-size:12px;font-weight:500;">
+          <span>📎</span> <span style="text-decoration:underline;">${escapeHtml(name)}</span>
+        </a>
+      </div>
+    `;
   }
 
   clearInboxSearch() {
@@ -3172,25 +3593,47 @@ class MetaCRMApp {
         thread.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-secondary);"><span class="spinner"></span> Loading real conversation messages…</div>';
       }
 
-      const accountId = conv.accountId || conv.page_id;
-      const accParam = accountId ? `&accountId=${encodeURIComponent(accountId)}` : '';
-      const res = await fetch(`/api/zernio?path=inbox-messages&conversationId=${encodeURIComponent(conv.id)}${accParam}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      const rawMsgs = Array.isArray(data) ? data : (data.messages || data.data || []);
-      if (Array.isArray(rawMsgs)) {
+      let rawMsgs = [];
+      // 1. Try Supabase messages first (which contains permanently stored attachments)
+      try {
+        const dbRes = await fetch(`/api/messages?conversation_id=${encodeURIComponent(conv.id)}`, {
+          headers: { 'X-User-Id': (this.user && this.user.id) || 'admin' }
+        });
+        if (dbRes.ok) {
+          const dbData = await dbRes.json();
+          rawMsgs = dbData.messages || [];
+        }
+      } catch (e) {}
+
+      // 2. Fallback to Zernio endpoint if Supabase had no messages for this conversation
+      if (!rawMsgs || rawMsgs.length === 0) {
+        const accountId = conv.accountId || conv.page_id;
+        const accParam = accountId ? `&accountId=${encodeURIComponent(accountId)}` : '';
+        const res = await fetch(`/api/zernio?path=inbox-messages&conversationId=${encodeURIComponent(conv.id)}${accParam}`);
+        if (res.ok) {
+          const data = await res.json();
+          rawMsgs = Array.isArray(data) ? data : (data.messages || data.data || []);
+        }
+      }
+
+      if (Array.isArray(rawMsgs) && rawMsgs.length > 0) {
         conv.messages = rawMsgs.map(m => {
-          let text = m.message;
+          let text = m.message || m.message_text || m.text || '';
+          const att = m.attachment || (m.attachments && m.attachments[0]) || (m.attachment_url ? { url: m.attachment_url, type: 'file', name: 'Attachment' } : null);
           if (!text || !text.trim()) {
             if (m.isStoryMention) text = 'Replied to your story 📸';
-            else if (m.attachments && m.attachments.length) text = '[Photo/Media Attachment]';
+            else if (att) text = (att.type && att.type.startsWith('image')) ? 'Sent a photo 📷' : '📎 Attachment';
             else text = 'Direct message';
           }
+          const incoming = m.direction ? (m.direction === 'incoming' || m.direction === 'inbound') : (m.sender_type === 'customer' || m.incoming === true);
           return {
             id: m.id,
             text: text,
-            incoming: m.direction === 'incoming',
-            time: new Date(m.sentAt || m.createdAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            incoming: incoming,
+            attachment: att,
+            attachments: m.attachments || (att ? [att] : []),
+            attachment_url: m.attachment_url || att?.url,
+            time: new Date(m.sentAt || m.createdAt || m.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           };
         });
 
@@ -3437,7 +3880,10 @@ class MetaCRMApp {
     msgDiv.className = 'msg msg-out msg-sending';
     msgDiv.setAttribute('data-msg-id', msgObj.id);
     msgDiv.innerHTML = `
-      <div class="msg-bubble">${escapeHtml(msgObj.text || '')}</div>
+      <div class="msg-bubble">
+        ${this._renderAttachmentInBubble(msgObj, true)}
+        ${escapeHtml(msgObj.text || '')}
+      </div>
       <span class="msg-time">
         ${msgObj.time || 'Just now'}
         <span class="msg-status-sending" title="Sending…"><span class="spinner-dot"></span> Sending</span>
@@ -3578,8 +4024,16 @@ class MetaCRMApp {
         });
         if (res.ok) {
           data = await res.json();
+        } else if (res.status !== 404) {
+          data = await res.json().catch(() => null);
+          if (data && data.error) {
+            throw new Error(data.error);
+          }
         }
       } catch (netErr) {
+        if (netErr.message && !netErr.message.includes('fetch')) {
+          throw netErr;
+        }
         console.warn('API /api/messages dispatch failed, trying fallback:', netErr);
       }
 
@@ -3631,6 +4085,66 @@ class MetaCRMApp {
 
   retryInboxMessage(msgId) {
     this.sendInboxMessage(msgId);
+  }
+
+  _formatLastUpdatedTime() {
+    if (!this.lastDashboardRefresh) {
+      this.lastDashboardRefresh = new Date();
+    }
+    const d = new Date(this.lastDashboardRefresh);
+    try {
+      return d.toLocaleTimeString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      });
+    } catch (e) {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+  }
+
+  async refreshDashboardData(showToast = false) {
+    const icon = document.getElementById('dash-refresh-icon');
+    if (icon) icon.style.animation = 'spin 1s linear infinite';
+
+    try {
+      if (this.svc && this.svc.fetchRemoteData) {
+        await this.svc.fetchRemoteData();
+      } else if (this.svc && this.svc.fetchRemoteLeads) {
+        await this.svc.fetchRemoteLeads();
+      }
+      this.lastDashboardRefresh = new Date();
+      if (showToast) {
+        this.toast('✓ Dashboard updated with latest data', 'success');
+      }
+      if (this.currentRoute === 'dashboard') {
+        this.renderDashboard();
+      }
+    } catch (err) {
+      console.warn('Dashboard refresh error:', err);
+      if (showToast) {
+        this.toast('Dashboard refreshed', 'info');
+      }
+    } finally {
+      const iconAfter = document.getElementById('dash-refresh-icon');
+      if (iconAfter) iconAfter.style.animation = '';
+    }
+  }
+
+  handleRemoteLeadReceived(rawLead) {
+    if (!rawLead) return;
+    if (this.svc && this.svc.handleInboundMetaLead) {
+      this.svc.handleInboundMetaLead(rawLead);
+    }
+    const name = rawLead.full_name || rawLead.name || 'Meta Lead';
+    this.toast(`🔔 New lead received: ${name}!`, 'success');
+    if (this.currentRoute === 'dashboard') {
+      this.renderDashboard();
+    } else if (this.currentRoute === 'leads') {
+      this.renderLeads();
+    }
   }
 
   handleRemoteMessageReceived(detail) {
@@ -4506,23 +5020,23 @@ class MetaCRMApp {
           <div class="roi-grid" style="padding: 16px;">
             <div class="roi-card">
               <div class="roi-card-label">TOTAL AD SPEND</div>
-              <div class="roi-card-value">${this.getCurrencySymbol()}${this._formatNum(roi.totalSpend)}</div>
+              <div class="roi-card-value">${this.formatMoney(roi.totalSpend)}</div>
               <div class="roi-card-sub">Meta Graph Verified</div>
             </div>
             <div class="roi-card">
               <div class="roi-card-label">COST PER LEAD (CPL)</div>
-              <div class="roi-card-value" style="color:var(--accent);">${this.getCurrencySymbol()}${roi.cpl}</div>
+              <div class="roi-card-value" style="color:var(--accent);">${this.formatMoney(roi.cpl)}</div>
               <div class="roi-card-sub">Spend / ${roi.totalLeads} Total Leads</div>
             </div>
             <div class="roi-card">
               <div class="roi-card-label">COST PER CUSTOMER (CPA)</div>
-              <div class="roi-card-value" style="color:var(--success);">${this.getCurrencySymbol()}${roi.cpa}</div>
+              <div class="roi-card-value" style="color:var(--success);">${this.formatMoney(roi.cpa)}</div>
               <div class="roi-card-sub">Spend / ${roi.totalWonDeals} Closed Deals</div>
             </div>
             <div class="roi-card">
               <div class="roi-card-label">RETURN ON AD SPEND (ROAS)</div>
               <div class="roi-card-value" style="color:#7C3AED;">${roi.roas}x</div>
-              <div class="roi-card-sub">Revenue: ${this.getCurrencySymbol()}${this._formatNum(roi.totalWonValue)}</div>
+              <div class="roi-card-sub">Revenue: ${this.formatMoney(roi.totalWonValue)}</div>
             </div>
           </div>
 
@@ -4548,12 +5062,12 @@ class MetaCRMApp {
                   ${roi.roiByPage.length > 0 ? roi.roiByPage.map(row => `
                     <tr>
                       <td><strong>${row.pageName}</strong></td>
-                      <td>${this.getCurrencySymbol()}${this._formatNum(row.spend)}</td>
+                      <td>${this.formatMoney(row.spend)}</td>
                       <td class="font-semibold">${row.leads}</td>
-                      <td>${this.getCurrencySymbol()}${row.cpl}</td>
+                      <td>${this.formatMoney(row.cpl)}</td>
                       <td><span class="badge badge-green">${row.wonDeals}</span></td>
-                      <td>${this.getCurrencySymbol()}${this._formatNum(row.wonValue)}</td>
-                      <td class="font-semibold">${this.getCurrencySymbol()}${row.cpa}</td>
+                      <td>${this.formatMoney(row.wonValue)}</td>
+                      <td class="font-semibold">${this.formatMoney(row.cpa)}</td>
                       <td><strong>${row.roas}x</strong></td>
                       <td>
                         ${row.performerFlag === 'top_roas' ? '<span class="badge-top-roas">★ Top ROI</span>' :
@@ -4587,11 +5101,11 @@ class MetaCRMApp {
                     <tr>
                       <td><strong>${camp.campaignName}</strong></td>
                       <td class="text-xs text-gray">${camp.pageName}</td>
-                      <td>${this.getCurrencySymbol()}${this._formatNum(camp.spend)}</td>
+                      <td>${this.formatMoney(camp.spend)}</td>
                       <td class="font-semibold">${camp.leads}</td>
-                      <td>${this.getCurrencySymbol()}${camp.cpl}</td>
+                      <td>${this.formatMoney(camp.cpl)}</td>
                       <td><span class="badge badge-green">${camp.wonDeals}</span></td>
-                      <td class="font-semibold">${this.getCurrencySymbol()}${camp.cpa}</td>
+                      <td class="font-semibold">${this.formatMoney(camp.cpa)}</td>
                       <td><strong>${camp.roas}x</strong></td>
                       <td>
                         ${camp.performerFlag === 'top_roas' ? '<span class="badge-top-roas">★ Top ROI</span>' :
@@ -5077,11 +5591,68 @@ class MetaCRMApp {
     return this.svc.pages.filter(p => assignedIds.includes(p.id));
   }
 
-  _getFilteredLeads() {
+  _getISTDate(dateInput = null) {
+    const d = dateInput ? new Date(dateInput) : new Date();
+    if (isNaN(d.getTime())) return null;
+    try {
+      const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      return formatter.format(d);
+    } catch (e) {
+      const istMs = d.getTime() + (5.5 * 60 * 60 * 1000);
+      return new Date(istMs).toISOString().split('T')[0];
+    }
+  }
+
+  _isDateInRangeIST(dateInput, range) {
+    if (!dateInput) return false;
+    const itemDate = new Date(dateInput);
+    if (isNaN(itemDate.getTime())) return false;
+    if (!range || range === 'all') return true;
+
+    const now = new Date();
+    const todayIST = this._getISTDate(now);
+    const itemIST = this._getISTDate(itemDate);
+    if (!todayIST || !itemIST) return false;
+
+    if (range === 'today') {
+      return itemIST === todayIST;
+    }
+    if (range === 'yesterday') {
+      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const yesterdayIST = this._getISTDate(yesterday);
+      return itemIST === yesterdayIST;
+    }
+    if (range === 'last_7d') {
+      const diffMs = now.getTime() - itemDate.getTime();
+      const diffDays = diffMs / (1000 * 60 * 60 * 24);
+      return diffDays >= 0 && diffDays <= 7;
+    }
+    if (range === 'last_30d') {
+      const diffMs = now.getTime() - itemDate.getTime();
+      const diffDays = diffMs / (1000 * 60 * 60 * 24);
+      return diffDays >= 0 && diffDays <= 30;
+    }
+    if (range === 'this_month') {
+      const [nowYear, nowMonth] = todayIST.split('-');
+      const [itemYear, itemMonth] = itemIST.split('-');
+      return nowYear === itemYear && nowMonth === itemMonth;
+    }
+    return true;
+  }
+
+  _getFilteredLeads(applyDateFilter = false) {
     if (!this.svc || !this.svc.leads) return [];
     let leads = this._filterUserLeads(this.svc.leads);
     if (this.selectedPageFilter !== 'all') {
       leads = leads.filter(l => l.page_id === this.selectedPageFilter || l.pageId === this.selectedPageFilter);
+    }
+    if (applyDateFilter && this.selectedDateRange) {
+      leads = leads.filter(l => this._isDateInRangeIST(l.created_at || l.createdAt, this.selectedDateRange));
     }
     return leads;
   }
@@ -5339,7 +5910,7 @@ class MetaCRMApp {
         <div class="stats-grid" style="grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:12px;margin-bottom:24px;">
           <div class="stat-card">
             <div class="stat-label">Total Ad Spend</div>
-            <div class="stat-value">${this.getCurrencySymbol()}${this._formatNum(totalSpend)}</div>
+            <div class="stat-value">${this.formatMoney(totalSpend)}</div>
             <div class="stat-comparison ${totalSpend > 0 ? 'text-green' : 'text-gray'}" style="font-size:11px;margin-top:4px;">
               ${totalSpend > 0 ? '<span>Verified Meta ad spend</span>' : '<span>No active ad spend tracked</span>'}
             </div>
@@ -5353,23 +5924,23 @@ class MetaCRMApp {
           </div>
           <div class="stat-card">
             <div class="stat-label">Cost Per Lead (CPL)</div>
-            <div class="stat-value">${this.getCurrencySymbol()}${avgCpl}</div>
+            <div class="stat-value">${this.formatMoney(avgCpl)}</div>
             <div class="stat-comparison ${avgCpl > 0 ? 'text-green' : 'text-gray'}" style="font-size:11px;margin-top:4px;">
-              ${avgCpl > 0 ? `<span>Average CPL: ${this.getCurrencySymbol()}${avgCpl}</span>` : '<span>${this.getCurrencySymbol()}0 / lead (No spend)</span>'}
+              ${avgCpl > 0 ? `<span>Average CPL: ${this.formatMoney(avgCpl)}</span>` : `<span>${this.formatMoney(0)} / lead (No spend)</span>`}
             </div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Impressions &amp; CPM</div>
             <div class="stat-value">${this._formatNum(totalImpressions)}</div>
             <div class="stat-comparison text-gray" style="font-size:11px;margin-top:4px;">
-              CPM: <strong>${this.getCurrencySymbol()}${avgCpm}</strong>
+              CPM: <strong>${this.formatMoney(avgCpm)}</strong>
             </div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Clicks &amp; CTR</div>
             <div class="stat-value">${this._formatNum(totalClicks)}</div>
             <div class="stat-comparison text-gray" style="font-size:11px;margin-top:4px;">
-              CTR: <strong>${avgCtr}%</strong> • CPC: <strong>${this.getCurrencySymbol()}${avgCpc}</strong>
+              CTR: <strong>${avgCtr}%</strong> • CPC: <strong>${this.formatMoney(avgCpc)}</strong>
             </div>
           </div>
         </div>
@@ -5478,12 +6049,12 @@ class MetaCRMApp {
                       <div class="text-xs text-gray font-mono">${c.id}</div>
                     </td>
                     <td class="text-xs" style="text-transform:uppercase;">${(c.objective || 'OUTCOME_LEADS').replace('OUTCOME_', '')}</td>
-                    <td class="text-xs font-medium">${this.getCurrencySymbol()}${c.daily_budget ? this._formatNum(c.daily_budget) + '/day' : 'Lifetime'}</td>
-                    <td class="text-xs font-semibold" style="text-align:right;">${this.getCurrencySymbol()}${this._formatNum(spend)}</td>
+                    <td class="text-xs font-medium">${c.daily_budget ? this.formatMoney(c.daily_budget, c.currency) + '/day' : 'Lifetime'}</td>
+                    <td class="text-xs font-semibold" style="text-align:right;">${this.formatMoney(spend, c.currency)}</td>
                     <td class="text-xs" style="text-align:right;">${this._formatNum(clicks)}</td>
                     <td class="text-xs" style="text-align:right;">${ctr}%</td>
                     <td class="text-xs font-semibold" style="text-align:right;color:var(--primary);">${leads}</td>
-                    <td class="text-xs font-semibold" style="text-align:right;">${cpl !== '—' ? this.getCurrencySymbol() +  this._formatNum(cpl) : '—'}</td>
+                    <td class="text-xs font-semibold" style="text-align:right;">${cpl !== '—' ? this.formatMoney(cpl, c.currency) : '—'}</td>
                   </tr>
                 `;
               }).join('')}
@@ -5536,11 +6107,11 @@ class MetaCRMApp {
                   </td>
                   <td class="text-xs">${escapeHtml(a.campaign_name || a.campaign_id || 'Campaign')}</td>
                   <td class="text-xs">${escapeHtml(a.optimization_goal || 'LEAD_GENERATION')}</td>
-                  <td class="text-xs">${a.daily_budget ? this.getCurrencySymbol() +  this._formatNum(a.daily_budget) + '/day' : '—'}</td>
-                  <td class="text-xs font-semibold" style="text-align:right;">${this.getCurrencySymbol()}${this._formatNum(a.spend || 0)}</td>
+                  <td class="text-xs">${a.daily_budget ? this.formatMoney(a.daily_budget, a.currency) + '/day' : '—'}</td>
+                  <td class="text-xs font-semibold" style="text-align:right;">${this.formatMoney(a.spend || 0, a.currency)}</td>
                   <td class="text-xs" style="text-align:right;">${a.clicks || 0}</td>
                   <td class="text-xs font-semibold" style="text-align:right;color:var(--primary);">${a.leads || 0}</td>
-                  <td class="text-xs font-semibold" style="text-align:right;">${this.getCurrencySymbol()}${this._formatNum(a.cost_per_lead || 0)}</td>
+                  <td class="text-xs font-semibold" style="text-align:right;">${this.formatMoney(a.cost_per_lead || 0, a.currency)}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -5592,11 +6163,11 @@ class MetaCRMApp {
                   </td>
                   <td class="text-xs">${escapeHtml(ad.adset_name || ad.adset_id || 'Decision Makers')}</td>
                   <td class="text-xs">${escapeHtml(ad.format || 'Single Image Lead Form')}</td>
-                  <td class="text-xs font-semibold" style="text-align:right;">${this.getCurrencySymbol()}${this._formatNum(ad.spend || 0)}</td>
+                  <td class="text-xs font-semibold" style="text-align:right;">${this.formatMoney(ad.spend || 0, ad.currency)}</td>
                   <td class="text-xs" style="text-align:right;">${ad.clicks || 0}</td>
                   <td class="text-xs" style="text-align:right;">${ad.ctr || 0}%</td>
                   <td class="text-xs font-semibold" style="text-align:right;color:var(--primary);">${ad.leads || 0}</td>
-                  <td class="text-xs font-semibold" style="text-align:right;">${this.getCurrencySymbol()}${this._formatNum(ad.cost_per_lead || 0)}</td>
+                  <td class="text-xs font-semibold" style="text-align:right;">${this.formatMoney(ad.cost_per_lead || 0, ad.currency)}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -6485,65 +7056,171 @@ class MetaCRMApp {
   // REPORTS & ANALYTICS
   // ──────────────────────────────────────────────────────────
 
+  changeReportsDateRange(val) {
+    this.reportsDateRange = val;
+    this.reportsData = null;
+    this.renderReports();
+    this.generateReport();
+  }
+
+  async generateReport() {
+    this.reportsLoading = true;
+    const btn = document.getElementById('btn-generate-report');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner" style="width:12px;height:12px;border-width:2px;display:inline-block;"></span> Generating…`;
+    }
+
+    const range = this.reportsDateRange || 'last_7d';
+    let url = `/api/reports?date_range=${encodeURIComponent(range)}`;
+    if (range === 'custom') {
+      const sDate = document.getElementById('reports-start-date')?.value || this.reportsCustomStart;
+      const eDate = document.getElementById('reports-end-date')?.value || this.reportsCustomEnd;
+      if (sDate) {
+        this.reportsCustomStart = sDate;
+        url += `&start_date=${encodeURIComponent(sDate)}`;
+      }
+      if (eDate) {
+        this.reportsCustomEnd = eDate;
+        url += `&end_date=${encodeURIComponent(eDate)}`;
+      }
+    }
+
+    try {
+      const res = await fetch(url, {
+        headers: {
+          'X-User-Id': (this.user && this.user.id) || 'admin'
+        }
+      });
+      if (res.ok) {
+        this.reportsData = await res.json();
+      } else {
+        const errJson = await res.json().catch(() => null);
+        console.warn('Reports API response not ok, falling back to local reconciliation:', errJson);
+      }
+    } catch (e) {
+      console.warn('Reports API fetch failed, falling back to local calculation:', e);
+    } finally {
+      this.reportsLoading = false;
+      this.renderReports();
+    }
+  }
+
   renderReports() {
     this._setBreadcrumbs('Reports & Performance');
+    this.reportsDateRange = this.reportsDateRange || 'last_7d';
 
-    const leads = this._filterUserLeads ? this._filterUserLeads(this.svc ? this.svc.leads : []) : (this.svc ? this.svc.leads : []);
+    if (!this.reportsData && !this.reportsLoading) {
+      this.reportsLoading = true;
+      setTimeout(() => this.generateReport(), 40);
+    }
+
+    const rep = this.reportsData || {};
+    const sum = rep.summary || null;
+    const isTokenExpired = rep.tokenExpired === true;
+
+    // Local Fallback Aggregations if server data not loaded yet
+    const leads = this._getFilteredLeads ? this._getFilteredLeads(true) : (this.svc ? this.svc.leads : []);
     const campaigns = this.svc ? (this.svc.campaigns || []) : [];
-    const staff = this.svc ? (this.svc.staff || []) : [];
-    const pages = this._getAccessiblePages ? this._getAccessiblePages() : [];
+    const convs = (this.svc ? (this.svc.conversations || []) : []).filter(c => !c.is_archived);
 
-    // Aggregations
-    const totalLeads = leads.length;
-    const qualifiedLeads = leads.filter(l => l.status === 'Qualified' || l.status === 'Contacted').length;
-    const wonLeads = leads.filter(l => l.status === 'Won' || l.status === 'Converted').length;
-    const totalSpend = campaigns.reduce((s, c) => s + (c.spend || (c.metrics && c.metrics.spend) || 0), 0);
-    const avgCpl = totalLeads > 0 ? Math.round(totalSpend / totalLeads) : 0;
-    const conversionRate = totalLeads > 0 ? ((wonLeads / totalLeads) * 100).toFixed(1) : '0.0';
-    const pipelineWonValue = wonLeads * 25000;
-    const roas = totalSpend > 0 ? (pipelineWonValue / totalSpend).toFixed(2) : '0.00';
+    const totalLeads = sum ? sum.totalLeads : leads.length;
+    const wonLeads = sum ? sum.dealsWon : leads.filter(l => l.status === 'Won' || l.status === 'Converted').length;
+    const totalSpend = sum ? sum.totalSpend : campaigns.reduce((s, c) => s + (c.spend || (c.metrics && c.metrics.spend) || 0), 0);
+    const avgCpl = sum ? sum.cpl : (totalLeads > 0 ? Math.round(totalSpend / totalLeads) : 0);
+    const totalConversations = sum ? sum.totalConversations : convs.length;
+    const pipelineWonValue = sum ? sum.totalWonValue : (wonLeads * 25000);
+    const conversionRate = sum ? sum.conversionRate : (totalLeads > 0 ? ((wonLeads / totalLeads) * 100).toFixed(1) + '%' : '0.0%');
 
-    // Source breakdown
-    const sourceCounts = {};
-    leads.forEach(l => {
-      const src = l.source || 'Meta Lead Ads';
-      sourceCounts[src] = (sourceCounts[src] || 0) + 1;
-    });
-
-    // Staff activity breakdown
-    const staffStats = staff.map(s => {
-      const staffLeads = leads.filter(l => String(l.assigned_staff_id || l.assignedStaffId) === String(s.id));
-      const staffWon = staffLeads.filter(l => l.status === 'Won' || l.status === 'Converted').length;
-      const rate = staffLeads.length > 0 ? ((staffWon / staffLeads.length) * 100).toFixed(1) : '0.0';
+    // Page Breakdown
+    const pageBreakdown = rep.pageBreakdown || (this._getAccessiblePages ? this._getAccessiblePages().map(p => {
+      const pLeads = leads.filter(l => String(l.page_id || l.pageId) === String(p.id));
+      const pWon = pLeads.filter(l => l.status === 'Won' || l.status === 'Converted').length;
+      const pConvs = convs.filter(c => String(c.page_id) === String(p.id)).length;
       return {
-        name: s.name,
-        role: s.role,
-        leads: staffLeads.length,
-        won: staffWon,
-        rate: rate + '%'
+        pageId: p.id,
+        pageName: p.name || 'Facebook Page',
+        leads: pLeads.length,
+        spend: 0,
+        cpl: 0,
+        conversations: pConvs,
+        dealsWon: pWon
+      };
+    }) : []);
+
+    // Campaign Breakdown
+    const campaignBreakdown = rep.campaignBreakdown || campaigns.map(c => {
+      const cSpend = c.spend || (c.metrics && c.metrics.spend) || 0;
+      const cLeads = c.leads || (c.metrics && c.metrics.leads) || 0;
+      const cCpl = cLeads > 0 ? Math.round(cSpend / cLeads) : 0;
+      return {
+        campaignId: c.id,
+        campaignName: c.name || 'Campaign',
+        pageName: this._pageName(c.page_id || c.account_id),
+        status: c.status || 'ACTIVE',
+        spend: cSpend,
+        leads: cLeads,
+        cpl: cCpl,
+        dealsWon: 0
       };
     });
 
+    const isCustom = this.reportsDateRange === 'custom';
+
     this.el.content.innerHTML = `
       <div class="reports-view" style="padding:4px 0 32px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:24px;">
+        <!-- HEADER & DATE RANGE CONTROLS -->
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
           <div>
             <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.02em;margin-bottom:4px;color:var(--text);">CRM Reports &amp; ROI Analytics</h2>
-            <p class="text-xs text-gray">Real-time performance metrics reconciled across Meta Ads, Lead Gen, and Sales conversion.</p>
+            <p class="text-xs text-gray">Reconciled performance across Meta Ads, Lead Gen Instant Forms, and Sales Won pipeline.</p>
           </div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <label for="reports-daterange-select" style="font-size:12px;font-weight:600;color:var(--text-secondary);">Period (IST):</label>
+              <select id="reports-daterange-select" class="input input-sm" style="font-weight:500;" onchange="window.app.changeReportsDateRange(this.value)">
+                <option value="today" ${this.reportsDateRange === 'today' ? 'selected' : ''}>Today</option>
+                <option value="yesterday" ${this.reportsDateRange === 'yesterday' ? 'selected' : ''}>Yesterday</option>
+                <option value="last_7d" ${this.reportsDateRange === 'last_7d' ? 'selected' : ''}>Last 7 Days</option>
+                <option value="this_month" ${this.reportsDateRange === 'this_month' ? 'selected' : ''}>This Month</option>
+                <option value="custom" ${isCustom ? 'selected' : ''}>Custom Range…</option>
+              </select>
+            </div>
+
+            <div id="reports-custom-dates" style="display:${isCustom ? 'flex' : 'none'};align-items:center;gap:6px;">
+              <input type="date" id="reports-start-date" class="input input-sm" value="${this.reportsCustomStart || ''}">
+              <span style="color:var(--text-secondary);font-size:12px;">to</span>
+              <input type="date" id="reports-end-date" class="input input-sm" value="${this.reportsCustomEnd || ''}">
+            </div>
+
+            <button class="btn btn-primary btn-sm" id="btn-generate-report" onclick="window.app.generateReport()">
+              <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+              <span>Generate Report</span>
+            </button>
             <button class="btn btn-secondary btn-sm" onclick="window.app.exportReportsCsv()">
               <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Export CSV
             </button>
-            <button class="btn btn-primary btn-sm" onclick="window.app.renderReports()">
-              <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
-              Refresh Data
-            </button>
           </div>
         </div>
 
-        <!-- KPI SUMMARY METRICS -->
+        <!-- META TOKEN EXPIRY BANNER -->
+        ${isTokenExpired ? `
+          <div class="auth-error-banner" style="margin-bottom:20px;padding:14px 18px;background:#FEF2F2;border:1px solid #FCA5A5;border-radius:8px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span style="font-size:20px;">⚠️</span>
+              <div>
+                <strong style="color:#991B1B;font-size:13px;display:block;">Meta Connection Error: Access Token Expired</strong>
+                <span style="color:#7F1D1D;font-size:12px;">Your Meta OAuth access token has expired or is invalid. Ad spend and live Marketing API insights require a valid token.</span>
+              </div>
+            </div>
+            <button class="btn btn-sm btn-primary" onclick="window.app.navigate('connections')" style="background:#DC2626;border-color:#DC2626;white-space:nowrap;">
+              Reconnect Meta account →
+            </button>
+          </div>
+        ` : ''}
+
+        <!-- KPI SUMMARY CARDS -->
         <div class="stats-grid" style="grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:14px;margin-bottom:24px;">
           <div class="stat-card">
             <div class="stat-label">Total Leads</div>
@@ -6551,127 +7228,101 @@ class MetaCRMApp {
             <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Inbound CRM contacts</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Qualified Leads</div>
-            <div class="stat-value">${qualifiedLeads}</div>
-            <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Verified stage prospects</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Won / Converted</div>
-            <div class="stat-value">${wonLeads}</div>
-            <div style="font-size:11px;color:#10B981;margin-top:4px;">${conversionRate}% conversion rate</div>
-          </div>
-          <div class="stat-card">
             <div class="stat-label">Total Ad Spend</div>
-            <div class="stat-value">${this.getCurrencySymbol()}${Number(totalSpend).toLocaleString('en-IN')}</div>
-            <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Connected Meta campaigns</div>
+            <div class="stat-value">${this.formatMoney(totalSpend)}</div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Marketing API spend</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Cost Per Lead (CPL)</div>
-            <div class="stat-value">${this.getCurrencySymbol()}${Number(avgCpl).toLocaleString('en-IN')}</div>
+            <div class="stat-value">${this.formatMoney(avgCpl)}</div>
             <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Blended acquisition cost</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Est. Revenue &amp; ROAS</div>
-            <div class="stat-value">${this.getCurrencySymbol()}${Number(pipelineWonValue).toLocaleString('en-IN')}</div>
-            <div style="font-size:11px;color:#10B981;margin-top:4px;">${roas}x return on ad spend</div>
+            <div class="stat-label">Conversations</div>
+            <div class="stat-value">${totalConversations}</div>
+            <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Messenger &amp; Instagram chats</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Deals Won</div>
+            <div class="stat-value">${wonLeads}</div>
+            <div style="font-size:11px;color:#10B981;margin-top:4px;">${conversionRate} win rate</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Won Pipeline Value</div>
+            <div class="stat-value">${this.formatMoney(pipelineWonValue)}</div>
+            <div style="font-size:11px;color:#10B981;margin-top:4px;">Closed deal revenue</div>
           </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(360px, 1fr));gap:20px;margin-bottom:24px;">
-          <!-- LEAD SOURCE BREAKDOWN -->
-          <div class="dash-panel-card">
-            <div class="dash-panel-header">
-              <div class="dash-panel-title">Leads by Acquisition Channel</div>
-            </div>
-            <div style="overflow-x:auto;">
-              <table class="crm-table">
-                <thead>
-                  <tr>
-                    <th>Channel / Source</th>
-                    <th style="text-align:right;">Leads Count</th>
-                    <th style="text-align:right;">% Share</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${Object.keys(sourceCounts).length === 0 ? `
-                    <tr><td colspan="3" class="empty-cell" style="text-align:center;padding:24px 16px;color:var(--text-muted);">No lead attribution records found.</td></tr>
-                  ` : Object.entries(sourceCounts).map(([src, count]) => `
-                    <tr>
-                      <td style="font-weight:500;">${escapeHtml(src)}</td>
-                      <td style="text-align:right;font-weight:600;">${count}</td>
-                      <td style="text-align:right;color:var(--text-secondary);">${totalLeads > 0 ? ((count / totalLeads) * 100).toFixed(1) : 0}%</td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-            </div>
+        <!-- BREAKDOWN BY PAGE -->
+        <div class="dash-panel-card" style="margin-bottom:24px;">
+          <div class="dash-panel-header">
+            <div class="dash-panel-title">Performance by Facebook Page &amp; Account</div>
+            <span class="text-xs text-gray">Scored by Page RLS permissions</span>
           </div>
-
-          <!-- STAFF ACTIVITY BREAKDOWN -->
-          <div class="dash-panel-card">
-            <div class="dash-panel-header">
-              <div class="dash-panel-title">Staff Conversion Performance</div>
-            </div>
-            <div style="overflow-x:auto;">
-              <table class="crm-table">
-                <thead>
+          <div style="overflow-x:auto;">
+            <table class="crm-table">
+              <thead>
+                <tr>
+                  <th>Page / Account</th>
+                  <th style="text-align:right;">Leads</th>
+                  <th style="text-align:right;">Spend</th>
+                  <th style="text-align:right;">CPL</th>
+                  <th style="text-align:right;">Conversations</th>
+                  <th style="text-align:right;">Deals Won</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${pageBreakdown.length === 0 ? `
+                  <tr><td colspan="6" class="empty-cell" style="text-align:center;padding:24px 16px;color:var(--text-muted);">No page data found for selected period.</td></tr>
+                ` : pageBreakdown.map(p => `
                   <tr>
-                    <th>Staff Member</th>
-                    <th style="text-align:right;">Assigned</th>
-                    <th style="text-align:right;">Won</th>
-                    <th style="text-align:right;">Win Rate</th>
+                    <td style="font-weight:600;">${escapeHtml(p.pageName)}</td>
+                    <td style="text-align:right;font-weight:600;">${p.leads}</td>
+                    <td style="text-align:right;">${this.formatMoney(p.spend)}</td>
+                    <td style="text-align:right;font-weight:600;">${this.formatMoney(p.cpl)}</td>
+                    <td style="text-align:right;">${p.conversations}</td>
+                    <td style="text-align:right;font-weight:600;color:#10B981;">${p.dealsWon}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  ${staffStats.length === 0 ? `
-                    <tr><td colspan="4" class="empty-cell" style="text-align:center;padding:24px 16px;color:var(--text-muted);">No staff members found.</td></tr>
-                  ` : staffStats.map(s => `
-                    <tr>
-                      <td style="font-weight:500;">${escapeHtml(s.name)} <span class="text-xs text-gray">(${escapeHtml(s.role)})</span></td>
-                      <td style="text-align:right;">${s.leads}</td>
-                      <td style="text-align:right;font-weight:600;color:#10B981;">${s.won}</td>
-                      <td style="text-align:right;">${s.rate}</td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-            </div>
+                `).join('')}
+              </tbody>
+            </table>
           </div>
         </div>
 
-        <!-- CAMPAIGN ATTRIBUTION TABLE -->
+        <!-- BREAKDOWN BY CAMPAIGN -->
         <div class="dash-panel-card">
           <div class="dash-panel-header">
-            <div class="dash-panel-title">Campaign Attribution &amp; Performance</div>
+            <div class="dash-panel-title">Performance by Campaign Attribution</div>
+            <span class="text-xs text-gray">Reconciled with Meta Ads Manager</span>
           </div>
           <div style="overflow-x:auto;">
             <table class="crm-table">
               <thead>
                 <tr>
                   <th>Campaign Name</th>
+                  <th>Page / Account</th>
                   <th>Status</th>
                   <th style="text-align:right;">Spend</th>
                   <th style="text-align:right;">Leads</th>
                   <th style="text-align:right;">CPL</th>
+                  <th style="text-align:right;">Deals Won</th>
                 </tr>
               </thead>
               <tbody>
-                ${campaigns.length === 0 ? `
-                  <tr><td colspan="5" class="empty-cell" style="text-align:center;padding:24px 16px;color:var(--text-muted);">No Meta ad campaigns connected yet. Connect your Meta Ad Account in Connections to sync live metrics.</td></tr>
-                ` : campaigns.map(c => {
-                  const cSpend = c.spend || (c.metrics && c.metrics.spend) || 0;
-                  const cLeads = c.leads || (c.metrics && c.metrics.leads) || 0;
-                  const cCpl = cLeads > 0 ? Math.round(cSpend / cLeads) : 0;
-                  return `
-                    <tr>
-                      <td style="font-weight:600;">${escapeHtml(c.name || 'Campaign')}</td>
-                      <td><span class="badge ${c.status === 'ACTIVE' ? 'badge-green' : 'badge-gray'}">${escapeHtml(c.status || 'PAUSED')}</span></td>
-                      <td style="text-align:right;">${this.getCurrencySymbol()}${Number(cSpend).toLocaleString('en-IN')}</td>
-                      <td style="text-align:right;font-weight:600;">${cLeads}</td>
-                      <td style="text-align:right;">${this.getCurrencySymbol()}${Number(cCpl).toLocaleString('en-IN')}</td>
-                    </tr>
-                  `;
-                }).join('')}
+                ${campaignBreakdown.length === 0 ? `
+                  <tr><td colspan="7" class="empty-cell" style="text-align:center;padding:24px 16px;color:var(--text-muted);">No campaign data found for selected period.</td></tr>
+                ` : campaignBreakdown.map(c => `
+                  <tr>
+                    <td style="font-weight:600;">${escapeHtml(c.campaignName)}</td>
+                    <td style="color:var(--text-secondary);font-size:12px;">${escapeHtml(c.pageName || 'Connected Page')}</td>
+                    <td><span class="badge ${c.status === 'ACTIVE' ? 'badge-green' : 'badge-gray'}">${escapeHtml(c.status || 'PAUSED')}</span></td>
+                    <td style="text-align:right;">${this.formatMoney(c.spend)}</td>
+                    <td style="text-align:right;font-weight:600;">${c.leads}</td>
+                    <td style="text-align:right;font-weight:600;">${this.formatMoney(c.cpl)}</td>
+                    <td style="text-align:right;font-weight:600;color:#10B981;">${c.dealsWon || 0}</td>
+                  </tr>
+                `).join('')}
               </tbody>
             </table>
           </div>
@@ -6681,27 +7332,34 @@ class MetaCRMApp {
   }
 
   exportReportsCsv() {
-    const leads = this._filterUserLeads ? this._filterUserLeads(this.svc ? this.svc.leads : []) : (this.svc ? this.svc.leads : []);
-    const campaigns = this.svc ? (this.svc.campaigns || []) : [];
+    const rep = this.reportsData || {};
+    const sum = rep.summary || {};
+    const pageBreakdown = rep.pageBreakdown || [];
+    const campaignBreakdown = rep.campaignBreakdown || [];
 
     let csv = 'Report,Category,Metric,Value\n';
-    csv += `"Summary","Overview","Total Leads","${leads.length}"\n`;
-    csv += `"Summary","Overview","Won Deals","${leads.filter(l => l.status === 'Won' || l.status === 'Converted').length}"\n`;
+    csv += `"Summary","Period","Date Range","${this.reportsDateRange || 'last_7d'}"\n`;
+    csv += `"Summary","Overview","Total Leads","${sum.totalLeads || 0}"\n`;
+    csv += `"Summary","Overview","Total Spend (INR)","${sum.totalSpend || 0}"\n`;
+    csv += `"Summary","Overview","Cost Per Lead (INR)","${sum.cpl || 0}"\n`;
+    csv += `"Summary","Overview","Conversations","${sum.totalConversations || 0}"\n`;
+    csv += `"Summary","Overview","Deals Won","${sum.dealsWon || 0}"\n`;
 
-    const totalSpend = campaigns.reduce((s, c) => s + (c.spend || (c.metrics && c.metrics.spend) || 0), 0);
-    csv += `"Summary","Overview","Total Ad Spend (INR)","${totalSpend}"\n`;
+    csv += '\nPage Breakdown\nPage_ID,Page_Name,Leads,Spend_INR,CPL_INR,Conversations,Deals_Won\n';
+    pageBreakdown.forEach(p => {
+      csv += `"${p.pageId}","${p.pageName}","${p.leads}","${p.spend}","${p.cpl}","${p.conversations}","${p.dealsWon}"\n`;
+    });
 
-    // Leads detail
-    csv += '\nLead_ID,Name,Phone,Email,Source,Status,Created_At\n';
-    leads.forEach(l => {
-      csv += `"${l.id}","${l.name || l.full_name || ''}","${l.phone || ''}","${l.email || ''}","${l.source || ''}","${l.status || ''}","${l.created_at || ''}"\n`;
+    csv += '\nCampaign Breakdown\nCampaign_ID,Campaign_Name,Page_Name,Status,Spend_INR,Leads,CPL_INR,Deals_Won\n';
+    campaignBreakdown.forEach(c => {
+      csv += `"${c.campaignId}","${c.campaignName}","${c.pageName}","${c.status}","${c.spend}","${c.leads}","${c.cpl}","${c.dealsWon || 0}"\n`;
     });
 
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `metacrm_report_export_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `metacrm_report_${this.reportsDateRange || 'last_7d'}_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     this.toast('Reports exported to CSV successfully! ✓', 'success');
   }

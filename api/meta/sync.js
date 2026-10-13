@@ -95,6 +95,7 @@ async function metaSyncUnifiedHandler(req, res) {
     let recordsUpserted = 0;
     let totalSpendSynced = 0;
 
+    // If caller provided insights data in POST body
     if (insightsData.length > 0) {
       for (const row of insightsData) {
         const parsed = parseInsightsRow(row, row.page_id || 'page_01', row.ad_account_id || 'act_primary');
@@ -115,12 +116,51 @@ async function metaSyncUnifiedHandler(req, res) {
       });
     }
 
+    // Cron / On-demand GET trigger: Pull live ad spend from Meta Graph API
+    if (metaToken && supabase) {
+      const { data: accounts } = await supabase
+        .from('ad_accounts')
+        .select('id, meta_ad_account_id, page_id, name');
+
+      if (Array.isArray(accounts) && accounts.length > 0) {
+        for (const acc of accounts) {
+          const rawId = String(acc.meta_ad_account_id || acc.id || '').replace(/^act_/, '');
+          if (!rawId) continue;
+          try {
+            const url = `https://graph.facebook.com/${apiVersion}/act_${rawId}/insights?date_preset=last_7d&level=campaign&fields=campaign_id,campaign_name,spend,impressions,clicks,ctr,cpc,cpm,actions,date_start,date_stop&access_token=${metaToken}`;
+            const fRes = await fetch(url);
+            const resJson = await fRes.json();
+            if (resJson.error) {
+              if (resJson.error.code === 190) {
+                await supabase.from('meta_connections').update({
+                  is_active: false,
+                  last_error: 'Error 190: Meta OAuth token expired. Reconnect Meta account.',
+                  updated_at: new Date().toISOString()
+                }).neq('id', '00000000-0000-0000-0000-000000000000').catch(() => {});
+              }
+              console.warn('[Ad Spend Sync Meta Warning]:', resJson.error.message);
+              continue;
+            }
+            const rows = resJson.data || [];
+            for (const r of rows) {
+              const parsed = parseInsightsRow(r, acc.page_id, `act_${rawId}`);
+              totalSpendSynced += parsed.spend;
+              recordsUpserted++;
+              await supabase.from('ad_insights').upsert(parsed, { onConflict: 'ad_account_id, campaign_id, adset_id, ad_id, date_start' }).catch(() => {});
+            }
+          } catch (e) {
+            console.warn('[Ad Spend Sync Fetch Error]:', e.message);
+          }
+        }
+      }
+    }
+
     return res.status(200).json({
       status: "success",
       syncType: "ad_spend",
-      recordsProcessed: 0,
-      totalSpendSynced: 0,
-      message: "Ad spend check completed.",
+      recordsProcessed: recordsUpserted,
+      totalSpendSynced,
+      message: recordsUpserted > 0 ? "Ad spend synced successfully." : "Ad spend check completed.",
       timestamp: new Date().toISOString()
     });
   }
@@ -141,12 +181,20 @@ async function metaSyncUnifiedHandler(req, res) {
     let totalSyncedCampaigns = 0;
     if (metaToken && adAccounts && adAccounts.length > 0) {
       for (const acc of adAccounts) {
-        const actId = acc.meta_ad_account_id.replace('act_', '');
+        const actId = String(acc.meta_ad_account_id || acc.id || '').replace(/^act_/, '');
+        if (!actId) continue;
         try {
           const insightsUrl = `https://graph.facebook.com/${apiVersion}/act_${actId}/campaigns?fields=id,name,objective,status,insights.date_preset(last_30d){spend,impressions,reach,clicks,actions}&access_token=${metaToken}`;
           const resp = await fetch(insightsUrl);
           if (resp.ok) {
             const result = await resp.json();
+            if (result.error && result.error.code === 190) {
+              await supabase.from('meta_connections').update({
+                is_active: false,
+                last_error: 'Error 190: Meta OAuth token expired. Reconnect Meta account.',
+                updated_at: new Date().toISOString()
+              }).neq('id', '00000000-0000-0000-0000-000000000000').catch(() => {});
+            }
             const campaignsList = result.data || [];
             for (const c of campaignsList) {
               const ins = (c.insights && c.insights.data && c.insights.data[0]) || {};

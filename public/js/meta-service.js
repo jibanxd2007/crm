@@ -289,9 +289,9 @@ class MetaService {
         id: a.id,
         accountId: a.account_id,
         name: a.name || `Ad Account ${a.account_id}`,
-        currency: a.currency || "USD",
+        currency: a.currency || "INR",
         status: a.account_status === 1 ? "ACTIVE" : "DISABLED",
-        timezone: a.timezone_name || "UTC",
+        timezone: a.timezone_name || "Asia/Kolkata",
         amountSpent: a.amount_spent ? (parseFloat(a.amount_spent) / 100).toFixed(2) : "0.00"
       }));
 
@@ -366,9 +366,9 @@ class MetaService {
     const adAccounts = (data.adAccounts || []).map(a => ({
       id: a.meta_ad_account_id || a.id,
       name: a.name || `Ad Account ${a.meta_ad_account_id || a.id}`,
-      currency: a.currency || "USD",
+      currency: a.currency || "INR",
       status: a.status || "ACTIVE",
-      timezone: a.timezone || "UTC"
+      timezone: a.timezone || "Asia/Kolkata"
     }));
 
     this.pages = pages;
@@ -631,7 +631,7 @@ class MetaService {
             "CAMPAIGN_BUDGET_UPDATED",
             `Campaign: ${c ? c.name : campaignId}`,
             "SUCCESS",
-            `Daily budget updated to $${budgetAmountDollars}`
+            `Daily budget updated to ${window.formatMoney ? window.formatMoney(budgetAmountDollars) : '₹' + budgetAmountDollars}`
           );
         }
 

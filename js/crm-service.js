@@ -114,37 +114,43 @@ class CRMService {
   }
 
   getCurrency() {
-    return localStorage.getItem('metacrm_currency') || 'NZD';
+    return localStorage.getItem('metacrm_currency') || 'INR';
   }
 
-  getCurrencySymbol() {
-    const cur = this.getCurrency();
+  getCurrencySymbol(currency = null) {
+    const cur = currency || this.getCurrency();
     if (cur === 'INR') return '₹';
     if (cur === 'EUR') return '€';
     if (cur === 'GBP') return '£';
-    return '$';
+    if (cur === 'USD' || cur === 'NZD' || cur === 'AUD' || cur === 'CAD') return '$';
+    return '₹';
   }
 
   setCurrency(curr) {
-    localStorage.setItem('metacrm_currency', curr);
+    localStorage.setItem('metacrm_currency', curr || 'INR');
     this.notifyChange('currency_changed');
     return curr;
   }
 
-  formatCurrency(amount, currency = null) {
+  formatMoney(amount, currency = null) {
     const curr = currency || this.getCurrency();
     const val = Number(amount) || 0;
-    const symbol = this.getCurrencySymbol();
     try {
-      const locale = curr === 'INR' ? 'en-IN' : (curr === 'NZD' ? 'en-NZ' : 'en-US');
+      const locale = curr === 'INR' ? 'en-IN' : (curr === 'NZD' ? 'en-NZ' : (curr === 'EUR' ? 'de-DE' : (curr === 'GBP' ? 'en-GB' : 'en-US')));
+      const hasDecimals = (val % 1 !== 0) && Math.abs(val) < 1000;
       return new Intl.NumberFormat(locale, {
         style: 'currency',
         currency: curr,
-        maximumFractionDigits: 0
+        maximumFractionDigits: hasDecimals ? 2 : 0
       }).format(val);
     } catch (e) {
-      return `${symbol}${val.toLocaleString()}`;
+      const sym = this.getCurrencySymbol(curr);
+      return `${sym}${val.toLocaleString('en-IN')}`;
     }
+  }
+
+  formatCurrency(amount, currency = null) {
+    return this.formatMoney(amount, currency);
   }
 
   loadPages() {
@@ -1411,7 +1417,7 @@ class CRMService {
       status: rawLead.status || "New",
       assigned_staff_id: rawLead.assigned_to || null,
       assigned_staff_name: null,
-      created_at: new Date().toISOString(),
+      created_at: rawLead.created_at || rawLead.createdAt || new Date().toISOString(),
       last_contacted_at: null,
       follow_up_date: null,
       follow_up_time: null,
@@ -3685,6 +3691,7 @@ class CRMService {
 // Global initialization
 if (typeof window !== "undefined") {
   window.crmService = new CRMService();
+  window.formatMoney = (amount, currency = 'INR') => window.crmService.formatMoney(amount, currency);
 }
 
 if (typeof module !== "undefined" && module.exports) {

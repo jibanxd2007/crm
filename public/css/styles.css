@@ -1761,6 +1761,83 @@ tbody tr:hover {
   flex-shrink: 0;
 }
 
+.conv-options-btn {
+  background: transparent;
+  border: none;
+  color: #8C9196;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 120ms ease, background 120ms ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.inbox-conv-item:hover .conv-options-btn,
+.conv-options-btn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.conv-item-dropdown {
+  position: absolute;
+  right: 10px;
+  top: 32px;
+  background: #FFFFFF;
+  border: 1px solid #E1E3E5;
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  z-index: 100;
+  min-width: 148px;
+  padding: 4px 0;
+}
+.conv-dropdown-item {
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #202223;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 100ms ease;
+}
+.conv-dropdown-item:hover {
+  background: #F6F6F7;
+  color: #000000;
+}
+
+.inbox-sort-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  font-size: 11px;
+  color: #616161;
+  border-bottom: 1px solid #F1F2F4;
+  background: #FAFAFA;
+}
+.inbox-sort-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 400;
+  color: #616161;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.inbox-sort-btn:hover {
+  color: #202223;
+}
+.inbox-sort-btn.active {
+  font-weight: 600;
+  color: #1877F2;
+}
+
 .inbox-conv-empty {
   padding: 36px 20px;
   text-align: center;

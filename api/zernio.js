@@ -1,6 +1,6 @@
 const https = require('https');
 const { createClient } = require('@supabase/supabase-js');
-const { createVercelHandler } = require('./_utils.js');
+const { createVercelHandler, resolveUser, httpsRequest } = require('./_utils.js');
 
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -463,22 +463,42 @@ async function zernioUnifiedHandler(req, res) {
       const supabase = getSupabaseAdmin();
 
       const payload = body.data || body.payload || body;
-      const leadId = payload.id || payload.lead_id || payload.leadgen_id || payload.meta_lead_id || ('zn_lead_' + Date.now());
+      const leadId = payload.leadgen_id || payload.id || payload.lead_id || payload.meta_lead_id || ('zn_lead_' + Date.now());
       const platform = payload.platform || (payload.source && payload.source.toLowerCase().includes('instagram') ? 'Instagram Ads' : 'Facebook Lead Ad');
-      const pageId = payload.page_id || payload.pageId || null;
-      const pageName = payload.page_name || payload.pageName || null;
+      const pageId = payload.page_id || payload.pageId || (payload.page && payload.page.id) || null;
+      const pageName = payload.page_name || payload.pageName || (payload.page && payload.page.name) || null;
       const campaignId = payload.campaign_id || payload.campaignId || null;
       const campaignName = payload.campaign_name || payload.campaignName || null;
       const formId = payload.form_id || payload.formId || null;
       const formName = payload.form_name || payload.formName || null;
+      const adId = payload.ad_id || payload.adId || null;
+      const adName = payload.ad_name || payload.adName || null;
+      const adsetId = payload.adset_id || payload.adsetId || null;
+      const adsetName = payload.adset_name || payload.adsetName || null;
+      const createdTime = payload.created_time ? (typeof payload.created_time === 'number' ? new Date(payload.created_time * 1000).toISOString() : new Date(payload.created_time).toISOString()) : (payload.created_at || new Date().toISOString());
 
-      const fullName = (payload.full_name || payload.name || payload.first_name ? `${payload.first_name || ''} ${payload.last_name || ''}`.trim() : 'Meta Lead').trim();
-      const email = payload.email || payload.email_address || null;
-      const phone = payload.phone || payload.phone_number || null;
+      let fullName = (payload.full_name || payload.name || payload.first_name ? `${payload.first_name || ''} ${payload.last_name || ''}`.trim() : '').trim();
+      let email = payload.email || payload.email_address || null;
+      let phone = payload.phone || payload.phone_number || null;
+
+      // Parse nested field_data / answers from Meta Lead Ads form responses
+      const fieldsList = payload.field_data || payload.form_data || payload.answers || [];
+      if (Array.isArray(fieldsList)) {
+        for (const field of fieldsList) {
+          const fname = (field.name || '').toLowerCase();
+          const fval = Array.isArray(field.values) ? field.values[0] : (field.value || field.values);
+          if (!fval) continue;
+          if (!fullName && (fname.includes('full_name') || fname === 'name')) fullName = fval;
+          else if (!fullName && fname.includes('first_name')) fullName = fval;
+          else if (!email && fname.includes('email')) email = fval;
+          else if (!phone && (fname.includes('phone') || fname.includes('mobile'))) phone = fval;
+        }
+      }
+      if (!fullName) fullName = 'Meta Lead';
 
       try {
         if (supabase) {
-          // Idempotency check: prevent duplicate leads
+          // Idempotency check: dedupe on Meta leadgen_id
           const { data: existingLead } = await supabase
             .from('leads')
             .select('*')
@@ -486,6 +506,7 @@ async function zernioUnifiedHandler(req, res) {
             .maybeSingle();
 
           if (existingLead) {
+            console.log('[Zernio Leadgen]: Duplicate lead ignored for meta_lead_id:', leadId);
             return res.status(200).json({
               status: 'success',
               isDuplicate: true,
@@ -493,18 +514,71 @@ async function zernioUnifiedHandler(req, res) {
             });
           }
 
-          let assignedStaffId = null;
-          const { data: staffMembers } = await supabase
-            .from('users')
-            .select('id')
-            .eq('role', 'staff')
-            .limit(1);
+          // Resolve page_id to a valid facebook_pages record (UUID) for staff scoping & RLS
+          let resolvedPageId = null;
+          let resolvedPageName = pageName;
 
-          if (staffMembers && staffMembers.length > 0) {
-            assignedStaffId = staffMembers[0].id;
+          if (pageId) {
+            const { data: matchedPages } = await supabase
+              .from('facebook_pages')
+              .select('id, page_id, page_name')
+              .or(`page_id.eq.${pageId},id.eq.${pageId}`)
+              .limit(1);
+            if (matchedPages && matchedPages.length > 0) {
+              resolvedPageId = matchedPages[0].id;
+              resolvedPageName = resolvedPageName || matchedPages[0].page_name;
+            }
+          }
+
+          if (!resolvedPageId && pageName) {
+            const { data: nameMatches } = await supabase
+              .from('facebook_pages')
+              .select('id, page_id, page_name')
+              .ilike('page_name', pageName)
+              .limit(1);
+            if (nameMatches && nameMatches.length > 0) {
+              resolvedPageId = nameMatches[0].id;
+              resolvedPageName = resolvedPageName || nameMatches[0].page_name;
+            }
+          }
+
+          if (!resolvedPageId) {
+            const { data: anyPage } = await supabase
+              .from('facebook_pages')
+              .select('id, page_id, page_name')
+              .order('connected_at', { ascending: false })
+              .limit(1);
+            if (anyPage && anyPage.length > 0) {
+              resolvedPageId = anyPage[0].id;
+              resolvedPageName = resolvedPageName || anyPage[0].page_name;
+            }
+          }
+
+          // Staff Assignment: match staff assigned to this specific page
+          let assignedStaffId = null;
+          if (resolvedPageId) {
+            const { data: members } = await supabase
+              .from('page_members')
+              .select('user_id')
+              .eq('page_id', resolvedPageId)
+              .limit(1);
+            if (members && members.length > 0) {
+              assignedStaffId = members[0].user_id;
+            }
+          }
+          if (!assignedStaffId) {
+            const { data: staffMembers } = await supabase
+              .from('users')
+              .select('id')
+              .eq('role', 'staff')
+              .limit(1);
+            if (staffMembers && staffMembers.length > 0) {
+              assignedStaffId = staffMembers[0].id;
+            }
           }
 
           const insertData = {
+            page_id: resolvedPageId,
             meta_lead_id: String(leadId),
             full_name: fullName,
             email: email ? email.trim() : null,
@@ -514,8 +588,14 @@ async function zernioUnifiedHandler(req, res) {
             campaign_name: campaignName,
             form_id: formId ? String(formId) : null,
             form_name: formName,
+            ad_id: adId ? String(adId) : null,
+            ad_name: adName,
+            adset_id: adsetId ? String(adsetId) : null,
+            adset_name: adsetName,
             assigned_to: assignedStaffId,
-            status: 'New'
+            status: 'New',
+            raw_data: payload,
+            created_at: createdTime
           };
 
           const { data: created, error: dbErr } = await supabase
@@ -529,6 +609,8 @@ async function zernioUnifiedHandler(req, res) {
             return res.status(500).json({ error: dbErr.message });
           }
 
+          console.log('[Zernio Lead Ingest Success]: Stored lead:', leadId, fullName, 'Page:', resolvedPageId);
+
           return res.status(200).json({
             status: 'success',
             provider: 'zernio',
@@ -539,18 +621,173 @@ async function zernioUnifiedHandler(req, res) {
         return res.status(200).json({
           status: 'success',
           provider: 'zernio',
-          lead: { id: leadId, name: fullName, email, phone, source: platform }
+          lead: { id: leadId, name: fullName, email, phone, source: platform, page_id: pageId }
         });
       } catch (err) {
+        console.error('[Zernio Webhook Fatal Error]:', err);
         return res.status(500).json({ error: err.message });
       }
+    }
+  }
+
+  // 5. BACKFILL: SYNC LEADS NOW (Admin Only)
+  if (path === 'sync-leads' || url.includes('/sync-leads')) {
+    res.setHeader('Content-Type', 'application/json');
+    const user = resolveUser(req.headers);
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ error: "Forbidden: Admin authorization required to sync leads." });
+    }
+
+    const supabase = getSupabaseAdmin();
+    let syncedCount = 0;
+    const errors = [];
+
+    try {
+      const apiKey = process.env.ZERNIO_API_KEY;
+      let connectedPages = [];
+
+      if (supabase) {
+        const { data: pages } = await supabase
+          .from('facebook_pages')
+          .select('id, page_id, page_name, page_access_token');
+        if (pages) connectedPages = pages;
+      }
+
+      // Backfill through Zernio accounts API if key configured
+      if (apiKey) {
+        try {
+          const zernioResp = await new Promise((resolve) => {
+            const reqAcc = https.request({
+              hostname: 'zernio.com',
+              port: 443,
+              path: '/api/v1/accounts',
+              method: 'GET',
+              headers: { 'Authorization': `Bearer ${apiKey}`, 'Accept': 'application/json' }
+            }, (resAcc) => {
+              let d = '';
+              resAcc.on('data', c => d += c);
+              resAcc.on('end', () => {
+                try { resolve(JSON.parse(d)); } catch(e) { resolve(null); }
+              });
+            });
+            reqAcc.on('error', () => resolve(null));
+            reqAcc.end();
+          });
+
+          if (zernioResp && Array.isArray(zernioResp.leads)) {
+            for (const item of zernioResp.leads) {
+              const lId = item.id || item.leadgen_id;
+              if (!lId || !supabase) continue;
+
+              const { data: existing } = await supabase
+                .from('leads')
+                .select('id')
+                .eq('meta_lead_id', String(lId))
+                .maybeSingle();
+
+              if (!existing) {
+                const targetPg = connectedPages.find(p => p.page_id === item.page_id || p.id === item.page_id) || connectedPages[0];
+                const { error: insErr } = await supabase.from('leads').insert({
+                  page_id: targetPg?.id || null,
+                  meta_lead_id: String(lId),
+                  full_name: item.full_name || item.name || 'Meta Lead',
+                  email: item.email || null,
+                  phone: item.phone || null,
+                  source: 'Facebook Lead Ad',
+                  status: 'New',
+                  raw_data: item,
+                  created_at: item.created_time || item.created_at || new Date().toISOString()
+                });
+                if (!insErr) syncedCount++;
+              }
+            }
+          }
+        } catch (zErr) {
+          console.warn('[Zernio Lead Backfill Warning]:', zErr.message);
+          errors.push(zErr.message);
+        }
+      }
+
+      // Backfill from Meta Graph API for each connected Facebook Page with access token
+      for (const page of connectedPages) {
+        const token = page.page_access_token || process.env.META_ACCESS_TOKEN || process.env.META_SYSTEM_USER_ACCESS_TOKEN;
+        if (!token || !page.page_id) continue;
+
+        try {
+          const formsData = await httpsRequest(`https://graph.facebook.com/v24.0/${page.page_id}/leadgen_forms?access_token=${token}&limit=10`).catch(() => null);
+          const forms = formsData?.data || [];
+
+          for (const form of forms) {
+            const leadsData = await httpsRequest(`https://graph.facebook.com/v24.0/${form.id}/leads?access_token=${token}&limit=25`).catch(() => null);
+            const rawLeads = leadsData?.data || [];
+
+            for (const rLead of rawLeads) {
+              if (!rLead.id || !supabase) continue;
+
+              const { data: exist } = await supabase
+                .from('leads')
+                .select('id')
+                .eq('meta_lead_id', String(rLead.id))
+                .maybeSingle();
+
+              if (!exist) {
+                let lName = '';
+                let lEmail = '';
+                let lPhone = '';
+                if (Array.isArray(rLead.field_data)) {
+                  for (const f of rLead.field_data) {
+                    const fn = (f.name || '').toLowerCase();
+                    const fv = Array.isArray(f.values) ? f.values[0] : f.values;
+                    if (!lName && (fn.includes('full_name') || fn === 'name')) lName = fv;
+                    else if (!lName && fn.includes('first_name')) lName = fv;
+                    else if (!lEmail && fn.includes('email')) lEmail = fv;
+                    else if (!lPhone && (fn.includes('phone') || fn.includes('mobile'))) lPhone = fv;
+                  }
+                }
+
+                const { error: insErr } = await supabase.from('leads').insert({
+                  page_id: page.id,
+                  meta_lead_id: String(rLead.id),
+                  full_name: lName || 'Meta Lead',
+                  email: lEmail || null,
+                  phone: lPhone || null,
+                  source: 'Facebook Lead Ad',
+                  status: 'New',
+                  form_id: form.id,
+                  form_name: form.name,
+                  raw_data: rLead,
+                  created_at: rLead.created_time || new Date().toISOString()
+                });
+
+                if (!insErr) syncedCount++;
+                else console.error('[Meta Lead Backfill Insert Error]:', insErr.message);
+              }
+            }
+          }
+        } catch (pageErr) {
+          console.warn(`[Meta Page Lead Sync Warning for ${page.page_name}]:`, pageErr.message);
+          errors.push(pageErr.message);
+        }
+      }
+
+      console.log(`[Zernio / Meta Lead Backfill Finished]: Synced ${syncedCount} new leads.`);
+      return res.status(200).json({
+        status: "success",
+        syncedCount: syncedCount,
+        connectedPagesProcessed: connectedPages.length,
+        errors: errors.length > 0 ? errors : undefined,
+        timestamp: new Date().toISOString()
+      });
+    } catch (topErr) {
+      console.error('[Zernio Lead Backfill Fatal Error]:', topErr);
+      return res.status(500).json({ error: topErr.message });
     }
   }
 
   return res.status(200).json({
     status: "ok",
     service: "zernio-gateway",
-    endpoints: ["status", "connect", "simulate-lead", "webhook"]
+    endpoints: ["status", "connect", "simulate-lead", "webhook", "sync-leads"]
   });
 }
 

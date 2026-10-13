@@ -181,17 +181,26 @@ async function metaWebhookHandler(req, res) {
 
         processedMsgs++;
         const senderPsid = msgEvent.sender?.id;
-        const msgText = msgEvent.message?.text || (msgEvent.message?.attachments ? '[Attachment]' : '');
+        const rawAttachments = msgEvent.message?.attachments || [];
+        const hasAttachments = Array.isArray(rawAttachments) && rawAttachments.length > 0;
+
+        let msgText = msgEvent.message?.text || '';
+        if (!msgText && hasAttachments) {
+          const firstType = rawAttachments[0].type || 'attachment';
+          msgText = firstType === 'image' ? 'Sent a photo 📷' 
+            : (firstType === 'video' ? 'Sent a video 🎥' 
+            : (firstType === 'audio' ? 'Sent an audio note 🎙️' : 'Sent an attachment 📎'));
+        }
         const msgTimestamp = msgEvent.timestamp ? new Date(msgEvent.timestamp).toISOString() : new Date().toISOString();
 
         // Persist to Supabase if available
         const supabase = getSupabaseAdmin();
-        if (supabase && senderPsid && msgText) {
+        if (supabase && senderPsid && (msgText || hasAttachments)) {
           try {
             // Find or create conversation
             const { data: conv } = await supabase
               .from('conversations')
-              .select('id')
+              .select('id, unread_count')
               .eq('page_id', entryPageId)
               .eq('customer_psid', senderPsid)
               .maybeSingle();
@@ -205,7 +214,7 @@ async function metaWebhookHandler(req, res) {
                   customer_psid: senderPsid,
                   customer_name: `Facebook User (${senderPsid.substring(0, 6)})`,
                   channel: 'messenger',
-                  last_message: msgText,
+                  last_message: msgText || '[Attachment]',
                   last_message_at: msgTimestamp,
                   unread_count: 1
                 })
@@ -215,17 +224,99 @@ async function metaWebhookHandler(req, res) {
             }
 
             if (convId) {
+              // Download Meta CDN attachments and upload to Supabase Storage (bypassing CDN expiry)
+              const storedAttachments = [];
+              if (hasAttachments) {
+                for (const att of rawAttachments) {
+                  const cdnUrl = att?.payload?.url;
+                  const attType = att?.type || 'file';
+                  if (cdnUrl) {
+                    try {
+                      let buffer = null;
+                      let contentType = 'application/octet-stream';
+                      if (typeof fetch === 'function') {
+                        const dlRes = await fetch(cdnUrl);
+                        if (dlRes.ok) {
+                          contentType = dlRes.headers.get('content-type') || contentType;
+                          const ab = await dlRes.arrayBuffer();
+                          buffer = Buffer.from(ab);
+                        }
+                      }
+
+                      if (buffer && buffer.length > 0) {
+                        let ext = 'bin';
+                        if (contentType.includes('jpeg') || contentType.includes('jpg')) ext = 'jpg';
+                        else if (contentType.includes('png')) ext = 'png';
+                        else if (contentType.includes('gif')) ext = 'gif';
+                        else if (contentType.includes('webp')) ext = 'webp';
+                        else if (contentType.includes('mp4')) ext = 'mp4';
+                        else if (contentType.includes('quicktime')) ext = 'mov';
+                        else if (contentType.includes('audio') || contentType.includes('mpeg')) ext = 'mp3';
+                        else if (contentType.includes('pdf')) ext = 'pdf';
+                        else ext = attType === 'image' ? 'jpg' : (attType === 'video' ? 'mp4' : 'bin');
+
+                        const filename = `${attType}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${ext}`;
+                        const storagePath = `inbound/${entryPageId}/${convId}/${filename}`;
+
+                        const { error: upErr } = await supabase.storage
+                          .from('message-attachments')
+                          .upload(storagePath, buffer, { contentType, upsert: true });
+
+                        if (!upErr) {
+                          const { data: pubData } = supabase.storage
+                            .from('message-attachments')
+                            .getPublicUrl(storagePath);
+
+                          storedAttachments.push({
+                            type: attType,
+                            url: pubData?.publicUrl || cdnUrl,
+                            storage_path: storagePath,
+                            name: filename,
+                            size: buffer.length
+                          });
+                        } else {
+                          console.warn('[Storage upload warning]:', upErr.message);
+                          storedAttachments.push({ type: attType, url: cdnUrl });
+                        }
+                      } else {
+                        storedAttachments.push({ type: attType, url: cdnUrl });
+                      }
+                    } catch (attErr) {
+                      console.warn('[Attachment download error]:', attErr.message);
+                      storedAttachments.push({ type: attType, url: cdnUrl });
+                    }
+                  }
+                }
+              }
+
+              const primaryAttachmentUrl = storedAttachments[0]?.url || (hasAttachments ? rawAttachments[0]?.payload?.url : null);
+
               await supabase
                 .from('messages')
                 .insert({
                   conversation_id: convId,
                   sender_type: 'customer',
                   sender_name: 'Customer',
-                  text: msgText,
+                  text: msgText || '[Attachment]',
+                  message_text: msgText || '[Attachment]',
+                  attachments: storedAttachments,
+                  attachment_url: primaryAttachmentUrl,
                   meta_mid: mid,
                   is_read: false,
                   created_at: msgTimestamp
                 });
+
+              await supabase
+                .from('conversations')
+                .update({
+                  last_message: msgText || '[Attachment]',
+                  last_message_at: msgTimestamp,
+                  unread_count: (conv?.unread_count || 0) + 1,
+                  is_archived: false,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', convId)
+                .catch(() => {});
             }
           } catch (dbErr) {
             console.warn("[Webhook DB Ingest Warning]:", dbErr.message);
