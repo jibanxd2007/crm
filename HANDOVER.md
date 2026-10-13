@@ -48,6 +48,8 @@ Execute the following migration scripts in order via the **Supabase SQL Editor**
 10. `supabase/migrations/20261014_lead_meta_id_unique.sql` — Database-level lead deduplication, foreign key reparenting, and UNIQUE constraint on `meta_lead_id`.
 11. `supabase/migrations/20261014_realtime_publications.sql` — Realtime publication registration for `leads`, `messages`, and `conversations`.
 12. `supabase/migrations/20261014_inbox_conversation_recency_trigger.sql` — Automated conversation recency trigger on `messages` insert and index on `last_message_at DESC`.
+13. `supabase/migrations/20261014_fix_conversation_recency_trigger.sql` — Trigger refinement with `GREATEST()` timestamp recency, inbound-only unread increment, and `meta_mid` UNIQUE constraint.
+14. `supabase/migrations/20261014_backfill_clean_storage_paths.sql` — Backfill converting stored signed or public URLs in `messages` to relative storage paths.
 
 ---
 

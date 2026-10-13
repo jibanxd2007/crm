@@ -195,7 +195,14 @@ class MetaCRMApp {
     }
     this._checkUrlCallbacks();
     this.syncZernioAccounts(false);
-    this.fetchRealInstagramConversations();
+    // Server data wins over localStorage on load: fetch authoritative conversations immediately
+    if (this.svc && this.svc.fetchRemoteConversations) {
+      this.svc.fetchRemoteConversations().then(() => {
+        if (this.currentRoute === 'inbox') this.renderInbox();
+      });
+    } else {
+      this.fetchRealInstagramConversations();
+    }
     const curSel = document.getElementById('topbar-currency-select');
     if (curSel) curSel.value = this.getCurrency();
     this.updateCurrencyDropdownTooltip();
@@ -2712,8 +2719,13 @@ class MetaCRMApp {
     // Conversations collection
     const convs = (this.svc ? (this.svc.conversations || []) : []);
 
-    // Auto-fetch real Instagram/Facebook conversations if not loaded yet or empty
-    if ((!this._fetchedRealIgConvs || convs.length === 0) && this.svc) {
+    // Auto-fetch real conversations from server so server order wins over localStorage
+    if (!this._fetchedServerConvs && this.svc && this.svc.fetchRemoteConversations) {
+      this._fetchedServerConvs = true;
+      this.svc.fetchRemoteConversations().then(() => {
+        if (this.currentRoute === 'inbox') this.renderInbox();
+      });
+    } else if ((!this._fetchedRealIgConvs || convs.length === 0) && this.svc) {
       this._fetchedRealIgConvs = true;
       setTimeout(() => this.fetchRealInstagramConversations(), 50);
     }
@@ -3556,20 +3568,15 @@ class MetaCRMApp {
         throw new Error(upErr.message || 'Storage upload failed');
       }
 
-      // 3. Resolve 1-hour signed URL for attachment rendering and message payload
-      const { data: signData } = await sbClient.storage
-        .from('message-attachments')
-        .createSignedUrl(path, 3600);
-
-      const fileUrl = signData?.signedUrl || '';
-
+      // 3. Keep relative storage path for message payload (NEVER store signed URLs in DB)
       this._pendingAttachment = {
         name: file.name,
         type: file.type || 'application/octet-stream',
         size: file.size,
-        url: fileUrl,
+        url: path, // RELATIVE STORAGE PATH ONLY
         storagePath: path,
         storage_path: path,
+        localPreviewUrl: localPreviewUrl,
         uploading: false
       };
 
@@ -3681,7 +3688,7 @@ class MetaCRMApp {
     const att = this._extractAttachment(m);
     if (!att || !att.url) return '';
 
-    const url = att.url;
+    const url = m.localPreviewUrl || m.attachment?.localPreviewUrl || att.url;
     const name = att.name || 'Attachment';
     const type = (att.type || '').toLowerCase();
     const isImg = type.startsWith('image') || url.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i);
@@ -3693,9 +3700,9 @@ class MetaCRMApp {
         <div class="msg-attachment-render" style="margin-bottom:6px;">
           <img src="${escapeHtml(url)}" 
                alt="${escapeHtml(name)}" 
-               data-storage-path="${escapeHtml(att.storagePath || '')}"
+               data-storage-path="${escapeHtml(att.storagePath || (!url.startsWith('http') && !url.startsWith('blob:') ? url : ''))}"
                style="max-width:260px;max-height:220px;border-radius:8px;object-fit:cover;cursor:pointer;display:block;box-shadow:0 1px 3px rgba(0,0,0,0.12);" 
-               onclick="window.app.openImageModal('${escapeHtml(url)}', '${escapeHtml(name)}')"
+               onclick="window.app.openImageModal('${escapeHtml(url)}', '${escapeHtml(name)}')">
                onload="window.app._onImageLoadedInThread()"
                onerror="window.app.handleAttachmentImageError(this, '${escapeHtml(name)}')">
         </div>

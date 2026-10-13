@@ -261,14 +261,9 @@ async function metaWebhookHandler(req, res) {
                           .upload(storagePath, buffer, { contentType, upsert: true });
 
                         if (!upErr) {
-                          const { data: signData } = await supabase.storage
-                            .from('message-attachments')
-                            .createSignedUrl(storagePath, 3600);
-
                           storedAttachments.push({
                             type: attType,
-                            url: signData?.signedUrl || cdnUrl,
-                            signedUrl: signData?.signedUrl,
+                            url: storagePath,
                             storage_path: storagePath,
                             name: filename,
                             size: buffer.length
@@ -288,8 +283,10 @@ async function metaWebhookHandler(req, res) {
                 }
               }
 
-              const primaryAttachmentUrl = storedAttachments[0]?.url || (hasAttachments ? rawAttachments[0]?.payload?.url : null);
+              const primaryAttachmentPath = storedAttachments[0]?.storage_path || storedAttachments[0]?.url || (hasAttachments ? rawAttachments[0]?.payload?.url : null);
 
+              // Database trigger fn_sync_conversation_last_message automatically updates
+              // conversation last_message, last_message_at, and unread_count without double-counting.
               await supabase
                 .from('messages')
                 .insert({
@@ -299,23 +296,12 @@ async function metaWebhookHandler(req, res) {
                   text: msgText || '[Attachment]',
                   message_text: msgText || '[Attachment]',
                   attachments: storedAttachments,
-                  attachment_url: primaryAttachmentUrl,
+                  attachment_url: primaryAttachmentPath,
+                  attachment_storage_path: storedAttachments[0]?.storage_path || null,
                   meta_mid: mid,
                   is_read: false,
                   created_at: msgTimestamp
                 });
-
-              await supabase
-                .from('conversations')
-                .update({
-                  last_message: msgText || '[Attachment]',
-                  last_message_at: msgTimestamp,
-                  unread_count: (conv?.unread_count || 0) + 1,
-                  is_archived: false,
-                  updated_at: new Date().toISOString()
-                })
-                .eq('id', convId)
-                .catch(() => {});
             }
           } catch (dbErr) {
             console.warn("[Webhook DB Ingest Warning]:", dbErr.message);

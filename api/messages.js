@@ -57,6 +57,17 @@ async function messagesHandler(req, res) {
   const requestedPage = req.query?.page_id || req.query?.pageId;
   const requestedConv = req.query?.conversation_id || req.query?.conversationId;
 
+  // Helper to extract relative storage path from Supabase storage URL or path
+  function extractStoragePath(urlOrPath) {
+    if (!urlOrPath || typeof urlOrPath !== 'string') return null;
+    if (!urlOrPath.startsWith('http://') && !urlOrPath.startsWith('https://')) {
+      return urlOrPath.replace(/^\/+/, '').split('?')[0];
+    }
+    const match = urlOrPath.match(/\/message-attachments\/([^?#]+)/);
+    if (match) return decodeURIComponent(match[1]);
+    return null;
+  }
+
   // 2. Authorization Check (Staff cannot access unassigned pages)
   if (user.role !== 'admin' && !user.pages.includes('*')) {
     if (requestedPage && !user.pages.includes(requestedPage)) {
@@ -353,10 +364,20 @@ async function messagesHandler(req, res) {
       }
     }
 
-    // Persist outbound message to Supabase database
+    // Persist outbound message to Supabase database (store ONLY relative storage path, never signed URL)
     if (supabase && conversationId) {
       try {
-        const primaryUrl = attachment?.url || body.attachmentUrl || body.attachment_url || null;
+        const rawPath = attachment?.storagePath || attachment?.storage_path || extractStoragePath(attachment?.url || body.attachmentUrl || body.attachment_url) || null;
+        const cleanAttachment = attachment ? {
+          name: attachment.name,
+          type: attachment.type,
+          size: attachment.size,
+          storage_path: rawPath,
+          url: rawPath
+        } : null;
+
+        // Database trigger fn_sync_conversation_last_message on public.messages
+        // automatically updates conversation recency and preview without double-counting.
         await supabase
           .from('messages')
           .insert({
@@ -367,24 +388,12 @@ async function messagesHandler(req, res) {
             text: text || (attachment?.name ? `📎 ${attachment.name}` : '[Attachment]'),
             message_text: text || (attachment?.name ? `📎 ${attachment.name}` : '[Attachment]'),
             direction: 'outbound',
-            attachment_url: primaryUrl,
-            attachments: attachment ? [attachment] : [],
-            attachment_storage_path: attachment?.storagePath || null,
+            attachment_url: rawPath,
+            attachments: cleanAttachment ? [cleanAttachment] : [],
+            attachment_storage_path: rawPath,
             created_at: new Date().toISOString()
           })
           .catch(e => console.warn('[Message Persist Warning]:', e.message));
-
-        const previewText = text || (attachment ? (attachment.type && attachment.type.startsWith('image') ? 'Sent a photo 📷' : `📎 ${attachment.name || 'Attachment'}`) : 'Message');
-        await supabase
-          .from('conversations')
-          .update({
-            last_message: previewText,
-            last_message_at: new Date().toISOString(),
-            is_archived: false,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', conversationId)
-          .catch(e => console.warn('[Conv Recency Update Warning]:', e.message));
       } catch (dbErr) {
         console.warn('[DB Error on Outbound Message]:', dbErr.message);
       }
@@ -412,17 +421,6 @@ async function messagesHandler(req, res) {
   const supabase = getSupabaseAdmin();
   if (supabase) {
     try {
-      // Helper to extract relative storage path from Supabase storage URL or path
-      function extractStoragePath(urlOrPath) {
-        if (!urlOrPath || typeof urlOrPath !== 'string') return null;
-        if (!urlOrPath.startsWith('http://') && !urlOrPath.startsWith('https://')) {
-          return urlOrPath.replace(/^\/+/, '');
-        }
-        const match = urlOrPath.match(/\/message-attachments\/([^?#]+)/);
-        if (match) return decodeURIComponent(match[1]);
-        return null;
-      }
-
       // Check for dedicated backfill action
       if (req.query?.action === 'backfill-attachments' || req.body?.action === 'backfill-attachments') {
         const { data: candidateMsgs } = await supabase
@@ -448,6 +446,16 @@ async function messagesHandler(req, res) {
               try {
                 if (typeof fetch === 'function') {
                   const dlRes = await fetch(rawUrl);
+                  // Skip links that return 403 or 404 and mark EXPIRED so they are not retried repeatedly
+                  if (dlRes.status === 403 || dlRes.status === 404 || dlRes.status === 410) {
+                    await supabase
+                      .from('messages')
+                      .update({ attachment_storage_path: 'EXPIRED' })
+                      .eq('id', m.id)
+                      .catch(() => {});
+                    failedCount++;
+                    continue;
+                  }
                   if (dlRes.ok) {
                     const contentType = dlRes.headers.get('content-type') || 'application/octet-stream';
                     const ab = await dlRes.arrayBuffer();
@@ -461,7 +469,10 @@ async function messagesHandler(req, res) {
                     if (!upErr) {
                       await supabase
                         .from('messages')
-                        .update({ attachment_storage_path: newPath })
+                        .update({ 
+                          attachment_storage_path: newPath,
+                          attachment_url: newPath
+                        })
                         .eq('id', m.id);
                       backfilledCount++;
                       continue;
@@ -494,63 +505,17 @@ async function messagesHandler(req, res) {
           .range(offset, offset + limit - 1);
 
         if (!threadErr && threadMsgs && threadMsgs.length > 0) {
-          // Resolve 1-hour signed URLs for attachments in private bucket & perform on-the-fly backfill
+          // Resolve 1-hour signed URLs on read only (NEVER stored in the database)
           for (const msg of threadMsgs) {
             let storagePath = msg.attachment_storage_path || extractStoragePath(msg.attachment_url);
-            let rawUrl = msg.attachment_url;
             let attachments = Array.isArray(msg.attachments) ? [...msg.attachments] : [];
 
             if (!storagePath && attachments.length > 0) {
               const firstAtt = attachments[0];
               storagePath = firstAtt?.storagePath || firstAtt?.storage_path || extractStoragePath(firstAtt?.url || firstAtt?.payload?.url);
-              if (!rawUrl) rawUrl = firstAtt?.url || firstAtt?.payload?.url;
             }
 
-            // On-the-fly backfill for live Meta CDN attachments not yet persisted to Supabase Storage
-            const isMetaCdn = rawUrl && (
-              rawUrl.includes('lookaside.fbsbx.com') ||
-              rawUrl.includes('fbcdn.net') ||
-              rawUrl.includes('cdn.fbsbx.com') ||
-              rawUrl.includes('instagram.com')
-            );
-
-            if (!storagePath && isMetaCdn) {
-              try {
-                if (typeof fetch === 'function') {
-                  const dlRes = await fetch(rawUrl);
-                  if (dlRes.ok) {
-                    const contentType = dlRes.headers.get('content-type') || 'application/octet-stream';
-                    const ab = await dlRes.arrayBuffer();
-                    const buffer = Buffer.from(ab);
-                    if (buffer.length > 0) {
-                      let ext = 'jpg';
-                      if (contentType.includes('png')) ext = 'png';
-                      else if (contentType.includes('webp')) ext = 'webp';
-                      else if (contentType.includes('mp4')) ext = 'mp4';
-                      const newPath = `inbound/backfill/${requestedConv}/${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${ext}`;
-                      const { error: upErr } = await supabase.storage
-                        .from('message-attachments')
-                        .upload(newPath, buffer, { contentType, upsert: true });
-
-                      if (!upErr) {
-                        storagePath = newPath;
-                        msg.attachment_storage_path = newPath;
-                        await supabase
-                          .from('messages')
-                          .update({ attachment_storage_path: newPath })
-                          .eq('id', msg.id)
-                          .catch(() => {});
-                      }
-                    }
-                  }
-                }
-              } catch (dlErr) {
-                console.warn('[Meta CDN on-the-fly backfill skipped]:', dlErr.message);
-              }
-            }
-
-            // Sign URL with 1-hour expiration
-            if (storagePath) {
+            if (storagePath && storagePath !== 'EXPIRED') {
               try {
                 const { data: signData, error: signErr } = await supabase.storage
                   .from('message-attachments')
@@ -569,6 +534,8 @@ async function messagesHandler(req, res) {
                   }
                 }
               } catch (sErr) {}
+            } else if (storagePath === 'EXPIRED') {
+              msg.attachment_unavailable = true;
             }
           }
 

@@ -465,6 +465,33 @@ async function zernioUnifiedHandler(req, res) {
       const body = req.body || {};
       const supabase = getSupabaseAdmin();
 
+      // Verify webhook secret/signature if ZERNIO_WEBHOOK_SECRET is configured
+      const webhookSecret = process.env.ZERNIO_WEBHOOK_SECRET;
+      if (webhookSecret) {
+        const sig = req.headers['x-zernio-signature'] || req.headers['x-signature'] || req.headers['authorization'];
+        const querySec = query.secret || query.token;
+        let isAuthorized = false;
+        if (querySec && querySec === webhookSecret) {
+          isAuthorized = true;
+        } else if (sig) {
+          if (sig === webhookSecret || sig === `Bearer ${webhookSecret}`) {
+            isAuthorized = true;
+          } else {
+            try {
+              const bodyStr = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
+              const hmac = crypto.createHmac('sha256', webhookSecret).update(bodyStr).digest('hex');
+              const cleanSig = sig.replace(/^sha256=/, '');
+              if (crypto.timingSafeEqual(Buffer.from(cleanSig), Buffer.from(hmac))) {
+                isAuthorized = true;
+              }
+            } catch (sigErr) {}
+          }
+        }
+        if (!isAuthorized) {
+          return res.status(401).json({ error: "Unauthorized: Invalid Zernio webhook signature or secret" });
+        }
+      }
+
       const payload = body.data || body.payload || body;
 
       // Handle real messaging webhook event from Zernio / Instagram Direct
@@ -478,12 +505,14 @@ async function zernioUnifiedHandler(req, res) {
         const senderId = sender.id || payload.senderId || payload.sender_id || null;
         const msgTime = payload.timestamp ? new Date(payload.timestamp).toISOString() : (payload.created_at || new Date().toISOString());
         const rawAtt = payload.attachment || (Array.isArray(payload.attachments) ? payload.attachments[0] : null) || (payload.message?.attachment || null);
+        const externalMid = payload.id || payload.messageId || payload.message_id || payload.mid || (`zn_msg_${Date.now()}`);
 
         if (supabase) {
           try {
+            // Ensure conversation exists; database trigger on messages handles last_message, recency, and unread increment
             const { data: existingConv } = await supabase
               .from('conversations')
-              .select('id, unread_count')
+              .select('id')
               .eq('id', convId)
               .maybeSingle();
 
@@ -497,42 +526,42 @@ async function zernioUnifiedHandler(req, res) {
                   channel: payload.platform || 'instagram',
                   last_message: msgText || (rawAtt ? '📎 Attachment' : 'Message'),
                   last_message_at: msgTime,
-                  unread_count: 1,
+                  unread_count: 0, // trigger on messages will increment for this inbound message
                   is_archived: false,
                   updated_at: new Date().toISOString()
                 })
-                .catch(() => {});
-            } else {
-              await supabase
-                .from('conversations')
-                .update({
-                  last_message: msgText || (rawAtt ? '📎 Attachment' : 'Message'),
-                  last_message_at: msgTime,
-                  unread_count: (existingConv.unread_count || 0) + 1,
-                  is_archived: false,
-                  updated_at: new Date().toISOString()
-                })
-                .eq('id', convId)
                 .catch(() => {});
             }
 
+            // Clean attachment path (never store signed URLs)
+            const attPath = rawAtt?.storagePath || rawAtt?.storage_path || null;
+            const cleanAtt = rawAtt ? {
+              name: rawAtt.name || 'Attachment',
+              type: rawAtt.type || 'file',
+              storage_path: attPath,
+              url: attPath || (rawAtt.url && !rawAtt.url.includes('/storage/v1/object/') ? rawAtt.url : null)
+            } : null;
+
+            // Deduplicate message on external message ID (meta_mid) with upsert
             await supabase
               .from('messages')
-              .insert({
+              .upsert({
                 conversation_id: convId,
+                meta_mid: String(externalMid),
                 sender_type: 'customer',
                 sender_name: senderName,
                 sender_id: senderId,
                 text: msgText || (rawAtt ? '📎 Attachment' : '[Message]'),
                 message_text: msgText || (rawAtt ? '📎 Attachment' : '[Message]'),
                 direction: 'inbound',
-                attachment_url: rawAtt?.url || null,
-                attachments: rawAtt ? [rawAtt] : [],
+                attachment_url: attPath || cleanAtt?.url || null,
+                attachment_storage_path: attPath,
+                attachments: cleanAtt ? [cleanAtt] : [],
                 created_at: msgTime
-              })
+              }, { onConflict: 'meta_mid', ignoreDuplicates: true })
               .catch(() => {});
 
-            return res.status(200).json({ status: 'success', processed: true, type: 'message', conversation_id: convId });
+            return res.status(200).json({ status: 'success', processed: true, type: 'message', conversation_id: convId, mid: String(externalMid) });
           } catch (mErr) {
             console.warn('[Zernio Message Ingest Warning]:', mErr.message);
           }
