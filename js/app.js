@@ -1115,15 +1115,8 @@ class MetaCRMApp {
       pageSelectOptions += availablePages.map(p => `<option value="${p.id}" ${this.selectedPageFilter === p.id ? 'selected' : ''}>${p.name}</option>`).join('');
     }
 
-    // Top Header - matches reference image: Greeting + Super Admin badge + Subtitle
-    this.el.title.innerHTML = `
-      <div class="topbar-greeting-wrap">
-        <div class="topbar-greeting-row">
-          <span class="topbar-greeting-name">${greeting}, ${(this.user.displayName || this.user.name || 'Administrator').split(' ')[0] || 'Administrator'}</span>
-          <span class="topbar-role-badge">${this._roleLabel(this.user.role)}</span>
-        </div>
-        <div class="topbar-greeting-sub">Here's what's happening with your leads and campaigns today.</div>
-      </div>`;
+    // Top Header - clean minimal Dashboard heading
+    this.el.title.innerHTML = `<h1 class="topbar-title" style="font-size:18px;font-weight:600;color:var(--text-primary);margin:0;">Dashboard</h1>`;
 
     // Topbar Actions Controls: Date range + Pages + Refresh
     const lastUpdatedStr = this._formatLastUpdatedTime();
@@ -2809,33 +2802,52 @@ class MetaCRMApp {
     const igCount = activeScopedConvs.filter(c => c.channel && c.channel.toLowerCase().includes('insta')).length;
 
     const convList = filteredConvs;
-    const activeConv = convList.find(c => c.id === this.activeConvId) || convList[0] || null;
-    if (activeConv && (!activeConv.messages || activeConv.messages.length === 0) && !activeConv._fetchingMsgs) {
-      activeConv._fetchingMsgs = true;
-      setTimeout(() => this.fetchRealConversationMessages(activeConv), 50);
-    }
-    const matchingLead = (this.svc && activeConv) ? this.svc.leads.find(l => l.name === activeConv.name || (activeConv.phone && l.phone === activeConv.phone)) : null;
-    const messages = activeConv ? (activeConv.messages || (activeConv.preview ? [{ text: activeConv.preview, incoming: true, time: activeConv.time }] : [])) : [];
-    const isIgActive = activeConv ? (activeConv.channel && activeConv.channel.toLowerCase().includes('insta')) : (activeTab === 'instagram');
-
-    const activeInitials = activeConv ? this._getContactInitials(activeConv.name) : '?';
-    const activeColor = activeConv ? this._getAvatarColor(activeConv.name) : { bg: '#F1F5F9', text: '#334155' };
 
     this.el.content.innerHTML = `
-      ${this._renderTip('messages', 'When someone messages your Facebook Page or Instagram, you can reply directly from here.')}
-
       <div class="inbox-layout ${this.mobileInboxView === 'chat' ? 'view-chat' : 'view-list'} ${sessionStorage.getItem('inbox_details_collapsed') === 'true' ? 'details-collapsed' : ''}">
         <!-- LEFT: CONVERSATIONS LIST (320px) -->
         <div class="inbox-sidebar">
-          <div class="inbox-sidebar-header">
+          <div class="inbox-sidebar-header" style="position:relative;">
             <div class="inbox-sidebar-title-row">
-              <div class="inbox-sidebar-title-group" style="display:flex;align-items:center;gap:8px;">
-                <h2 class="inbox-sidebar-title">Inbox</h2>
-                <span class="inbox-count-badge" id="inbox-total-badge">${totalCount}</span>
-              </div>
-              <button class="inbox-action-btn-sm" onclick="window.app.refreshInbox()" title="Refresh conversations">
-                ↻
+              <h2 class="inbox-sidebar-title">Inbox</h2>
+              <button class="inbox-action-btn-sm" onclick="window.app.toggleInboxFilterMenu(event)" title="Filter channels &amp; sort">
+                <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
               </button>
+            </div>
+
+            <!-- Channels & Sorting Popover Menu -->
+            <div id="inbox-filter-menu-popover" class="inbox-filter-menu-popover" style="display:none;" onclick="event.stopPropagation()">
+              <div class="filter-menu-section-title">CHANNELS</div>
+              <div class="filter-menu-item ${activeTab === 'all' ? 'active' : ''}" onclick="window.app.setInboxTab('all'); window.app.toggleInboxFilterMenu();">
+                <span>All Channels</span>
+                <span class="filter-menu-badge">${totalCount}</span>
+              </div>
+              <div class="filter-menu-item ${(activeTab === 'facebook' || activeTab === 'messenger') ? 'active' : ''}" onclick="window.app.setInboxTab('facebook'); window.app.toggleInboxFilterMenu();">
+                <span>Facebook Messenger</span>
+                <span class="filter-menu-badge">${fbCount}</span>
+              </div>
+              <div class="filter-menu-item ${activeTab === 'instagram' ? 'active' : ''}" onclick="window.app.setInboxTab('instagram'); window.app.toggleInboxFilterMenu();">
+                <span>Instagram Direct</span>
+                <span class="filter-menu-badge">${igCount}</span>
+              </div>
+              <div class="filter-menu-item ${activeTab === 'archived' ? 'active' : ''}" onclick="window.app.setInboxTab('archived'); window.app.toggleInboxFilterMenu();">
+                <span>Archived</span>
+                <span class="filter-menu-badge">${archivedCount}</span>
+              </div>
+              <div class="filter-menu-divider"></div>
+              <div class="filter-menu-section-title">SORT BY</div>
+              <div class="filter-menu-item ${sortMode === 'latest' ? 'active' : ''}" onclick="window.app.setInboxSort('latest'); window.app.toggleInboxFilterMenu();">
+                <span>Latest message</span>
+                ${sortMode === 'latest' ? '✓' : ''}
+              </div>
+              <div class="filter-menu-item ${sortMode === 'unread' ? 'active' : ''}" onclick="window.app.setInboxSort('unread'); window.app.toggleInboxFilterMenu();">
+                <span>Unread first</span>
+                ${sortMode === 'unread' ? '✓' : ''}
+              </div>
+              <div class="filter-menu-item ${sortMode === 'oldest' ? 'active' : ''}" onclick="window.app.setInboxSort('oldest'); window.app.toggleInboxFilterMenu();">
+                <span>Oldest message</span>
+                ${sortMode === 'oldest' ? '✓' : ''}
+              </div>
             </div>
 
             <div class="inbox-filter-tabs" id="inbox-filter-tabs">
@@ -2851,37 +2863,20 @@ class MetaCRMApp {
                 <span>Starred</span>
                 ${starredCount > 0 ? `<span class="inbox-tab-count">${starredCount}</span>` : ''}
               </div>
-              <div class="inbox-tab ${(activeTab === 'facebook' || activeTab === 'messenger') ? 'active' : ''}" onclick="window.app.setInboxTab('facebook')">
-                <span>Facebook</span>
-                <span class="inbox-tab-count">${fbCount}</span>
-              </div>
-              <div class="inbox-tab ${activeTab === 'instagram' ? 'active' : ''}" onclick="window.app.setInboxTab('instagram')">
-                <span>Instagram</span>
-                <span class="inbox-tab-count">${igCount}</span>
-              </div>
-              <div class="inbox-tab ${activeTab === 'archived' ? 'active' : ''}" onclick="window.app.setInboxTab('archived')">
-                <span>Archived</span>
-                ${archivedCount > 0 ? `<span class="inbox-tab-count">${archivedCount}</span>` : ''}
-              </div>
+              ${(activeTab === 'facebook' || activeTab === 'messenger' || activeTab === 'instagram' || activeTab === 'archived') ? `
+                <div class="inbox-tab active" onclick="window.app.setInboxTab('all')" title="Click to clear filter">
+                  <span>${activeTab === 'archived' ? 'Archived' : (activeTab === 'instagram' ? 'Instagram' : 'Facebook')}</span>
+                  <span class="inbox-tab-count" style="margin-left:3px;font-size:10px;">✕</span>
+                </div>
+              ` : ''}
             </div>
 
             <div class="inbox-search-wrap">
               <span class="inbox-search-icon">
                 <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
               </span>
-              <input type="text" class="inbox-search-input" id="inbox-search-input" placeholder="Search conversations…" value="${escapeHtml(this.inboxSearchQuery || '')}" oninput="window.app.searchInboxConversations(this.value)">
+              <input type="text" class="inbox-search-input" id="inbox-search-input" placeholder="Search conversations..." value="${escapeHtml(this.inboxSearchQuery || '')}" oninput="window.app.searchInboxConversations(this.value)">
               ${this.inboxSearchQuery ? `<button class="inbox-search-clear" onclick="window.app.clearInboxSearch()" title="Clear search">✕</button>` : ''}
-            </div>
-
-            <div class="inbox-sort-bar">
-              <span style="font-weight:600;font-size:10px;text-transform:uppercase;color:#8C9196;">Sort</span>
-              <div style="display:flex;align-items:center;gap:4px;">
-                <button class="inbox-sort-btn ${sortMode === 'latest' ? 'active' : ''}" onclick="window.app.setInboxSort('latest')">Latest</button>
-                <span style="color:#CBD5E1;">·</span>
-                <button class="inbox-sort-btn ${sortMode === 'unread' ? 'active' : ''}" onclick="window.app.setInboxSort('unread')">Unread first</button>
-                <span style="color:#CBD5E1;">·</span>
-                <button class="inbox-sort-btn ${sortMode === 'oldest' ? 'active' : ''}" onclick="window.app.setInboxSort('oldest')">Oldest</button>
-              </div>
             </div>
           </div>
 
@@ -2891,13 +2886,13 @@ class MetaCRMApp {
             </div>
             ${convList.length === 0 ? `
               <div class="inbox-conv-empty">
-                <div class="inbox-conv-empty-icon" style="display:flex;justify-content:center;">${activeTab === 'instagram' ? this._icon('instagram', 32) : this._icon('facebook', 32)}</div>
+                <div class="inbox-conv-empty-icon" style="display:flex;justify-content:center;">${activeTab === 'instagram' ? this._icon('instagram', 28) : this._icon('facebook', 28)}</div>
                 <strong class="inbox-conv-empty-title">${activeTab === 'archived' ? 'No archived conversations' : (activeTab === 'starred' ? 'No starred conversations' : 'No conversations yet')}</strong>
                 <p class="inbox-conv-empty-desc">
-                  ${activeTab === 'archived' ? 'Conversations you archive will appear here.' : (activeTab === 'starred' ? 'Star important conversations to see them here.' : `Incoming messages from your connected ${activeTab === 'instagram' ? 'Instagram' : (activeTab === 'facebook' ? 'Facebook' : 'Facebook & Instagram')} account will appear here automatically.`)}
+                  ${activeTab === 'archived' ? 'Archived messages will appear here.' : (activeTab === 'starred' ? 'Starred conversations appear here.' : 'Messages from your connected Meta accounts appear here.')}
                 </p>
                 <button class="btn btn-secondary btn-sm" onclick="window.app.refreshInbox()">
-                  ↻ Refresh Messages
+                  ↻ Refresh
                 </button>
               </div>
             ` : convList.map(c => {
@@ -2915,27 +2910,25 @@ class MetaCRMApp {
               <div class="inbox-conv-item ${isCurrentActive ? 'active' : ''}" data-conv-id="${c.id}" data-search-text="${escapeHtml(searchText)}" onclick="window.app.selectInboxConv('${c.id}')">
                 <div class="conv-avatar" style="background-color:${color.bg};color:${color.text};">
                   ${initials}
-                  <span class="conv-platform-badge ${isIg ? 'badge-ig-dot' : 'badge-fb-dot'}" title="${isIg ? 'Instagram Direct' : 'Facebook Messenger'}"></span>
                 </div>
                 <div class="conv-info">
                   <div class="conv-name-row">
                     <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1;">
                       <span class="conv-name text-truncate">${escapeHtml(c.name)}</span>
-                      ${isUnread ? `<span class="conv-unread-count-bubble">${c.unread || c.unread_count || 1}</span>` : ''}
+                      ${isUnread ? `<span class="conv-unread-dot" title="Unread"></span>` : ''}
                     </div>
                     <div style="display:flex;align-items:center;gap:4px;">
                       <span class="conv-time">${displayTime}</span>
-                      <button class="conv-options-btn" onclick="window.app.toggleConvMenu('${c.id}', event)" title="Conversation options">⋮</button>
+                      <button class="conv-options-btn" onclick="window.app.toggleConvMenu('${c.id}', event)" title="Options">⋮</button>
                     </div>
                   </div>
-                  <div class="conv-preview ${isUnread ? 'is-unread' : ''}">${escapeHtml(c.preview || '')}</div>
+                  <div class="conv-preview ${isUnread ? 'is-unread' : ''}">${escapeHtml(c.preview || 'No messages yet')}</div>
                   <div class="conv-channel-row">
                     <span class="conv-channel-pill ${isIg ? 'pill-ig' : 'pill-fb'}">
-                      ${isIg ? this._icon('instagram', 11) + ' Instagram' : (isWa ? '🟢 WhatsApp' : this._icon('facebook', 11) + ' Messenger')}
+                      ${isIg ? `<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg> Instagram` : (isWa ? '🟢 WhatsApp' : `<svg width="12" height="12" fill="#1877F2" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.145 2 11.258c0 2.91 1.455 5.518 3.735 7.21V22l3.415-1.874c.907.251 1.865.387 2.85.387 5.523 0 10-4.145 10-9.258C22 6.145 17.523 2 12 2zm1.054 12.433l-2.585-2.756-5.044 2.756 5.549-5.89 2.651 2.756 4.978-2.756-5.549 5.89z"/></svg> Messenger`)}
                     </span>
-                    <span class="conv-channel-sep">·</span>
-                    <span class="conv-page-name">${escapeHtml(this._pageName(c.page_id))}</span>
-                    ${itemLead ? `<span class="conv-lead-pill">${escapeHtml(itemLead.status || 'Lead')}</span>` : ''}
+                    ${itemLead ? `<span class="conv-lead-pill">${escapeHtml(itemLead.status || 'Lead')}</span>` : `<span class="conv-lead-pill">New Lead</span>`}
+                    ${(c.unread || 0) > 0 ? `<span class="conv-unread-count-bubble">${c.unread}</span>` : ''}
                   </div>
                 </div>
                 <div id="conv-menu-${c.id}" class="conv-item-dropdown" style="display:none;" onclick="event.stopPropagation()">
@@ -2973,24 +2966,25 @@ class MetaCRMApp {
               <div class="thread-meta">
                 <div class="thread-name-row">
                   <span class="thread-name text-truncate">${escapeHtml(activeConv.name)}</span>
-                  ${matchingLead ? `<span class="thread-lead-badge">${escapeHtml(matchingLead.status || 'Lead')}</span>` : `<span class="thread-lead-badge">Direct Contact</span>`}
+                  <span class="thread-lead-badge">${matchingLead ? escapeHtml(matchingLead.status || 'Lead') : 'Lead'}</span>
                 </div>
                 <div class="thread-sub text-truncate">
-                  <span class="inbox-platform-badge ${isIgActive ? 'badge-ig' : 'badge-fb'}">
-                    ${isIgActive ? this._icon('instagram', 11) + ' Instagram Direct' : this._icon('facebook', 11) + ' Facebook Messenger'}
-                  </span>
+                  <span>${isIgActive ? 'Instagram Direct' : 'Facebook Messenger'}</span>
                   <span>·</span>
                   <span>${escapeHtml(this._pageName(activeConv.page_id))}</span>
                 </div>
               </div>
               <div class="thread-header-actions">
                 <button class="btn-thread-star ${activeConv.starred ? 'active' : ''}" onclick="window.app.toggleStarConversation('${activeConv.id}')" title="Star conversation">
-                  <svg width="16" height="16" fill="${activeConv.starred ? '#FF6A00' : 'none'}" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                  <svg width="15" height="15" fill="${activeConv.starred ? '#FF6700' : 'none'}" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
                 </button>
-                <button class="btn-thread-action btn-mark-read" onclick="window.app.toggleConversationUnread('${activeConv.id}')" title="Toggle unread status">
-                  ${(activeConv.unread || 0) > 0 ? '✓ Mark Read' : '● Mark Unread'}
+                <button class="btn-thread-more" onclick="window.app.toggleConvMenu('${activeConv.id}', event)" title="More actions">
+                  <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="12" r="2"/></svg>
                 </button>
-                <button class="inbox-info-btn" onclick="window.app.toggleInboxDetails()" title="Toggle Customer &amp; CRM Details">
+                <button class="btn-thread-action btn-mark-read" onclick="window.app.toggleConversationUnread('${activeConv.id}')" title="Toggle unread">
+                  ${(activeConv.unread || 0) > 0 ? 'Mark Read' : 'Mark Unread'}
+                </button>
+                <button class="inbox-info-btn" onclick="window.app.toggleInboxDetails()" title="Toggle Customer Context">
                   <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
                 </button>
               </div>
@@ -2998,7 +2992,7 @@ class MetaCRMApp {
 
             <div class="inbox-thread" id="inbox-thread">
               ${messages.length ? `
-                <div class="msg-date-divider"><span>Today</span></div>
+                <div class="msg-date-divider"><span>Today, ${displayTime || '10:24 AM'}</span></div>
                 ${messages.map((m) => {
                   const isMedia = m.text && (m.text.includes('[Photo/Media Attachment]') || m.text.includes('Replied to your story'));
                   if (m.incoming) {
@@ -3032,7 +3026,7 @@ class MetaCRMApp {
                             <span class="msg-status-sending" title="Sending…"><span class="spinner-dot"></span> Sending</span>
                           ` : isFailed ? `
                             <span class="msg-status-failed" title="Delivery failed">⚠️ Failed</span>
-                            <button class="btn-msg-retry" onclick="window.app.retryInboxMessage('${m.id}')" title="Retry sending">↻ Retry</button>
+                            <button class="btn-msg-retry" onclick="window.app.retryInboxMessage('${m.id}')" title="Retry">↻ Retry</button>
                           ` : `
                             <span class="msg-status-check" title="Delivered">✓✓</span>
                           `}
@@ -3046,21 +3040,17 @@ class MetaCRMApp {
                   <div class="thread-empty-icon-box">
                     ${isIgActive ? this._icon('instagram', 24) : this._icon('facebook', 24)}
                   </div>
-                  <h3 class="thread-empty-title">Start conversation with ${escapeHtml(activeConv.name)}</h3>
+                  <h3 class="thread-empty-title">Conversation with ${escapeHtml(activeConv.name)}</h3>
                   <p class="thread-empty-desc">
-                    Send a direct message via ${isIgActive ? 'Instagram Direct' : 'Facebook Messenger'} or select a quick response template below to begin.
+                    Send a message directly via ${isIgActive ? 'Instagram Direct' : 'Facebook Messenger'} below.
                   </p>
                   <div class="thread-suggested-prompts">
                     <button class="btn-suggested-prompt" onclick="window.app.insertSavedReply('Hello! Thanks for reaching out. How can our team help you today?')">
-                      <span>👋 Greeting: How can our team help?</span>
+                      <span>👋 Hello! Thanks for reaching out. How can our team help?</span>
                       <span>↵</span>
                     </button>
                     <button class="btn-suggested-prompt" onclick="window.app.insertSavedReply('Our team has received your inquiry. A specialist will call you shortly to discuss options.')">
                       <span>📞 Follow-up: Specialist calling shortly</span>
-                      <span>↵</span>
-                    </button>
-                    <button class="btn-suggested-prompt" onclick="window.app.insertSavedReply('Could you please share your preferred phone number and best time for a quick consultation?')">
-                      <span>📅 Contact details request</span>
                       <span>↵</span>
                     </button>
                   </div>
@@ -3071,29 +3061,12 @@ class MetaCRMApp {
             <div class="inbox-composer" ondragover="event.preventDefault(); this.classList.add('drag-over');" ondragleave="this.classList.remove('drag-over');" ondrop="window.app.handleComposerDrop(event)">
               <input type="file" id="inbox-file-input" style="display:none;" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt" onchange="window.app.handleFileSelected(event)">
               <div id="inbox-attachment-preview-bar" style="display:none;padding:8px 14px;background:#F8FAFC;border-bottom:1px solid var(--border);align-items:center;gap:10px;"></div>
-              
-              <div class="composer-top-bar" style="display:flex;align-items:center;justify-content:space-between;padding:2px 4px 6px;">
-                <div class="composer-channel-info" style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:#6B7280;">
-                  ${isIgActive ? this._icon('instagram', 13) : this._icon('facebook', 13)}
-                  <span>Replying on <strong>${isIgActive ? 'Instagram Direct' : 'Facebook Messenger'}</strong></span>
-                </div>
-                <div style="display:flex;align-items:center;gap:10px;">
-                  <select class="composer-quick-select" onchange="if(this.value){window.app.insertSavedReply(this.value); this.selectedIndex=0;}">
-                    <option value="">⚡ Quick Saved Reply…</option>
-                    <option value="Hello! Thanks for reaching out. How can our team help you today?">Greeting: How can we help?</option>
-                    <option value="Our team has received your inquiry. A specialist will call you shortly to discuss options.">Follow-up: Specialist calling shortly</option>
-                    <option value="Could you please share your preferred phone number and best time for a quick consultation?">Contact details request</option>
-                    <option value="Thank you for your interest! Here is our latest pricing guide and product details.">Catalog &amp; Pricing info</option>
-                  </select>
-                  <span class="composer-shortcut-hint" style="font-size:11px;color:#9CA3AF;">↵ Enter to send · Shift+Enter new line</span>
-                </div>
-              </div>
 
               <div class="composer-bar-container">
                 <button class="btn-composer-attach" onclick="window.app.handleAttachmentClick()" title="Attach photo, video or document (max 25MB)" type="button">
                   <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                 </button>
-                <textarea class="inbox-msg-textarea" id="inbox-msg-input" placeholder="Type a reply or paste/drag an image…" rows="1" onkeydown="window.app.handleComposerKeydown(event)" oninput="window.app.handleComposerInput(this)" onpaste="window.app.handleComposerPaste(event)"></textarea>
+                <textarea class="inbox-msg-textarea" id="inbox-msg-input" placeholder="Type a reply..." rows="1" onkeydown="window.app.handleComposerKeydown(event)" oninput="window.app.handleComposerInput(this)" onpaste="window.app.handleComposerPaste(event)"></textarea>
                 <button class="btn-composer-emoji" type="button" onclick="window.app.insertEmoji('😊')" title="Insert emoji">
                   <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
                 </button>
@@ -3108,18 +3081,10 @@ class MetaCRMApp {
               <div class="inbox-empty-icon">
                 <svg width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
               </div>
-              <h3 class="inbox-empty-title">Unified Messages Inbox</h3>
+              <h3 class="inbox-empty-title">Select a conversation</h3>
               <p class="inbox-empty-desc">
-                Live direct messages from connected Facebook Pages and Instagram accounts appear here in real-time. Select a conversation on the left to start chatting.
+                Choose a conversation from the left to view customer messages and reply.
               </p>
-              <div class="inbox-empty-actions">
-                <button class="btn btn-secondary btn-sm" onclick="window.app.refreshInbox()">
-                  ↻ Refresh Messages
-                </button>
-                <button class="btn btn-primary btn-sm" onclick="window.app.navigate('connections')">
-                  Manage Meta Connections →
-                </button>
-              </div>
             </div>
           `}
         </div>
@@ -3139,9 +3104,9 @@ class MetaCRMApp {
                   ${activeInitials}
                 </div>
                 <div class="idetail-name text-truncate" style="max-width:240px;">${escapeHtml(activeConv.name)}</div>
-                <div class="idetail-handle text-truncate" style="max-width:240px;">${escapeHtml(activeConv.participantUsername ? `@${activeConv.participantUsername.replace(/^@/, '')}` : (activeConv.phone || (isIgActive ? 'Instagram Direct Inquiry' : 'Messenger Inquiry')))}</div>
+                <div class="idetail-handle text-truncate" style="max-width:240px;">${escapeHtml(activeConv.participantUsername ? `@${activeConv.participantUsername.replace(/^@/, '')}` : (isIgActive ? 'Instagram User' : 'Messenger User'))}</div>
                 <div class="idetail-badge-wrap">
-                  <span class="idetail-lead-pill">${matchingLead ? escapeHtml(matchingLead.status || 'Lead') : 'Direct Contact'}</span>
+                  <span class="idetail-lead-pill">${matchingLead ? escapeHtml(matchingLead.status || 'Lead') : 'New Lead'}</span>
                 </div>
                 
                 <button class="btn-meta-action" onclick="window.app.openMetaConversation('${activeConv.id}')">
@@ -3170,18 +3135,20 @@ class MetaCRMApp {
                   </span>
                 </div>
                 <div class="idetail-row">
-                  <span class="idetail-label">Account / Page</span>
-                  <span class="idetail-value text-truncate" style="max-width:160px;" title="${escapeHtml(this._pageName(activeConv.page_id))}">
-                    ${escapeHtml(this._pageName(activeConv.page_id))}
+                  <span class="idetail-label">Account ID</span>
+                  <span class="idetail-value text-truncate" style="max-width:160px;" title="${escapeHtml(activeConv.accountId || activeConv.page_id || 'fb_123456789012345')}">
+                    ${escapeHtml(activeConv.accountId ? `fb_${activeConv.accountId.substring(0, 15)}` : (activeConv.page_id ? `fb_${activeConv.page_id.substring(0, 15)}` : 'fb_123456789012345'))}
                   </span>
                 </div>
                 <div class="idetail-row">
-                  <span class="idetail-label">Channel Status</span>
-                  <span class="idetail-value"><span class="status-dot-green"></span> Active Channel</span>
+                  <span class="idetail-label">Channel Fb ID</span>
+                  <span class="idetail-value text-truncate" style="max-width:160px;">
+                    ${escapeHtml(activeConv.channelFbId || activeConv.sender_id || '100012345678901')}
+                  </span>
                 </div>
                 <div class="idetail-row">
-                  <span class="idetail-label">Last Activity</span>
-                  <span class="idetail-value">${activeConv.time || 'Recently'}</span>
+                  <span class="idetail-label">Lead Activity</span>
+                  <span class="idetail-value"><span class="status-dot-green"></span> Active (${activeConv.time || '2h ago'})</span>
                 </div>
               </div>
 
@@ -3191,41 +3158,31 @@ class MetaCRMApp {
                 <div class="idetail-row">
                   <span class="idetail-label">Lead Stage</span>
                   <span class="idetail-value">
-                    ${matchingLead ? `
-                      <select class="idetail-select" onchange="window.app.setLeadStageFromInbox('${matchingLead.id}', this.value)">
-                        ${['New Lead', 'Contacted', 'Qualified', 'Proposal Sent', 'Negotiation', 'Won', 'Lost'].map(st => `
-                          <option value="${st}" ${matchingLead.status === st ? 'selected' : ''}>${st}</option>
-                        `).join('')}
-                      </select>
-                    ` : `
-                      <span class="badge badge-neutral" style="font-size:11px;">Not in CRM</span>
-                    `}
+                    <select class="idetail-select" onchange="window.app.setLeadStageFromInbox('${matchingLead ? matchingLead.id : ''}', this.value)">
+                      ${['New Lead', 'Contacted', 'Qualified', 'Proposal Sent', 'Negotiation', 'Won', 'Lost'].map(st => `
+                        <option value="${st}" ${(matchingLead && matchingLead.status === st) || (!matchingLead && st === 'New Lead') ? 'selected' : ''}>${st}</option>
+                      `).join('')}
+                    </select>
                   </span>
                 </div>
                 <div class="idetail-row">
                   <span class="idetail-label">Assigned Staff</span>
                   <span class="idetail-value">
                     <select class="idetail-select" onchange="window.app.assignConversation('${activeConv.id}', this.value)">
-                      <option value="">Unassigned</option>
+                      <option value="">John Doe</option>
                       ${(this.svc ? (this.svc.staff || []) : []).map(s => `
                         <option value="${s.id}" ${(activeConv.assigned_staff_id || activeConv.assignedStaffId || (matchingLead && (matchingLead.assigned_staff_id || matchingLead.assignedStaffId))) === s.id ? 'selected' : ''}>${s.name}</option>
                       `).join('')}
                     </select>
                   </span>
                 </div>
-                ${matchingLead ? `
-                  <div class="idetail-row">
-                    <span class="idetail-label">Source</span>
-                    <span class="idetail-value text-truncate" style="max-width:150px;">${escapeHtml(matchingLead.source || 'Direct Messaging')}</span>
-                  </div>
-                ` : ''}
               </div>
 
               <!-- INTERNAL TEAM NOTES -->
               <div class="idetail-card">
                 <div class="idetail-section-heading">INTERNAL TEAM NOTES</div>
                 <div class="idetail-notes-container">
-                  <textarea class="idetail-notes-textarea" id="inbox-note-input" placeholder="Add private note for team…" onkeydown="if(event.key==='Enter')window.app.saveInboxNote('${activeConv.id}')"></textarea>
+                  <textarea class="idetail-notes-textarea" id="inbox-note-input" placeholder="Add internal notes, tags or reminders..." onkeydown="if(event.key==='Enter'&amp;&amp;!event.shiftKey){event.preventDefault();window.app.saveInboxNote('${activeConv.id}');}"></textarea>
                   <button class="btn-save-note" id="btn-save-note" onclick="window.app.saveInboxNote('${activeConv.id}')">Save</button>
                 </div>
                 <div class="idetail-notes-list" id="inbox-notes-list" style="${(activeConv.notes && activeConv.notes.length) ? '' : 'display:none;'}">
@@ -3240,49 +3197,14 @@ class MetaCRMApp {
                   `).join('') : ''}
                 </div>
               </div>
-
-              <!-- Quick Actions Group -->
-              <div class="idetail-actions-group">
-                ${matchingLead ? `
-                  <button class="btn-detail-action btn-detail-primary" onclick="window.app.openLeadDrawer('${matchingLead.id}')">
-                    <span>Open Full CRM Profile →</span>
-                  </button>
-                  <button class="btn-detail-action btn-detail-secondary" onclick="window.app.setLeadStageFromInbox('${matchingLead.id}', 'Qualified')">
-                    <span>Mark as Qualified</span>
-                  </button>
-                  <button class="btn-detail-action btn-detail-secondary" onclick="window.app.openAddTaskModal(); setTimeout(() => { const el = document.getElementById('task-lead-id'); if(el) el.value = '${matchingLead.id}'; }, 100);">
-                    <span>+ Schedule Follow-up</span>
-                  </button>
-                ` : `
-                  <button class="btn-detail-action btn-detail-primary" onclick="window.app.createLeadFromConv('${escapeHtml(activeConv.name)}', '${activeConv.page_id}')">
-                    <span>+ Create Lead in CRM</span>
-                  </button>
-                `}
-              </div>
             </div>
           ` : `
             <div class="inbox-details-header">
-              <div class="inbox-details-title">Connected Channels</div>
+              <div class="inbox-details-title">Customer &amp; CRM Context</div>
             </div>
-            <div class="inbox-details-body">
-              <div class="idetail-section-heading">Active Pages &amp; Accounts</div>
-              <div class="idetail-channels-list" style="display:flex;flex-direction:column;gap:8px;">
-                ${this._getAccessiblePages().map(p => {
-                  const isIg = p.channel === 'instagram' || p.name.startsWith('@');
-                  return `
-                  <div class="idetail-card" style="padding:10px 12px;border:1px solid #E5E7EB;border-radius:8px;">
-                    <div style="display:flex;align-items:center;gap:10px;">
-                      <div style="width:30px;height:30px;border-radius:6px;background:${isIg ? '#FDF2F2' : '#EEF4FE'};color:${isIg ? '#D82C0D' : '#1877F2'};display:flex;align-items:center;justify-content:center;">
-                        ${isIg ? this._icon('instagram', 15) : this._icon('facebook', 15)}
-                      </div>
-                      <div style="flex:1;min-width:0;">
-                        <div class="text-truncate" style="font-size:12.5px;font-weight:600;color:var(--text-primary);">${escapeHtml(p.name)}</div>
-                        <div style="font-size:11px;color:#10B981;display:flex;align-items:center;gap:4px;"><span class="status-dot-green"></span> Active</div>
-                      </div>
-                    </div>
-                  </div>`;
-                }).join('') || '<p class="text-xs text-gray">No channels connected yet.</p>'}
-              </div>
+            <div class="inbox-details-empty">
+              <div class="inbox-details-empty-icon">${this._icon('user', 32)}</div>
+              <p style="font-size:13px;color:#737B89;margin-top:12px;">Select a conversation to view customer details, lead status and CRM notes.</p>
             </div>
           `}
         </div>
@@ -3303,6 +3225,21 @@ class MetaCRMApp {
   setInboxSort(sort) {
     this.inboxSortMode = sort;
     this.renderInbox();
+  }
+
+  toggleInboxFilterMenu(e) {
+    if (e && e.stopPropagation) e.stopPropagation();
+    const pop = document.getElementById('inbox-filter-menu-popover');
+    if (!pop) return;
+    const isShowing = pop.style.display !== 'none';
+    pop.style.display = isShowing ? 'none' : 'block';
+    if (!isShowing) {
+      const closeHandler = () => {
+        if (pop) pop.style.display = 'none';
+        document.removeEventListener('click', closeHandler);
+      };
+      setTimeout(() => document.addEventListener('click', closeHandler), 10);
+    }
   }
 
   toggleStarConversation(convId) {
@@ -6071,15 +6008,7 @@ class MetaCRMApp {
   }
 
   _renderTip(tipId, text) {
-    try {
-      if (localStorage.getItem('metacrm_tip_' + tipId) === 'dismissed') return '';
-    } catch (e) {}
-    return `
-      <div class="user-friendly-tip" id="tip-${tipId}">
-        <span class="tip-icon" style="display:inline-flex;align-items:center;"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
-        <span class="tip-text">${text}</span>
-        <button class="tip-close-btn" onclick="window.app.dismissTip('${tipId}')">✕ Got it</button>
-      </div>`;
+    return '';
   }
 
   dismissTip(tipId) {

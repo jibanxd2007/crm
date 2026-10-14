@@ -8,50 +8,50 @@
 /* ─── 1. Polaris Design Tokens & Orange Brand Accents ──────────────────── */
 :root {
   /* Typography */
-  --font-sans: 'Jost', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --font-display: 'Jost', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 
   /* Brand Orange Tokens */
-  --brand-orange:          #FF6A00;
-  --brand-orange-hover:    #E85D00;
-  --brand-orange-light:    #FFF5EB;
-  --brand-orange-tint:     #FFF4E6;
+  --brand-orange:          #FF6700;
+  --brand-orange-hover:    #F45D00;
+  --brand-orange-light:    #FFF4ED;
+  --brand-orange-tint:     #FFF0E5;
   --brand-orange-border:   #FED7AA;
-  --brand-orange-bubble:   #FFF3E6;
+  --brand-orange-bubble:   #FFF0E5;
 
   /* Surfaces & Backgrounds */
-  --bg-page:               #F8F9FA;  /* Clean Modern Light Gray Canvas */
+  --bg-page:               #F7F8FA;  /* Clean Minimal Canvas */
   --bg-surface:            #FFFFFF;  /* Primary Card / Content Surface */
-  --bg-surface-secondary:  #F9FAFB;  /* Subdued headers, zebra stripes */
-  --bg-surface-hover:      #F9FAFB;  /* Hover state */
+  --bg-surface-secondary:  #F7F8FA;  /* Subdued headers, zebra stripes */
+  --bg-surface-hover:      #F7F8FA;  /* Hover state */
   --bg-surface-active:     #F3F4F6;  /* Pressed / Active button or nav */
-  --bg-surface-selected:   #FFF7ED;  /* Selected nav item / active row */
+  --bg-surface-selected:   #FFF4ED;  /* Selected nav item / active row */
   --bg-surface-tertiary:   #F3F4F6;
 
   /* Text Colors */
-  --text-primary:          #111827;  /* High-contrast deep slate */
-  --text-secondary:        #4B5563;  /* Supporting labels & descriptions */
+  --text-primary:          #17191D;  /* High-contrast deep slate */
+  --text-secondary:        #737B89;  /* Supporting labels & descriptions */
   --text-muted:            #9CA3AF;  /* Disabled / subtle hints */
   --text-on-dark:          #FFFFFF;
 
   /* Borders & Dividers */
-  --border-subtle:         #E5E7EB;  /* Subtle light neutral borders */
-  --border:                #E5E7EB;  /* Input borders & secondary actions */
+  --border-subtle:         #E8EBF0;  /* Subtle light neutral borders */
+  --border:                #E8EBF0;  /* Input borders & secondary actions */
   --border-strong:         #9CA3AF;  /* Emphasized borders */
-  --border-focus:          #FF6A00;  /* Crisp brand orange focus ring */
+  --border-focus:          #FF6700;  /* Crisp brand orange focus ring */
 
   /* Primary Action */
-  --action-primary:        #FF6A00;
-  --action-primary-hover:  #E85D00;
+  --action-primary:        #FF6700;
+  --action-primary-hover:  #F45D00;
   --action-primary-active: #D95400;
   --action-primary-text:   #FFFFFF;
 
   /* Dark Button Tokens */
-  --action-dark:           #18181B;
+  --action-dark:           #17191D;
   --action-dark-hover:     #000000;
 
   /* Semantic Status Colors (Reserved strictly for meaningful status) */
-  --status-success-bg:     #EEF9F2;
+  --status-success-bg:     #E7F8F0;
   --status-success-border: #BBF0CF;
   --status-success-text:   #0D6832;
   --status-success-dot:    #108A00;
@@ -61,7 +61,7 @@
   --status-warning-text:   #9A3412;
   --status-warning-dot:    #F59E0B;
 
-  --status-critical-bg:    #FEF2F2;
+  --status-critical-bg:    #FEF1F1;
   --status-critical-border:#FECACA;
   --status-critical-text:  #B91C1C;
   --status-critical-dot:   #D82C0D;
@@ -71,21 +71,21 @@
   --status-info-text:      #004899;
   --status-info-dot:       #005BD3;
 
-  --status-neutral-bg:     #F1F1F1;
-  --status-neutral-border: #E3E3E3;
+  --status-neutral-bg:     #F3F4F6;
+  --status-neutral-border: #E8EBF0;
   --status-neutral-text:   #4A4A4A;
 
   /* Backward Compatibility Aliases */
-  --accent:                #303030;
-  --accent-hover:          #1A1A1A;
-  --accent-light:          #F7F7F7;
-  --accent-border:         #E3E3E3;
+  --accent:                #17191D;
+  --accent-hover:          #000000;
+  --accent-light:          #F7F8FA;
+  --accent-border:         #E8EBF0;
   --success:               #0D6832;
-  --success-light:         #EEF9F2;
+  --success-light:         #E7F8F0;
   --warning:               #9A3412;
   --warning-light:         #FFF8EB;
   --danger:                #B91C1C;
-  --danger-light:          #FEF2F2;
+  --danger-light:          #FEF1F1;
   --info:                  #004899;
   --info-light:            #F0F5FF;
 
@@ -98,14 +98,14 @@
   --radius-full:           9999px;   /* Badges, avatars */
 
   /* Restrained Shadows */
-  --shadow-card:           0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-subtle:         0 1px 0 rgba(0, 0, 0, 0.05);
+  --shadow-card:           0 1px 2px rgba(0, 0, 0, 0.03);
+  --shadow-subtle:         0 1px 0 rgba(0, 0, 0, 0.04);
   --shadow-popover:        0 4px 12px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.05);
   --shadow-modal:          0 16px 36px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06);
 
   /* Layout Spacing */
-  --sidebar-w:             216px;
-  --topbar-h:              68px;
+  --sidebar-w:             224px;
+  --topbar-h:              60px;
 
   /* Micro-transitions */
   --transition:            140ms cubic-bezier(0.2, 0, 0, 1);
@@ -403,10 +403,10 @@ h1, h2, h3, h4, h5, h6 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px;
-  margin: 1px 4px;
+  padding: 7px 10px;
+  margin: 1px 6px;
   border-radius: var(--radius-sm);
-  color: #4A4A4A;
+  color: var(--text-secondary);
   font-size: 13px;
   font-weight: 500;
   text-decoration: none;
@@ -420,8 +420,8 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .nav-item.active {
-  background: var(--bg-surface-selected);
-  color: #1A1A1A;
+  background: #FFF4ED;
+  color: #FF6700;
   font-weight: 600;
 }
 
@@ -443,7 +443,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .nav-item.active .nav-icon {
-  color: #1A1A1A;
+  color: #FF6700;
 }
 
 .nav-text {
@@ -4129,14 +4129,14 @@ tbody tr:hover {
 }
 
 .nav-badge-red {
-  background: #E02424;
+  background: #FF6700;
   color: #FFFFFF;
   border-radius: 9999px;
-  font-size: 10px;
-  font-weight: 700;
-  padding: 0 5px;
-  height: 16px;
-  min-width: 16px;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 0 6px;
+  height: 17px;
+  min-width: 17px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
