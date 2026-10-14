@@ -2950,54 +2950,7 @@ class CRMService {
       const v = typeof localStorage !== "undefined" ? localStorage.getItem("metacrm_ad_insights") : null;
       if (v) return JSON.parse(v);
     } catch (e) {}
-    return [
-      {
-        id: "ins_page_01",
-        pageId: "page_01",
-        page_id: "page_01",
-        pageName: "TechNova Solutions",
-        adAccountId: "act_101",
-        campaignId: "cmp_leadgen_01",
-        campaignName: "Enterprise B2B Lead Gen",
-        adsetId: "adset_tech_01",
-        adsetName: "IT Decision Makers",
-        adId: "ad_lead_01",
-        adName: "Enterprise Cloud Demo Ad",
-        spend: 45000,
-        impressions: 125000,
-        clicks: 3400,
-        ctr: 2.72,
-        cpc: 13.23,
-        cpm: 360,
-        conversions: 45,
-        leads: 45,
-        wonDeals: 9,
-        wonValue: 185000
-      },
-      {
-        id: "ins_page_02",
-        pageId: "page_02",
-        page_id: "page_02",
-        pageName: "Aura Living",
-        adAccountId: "act_102",
-        campaignId: "cmp_leadgen_02",
-        campaignName: "Spring Home Decor",
-        adsetId: "adset_aura_01",
-        adsetName: "Home Decor Enthusiasts",
-        adId: "ad_lead_02",
-        adName: "Spring Collection Carousel",
-        spend: 32000,
-        impressions: 98000,
-        clicks: 2100,
-        ctr: 2.14,
-        cpc: 15.24,
-        cpm: 326.53,
-        conversions: 20,
-        leads: 20,
-        wonDeals: 2,
-        wonValue: 48000
-      }
-    ];
+    return [];
   }
 
   async syncAdInsights(options = {}) {
@@ -3021,8 +2974,8 @@ class CRMService {
       console.warn("[CRMService] syncAdInsights fetch fallback:", e.message);
     }
     this.lastSyncTimestamp = new Date();
-    this.notifyChange("ad_spend_synced", { recordsUpserted: 2, totalSpendSynced: 77000 });
-    return { success: true, recordsUpserted: 2, totalSpendSynced: 77000 };
+    this.notifyChange("ad_spend_synced", { recordsUpserted: 0, totalSpendSynced: 0 });
+    return { success: true, recordsUpserted: 0, totalSpendSynced: 0 };
   }
 
   getAdInsights(customFilters = {}) {
@@ -3285,67 +3238,7 @@ class CRMService {
         if (parsed && Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch (e) {}
-
-    return [
-      {
-        id: "int_meta_ads_01",
-        provider: "meta_ads",
-        provider_account_id: "act_104829104812",
-        provider_account_name: "TechNova Enterprise Ads Portfolio",
-        status: "connected",
-        assigned_staff_ids: ["admin", "user_a", "user_b"],
-        last_sync_at: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-        sync_status: "idle",
-        sync_error: null,
-        metadata: {
-          business_name: "TechNova Enterprise Global",
-          currency: "INR",
-          timezone_name: "Asia/Kolkata",
-          ad_accounts: [
-            { id: "act_104829104812", name: "TechNova Enterprise Cloud Main", currency: "INR" },
-            { id: "act_205938102931", name: "Aura Living Performance Marketing", currency: "INR" }
-          ],
-          pages_count: 6,
-          campaigns_count: 3
-        }
-      },
-      {
-        id: "int_google_email_01",
-        provider: "google_email",
-        provider_account_id: "em_google_01",
-        provider_account_name: "support@technova-solutions.com",
-        status: "connected",
-        assigned_staff_ids: ["admin", "user_a"],
-        last_sync_at: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
-        sync_status: "idle",
-        sync_error: null,
-        metadata: {
-          provider: "gmail",
-          email: "support@technova-solutions.com",
-          display_name: "TechNova Support Desk",
-          total_synced: 142,
-          quota_used: "18%"
-        }
-      },
-      {
-        id: "int_ms_email_01",
-        provider: "microsoft_email",
-        provider_account_id: "em_ms_01",
-        provider_account_name: "sales@technova-corp.onmicrosoft.com",
-        status: "connected",
-        assigned_staff_ids: ["admin", "user_b"],
-        last_sync_at: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
-        sync_status: "idle",
-        sync_error: null,
-        metadata: {
-          provider: "outlook",
-          email: "sales@technova-corp.onmicrosoft.com",
-          display_name: "TechNova Enterprise Sales",
-          total_synced: 89,
-          quota_used: "12%"
-        }
-      }
-    ];
+    return [];
   }
 
   saveIntegrations() {
@@ -3362,29 +3255,7 @@ class CRMService {
         if (parsed && Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch (e) {}
-
-    return [
-      {
-        id: "em_google_01",
-        provider: "google",
-        email: "support@technova-solutions.com",
-        display_name: "TechNova Support Desk",
-        assigned_staff_ids: ["admin", "user_a"],
-        status: "connected",
-        unread_count: 2,
-        last_sync_at: new Date(Date.now() - 8 * 60 * 1000).toISOString()
-      },
-      {
-        id: "em_ms_01",
-        provider: "microsoft",
-        email: "sales@technova-corp.onmicrosoft.com",
-        display_name: "TechNova Enterprise Sales",
-        assigned_staff_ids: ["admin", "user_b"],
-        status: "connected",
-        unread_count: 1,
-        last_sync_at: new Date(Date.now() - 25 * 60 * 1000).toISOString()
-      }
-    ];
+    return [];
   }
 
   saveEmailAccounts() {
@@ -3401,66 +3272,7 @@ class CRMService {
         if (parsed && Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch (e) {}
-
-    return [
-      {
-        id: "msg_em_01",
-        account_id: "em_google_01",
-        provider_message_id: "goog_msg_101",
-        thread_id: "thread_101",
-        from_address: "arjun.sharma@enterprise.in",
-        from_name: "Arjun Sharma",
-        to_addresses: ["support@technova-solutions.com"],
-        cc_addresses: [],
-        subject: "Enterprise Cloud Security Inquiry & Demo",
-        snippet: "Hi Team, we saw your LinkedIn and Meta campaigns regarding high availability enterprise cloud architecture...",
-        body_text: "Hi Team,\n\nWe saw your LinkedIn and Meta campaigns regarding high availability enterprise cloud architecture. We are currently evaluating vendors for our Q4 infrastructure overhaul.\n\nCould your solutions architect schedule a 30-minute discovery call this Thursday at 3 PM IST?\n\nBest regards,\nArjun Sharma\nVP Engineering, Enterprise India",
-        body_html: "<p>Hi Team,</p><p>We saw your LinkedIn and Meta campaigns regarding high availability enterprise cloud architecture. We are currently evaluating vendors for our Q4 infrastructure overhaul.</p><p>Could your solutions architect schedule a 30-minute discovery call this Thursday at 3 PM IST?</p><p>Best regards,<br><strong>Arjun Sharma</strong><br>VP Engineering, Enterprise India</p>",
-        folder: "inbox",
-        is_read: false,
-        has_attachments: false,
-        sent_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-        received_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
-      },
-      {
-        id: "msg_em_02",
-        account_id: "em_google_01",
-        provider_message_id: "goog_msg_102",
-        thread_id: "thread_102",
-        from_address: "priya.nair@aurahomes.com",
-        from_name: "Priya Nair",
-        to_addresses: ["support@technova-solutions.com"],
-        cc_addresses: [],
-        subject: "Interior Design Consultation & Quote Request",
-        snippet: "Hello Aura Living, I submitted the Meta Lead ad form for the modern penthouse makeover package...",
-        body_text: "Hello Aura Living,\n\nI submitted the Meta Lead ad form for the modern penthouse makeover package. Looking to know if your team handles turnkey styling in South Mumbai.\n\nThanks,\nPriya Nair",
-        body_html: "<p>Hello Aura Living,</p><p>I submitted the Meta Lead ad form for the modern penthouse makeover package. Looking to know if your team handles turnkey styling in South Mumbai.</p><p>Thanks,<br>Priya Nair</p>",
-        folder: "inbox",
-        is_read: true,
-        has_attachments: false,
-        sent_at: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-        received_at: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString()
-      },
-      {
-        id: "msg_em_03",
-        account_id: "em_ms_01",
-        provider_message_id: "ms_msg_201",
-        thread_id: "thread_201",
-        from_address: "sales@technova-corp.onmicrosoft.com",
-        from_name: "TechNova Enterprise Sales",
-        to_addresses: ["arjun.sharma@enterprise.in"],
-        cc_addresses: ["rahul@metacrm.io"],
-        subject: "Re: Enterprise Cloud Security Inquiry & Demo",
-        snippet: "Hello Arjun, thank you for reaching out. Thursday at 3 PM IST works perfectly for our senior cloud architect...",
-        body_text: "Hello Arjun,\n\nThank you for reaching out. Thursday at 3 PM IST works perfectly for our senior cloud architect. I have sent a calendar invite with the Google Meet link.\n\nWarm regards,\nRahul Verma\nAccount Executive, TechNova",
-        body_html: "<p>Hello Arjun,</p><p>Thank you for reaching out. Thursday at 3 PM IST works perfectly for our senior cloud architect. I have sent a calendar invite with the Google Meet link.</p><p>Warm regards,<br>Rahul Verma<br>Account Executive, TechNova</p>",
-        folder: "sent",
-        is_read: true,
-        has_attachments: false,
-        sent_at: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
-        received_at: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString()
-      }
-    ];
+    return [];
   }
 
   saveEmailMessages() {

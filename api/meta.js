@@ -20,7 +20,7 @@ async function metaUnifiedHandler(req, res) {
     const syncHandler = require('./_meta/sync.js');
     return syncHandler(req, res);
   }
-  if (url.includes('/auth') || url.includes('/callback') || path === 'oauth') {
+  if (url.includes('/auth') || url.includes('/oauth') || url.includes('/callback') || path === 'oauth') {
     const oauthHandler = require('./_meta/oauth.js');
     return oauthHandler(req, res);
   }

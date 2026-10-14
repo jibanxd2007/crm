@@ -851,7 +851,7 @@ class MetaCRMApp {
     const newLeads = leads.filter(l => l.status === 'New' || l.status === 'New Lead').length;
     const tasks = this._filterUserTasks(this.svc ? this.svc.tasks : []);
     const overdueTasks = tasks.filter(t => t.status !== 'Done' && t.dueDate && new Date(t.dueDate) < new Date()).length;
-    const activeWs = this.selectedWorkspace || 'Acme MetaCRM';
+    const activeWs = this.selectedWorkspace || 'MetaCRM Workspace';
     const unreadConvs = (this.svc ? (this.svc.conversations || []) : []).reduce((s, c) => s + (c.unread || 0), 0);
 
     const unreadEmails = (this.svc ? (this.svc.emailMessages || []) : []).filter(m => !m.is_read && m.folder === 'inbox').length;
@@ -861,11 +861,11 @@ class MetaCRMApp {
         title: 'WORKSPACE',
         items: [
           { id: 'dashboard',   icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>`, label: 'Dashboard', shortcut: '' },
-          { id: 'leads',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`, label: 'Leads', badge: null, shortcut: '' },
-          { id: 'inbox',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`, label: 'Messages', badge: unreadConvs > 0 ? unreadConvs : 3, shortcut: '' },
+          { id: 'leads',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`, label: 'Leads', badge: newLeads > 0 ? newLeads : null, shortcut: '' },
+          { id: 'inbox',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`, label: 'Messages', badge: unreadConvs > 0 ? unreadConvs : null, shortcut: '' },
           { id: 'email',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`, label: 'Email', badge: unreadEmails > 0 ? unreadEmails : null, shortcut: '' },
           { id: 'meta-ads',    icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>`, label: 'Meta Ads', shortcut: '' },
-          { id: 'tasks',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`, label: 'Follow-ups', badge: overdueTasks > 0 ? overdueTasks : 2, shortcut: '' },
+          { id: 'tasks',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`, label: 'Follow-ups', badge: overdueTasks > 0 ? overdueTasks : null, shortcut: '' },
         ]
       },
       {
@@ -882,6 +882,13 @@ class MetaCRMApp {
       }
     ];
 
+    const currentWorkspaces = this._getWorkspaces();
+    const wsItemsHtml = currentWorkspaces.map(ws => `
+      <div class="ws-dropdown-item ${activeWs === ws ? 'active' : ''}" onclick="window.app.selectWorkspace('${escapeHtml(ws)}')">
+        ${escapeHtml(ws)}
+      </div>
+    `).join('');
+
     let html = `
       <div class="workspace-switcher-wrapper">
         <div class="workspace-switcher-btn" onclick="window.app.toggleWorkspaceDropdown(event)" title="Switch Workspace">
@@ -894,15 +901,13 @@ class MetaCRMApp {
             </div>
             <div class="ws-info">
               <span class="ws-name">${escapeHtml(activeWs)}</span>
-              <span class="ws-plan">Pro Plan</span>
+              <span class="ws-plan">Production</span>
             </div>
           </div>
           <svg class="ws-chevron" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
         </div>
         <div id="ws-dropdown" class="ws-dropdown" style="display:none;" onclick="event.stopPropagation()">
-          <div class="ws-dropdown-item ${activeWs === 'Acme MetaCRM' ? 'active' : ''}" onclick="window.app.selectWorkspace('Acme MetaCRM')">Acme MetaCRM</div>
-          <div class="ws-dropdown-item ${activeWs === 'Personal Workspace' ? 'active' : ''}" onclick="window.app.selectWorkspace('Personal Workspace')">Personal Workspace</div>
-          <div class="ws-dropdown-item ${activeWs === 'Client Sandbox' ? 'active' : ''}" onclick="window.app.selectWorkspace('Client Sandbox')">Client Sandbox</div>
+          ${wsItemsHtml}
           <div class="ws-divider"></div>
           <div class="ws-dropdown-item ws-create" onclick="window.app.createWorkspacePrompt()">+ Create Workspace</div>
         </div>
@@ -970,8 +975,20 @@ class MetaCRMApp {
     }
   }
 
+  _getWorkspaces() {
+    try {
+      const raw = localStorage.getItem('metacrm_workspaces');
+      if (raw) {
+        const list = JSON.parse(raw);
+        if (Array.isArray(list) && list.length > 0) return list;
+      }
+    } catch (e) {}
+    return ['MetaCRM Workspace'];
+  }
+
   selectWorkspace(name) {
     this.selectedWorkspace = name;
+    try { localStorage.setItem('metacrm_active_workspace', name); } catch (e) {}
     const dd = document.getElementById('ws-dropdown');
     if (dd) dd.style.display = 'none';
     this.renderSidebar();
@@ -985,7 +1002,15 @@ class MetaCRMApp {
     if (dd) dd.style.display = 'none';
     const name = prompt('Create new workspace:');
     if (name && name.trim()) {
-      this.selectWorkspace(name.trim());
+      const trimmed = name.trim();
+      try {
+        const list = this._getWorkspaces();
+        if (!list.includes(trimmed)) {
+          list.push(trimmed);
+          localStorage.setItem('metacrm_workspaces', JSON.stringify(list));
+        }
+      } catch (e) {}
+      this.selectWorkspace(trimmed);
     }
   }
 
@@ -1059,7 +1084,7 @@ class MetaCRMApp {
   }
 
   _setBreadcrumbs(sectionName) {
-    const ws = this.selectedWorkspace || 'Acme MetaCRM';
+    const ws = this.selectedWorkspace || 'MetaCRM Workspace';
     this.el.title.innerHTML = `
       <div class="topbar-breadcrumbs">
         <a href="#dashboard" class="breadcrumb-item">MetaCRM</a>
@@ -1083,7 +1108,7 @@ class MetaCRMApp {
 
     // Page selector for header
     const availablePages = this._getAccessiblePages();
-    let pageSelectOptions = `<option value="all">All 6 Pages</option>`;
+    let pageSelectOptions = `<option value="all">All Pages (${availablePages.length})</option>`;
     if (!isAdmin) {
       pageSelectOptions = availablePages.map(p => `<option value="${p.id}" ${this.selectedPageFilter === p.id ? 'selected' : ''}>${p.name}</option>`).join('');
     } else {
@@ -1100,7 +1125,7 @@ class MetaCRMApp {
         <div class="topbar-greeting-sub">Here's what's happening with your leads and campaigns today.</div>
       </div>`;
 
-    // Topbar Actions Controls - matches reference image: Date range + Pages + Refresh + Switch User
+    // Topbar Actions Controls: Date range + Pages + Refresh
     const lastUpdatedStr = this._formatLastUpdatedTime();
     this.el.actions.innerHTML = `
       <div class="topbar-pill-control" title="Change date range" onclick="this.querySelector('select').showPicker ? this.querySelector('select').showPicker() : this.querySelector('select').focus()">
@@ -1126,11 +1151,6 @@ class MetaCRMApp {
       <button id="dashboard-refresh-btn" class="topbar-pill-btn" onclick="window.app.refreshDashboardData(true)" title="Refresh dashboard data">
         <svg width="14" height="14" id="dash-refresh-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
         <span id="dash-last-updated" style="font-size:11px;font-weight:500;color:var(--text-secondary);">${lastUpdatedStr}</span>
-      </button>
-
-      <button class="topbar-pill-btn" onclick="window.app.openUserSwitchModal()" title="Switch user role or session">
-        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        <span>Switch User</span>
       </button>`;
 
     const avatarEl = document.getElementById('topbar-avatar');
@@ -1615,7 +1635,7 @@ class MetaCRMApp {
               </div>
 
               <div class="qa-card-tile" onclick="window.app.navigate('inbox')">
-                <span class="qa-red-badge">3</span>
+                ${unreadMessagesCount > 0 ? `<span class="qa-red-badge">${unreadMessagesCount}</span>` : ''}
                 <div class="qa-icon-wrap">
                   <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                 </div>
@@ -2642,73 +2662,16 @@ class MetaCRMApp {
     }
   }
 
-  onKanbanDragStart(e, leadId) {
-    e.dataTransfer.setData('text/plain', leadId);
-  }
-
-  onKanbanDrop(e, newStage) {
-    e.preventDefault();
-    const leadId = e.dataTransfer.getData('text/plain');
-    if (!leadId) return;
-
-    if (this.svc) {
-      const lead = this.svc.leads.find(l => l.id === leadId);
-      if (lead && lead.status !== newStage) {
-        const prev = lead.status;
-        lead.status = newStage;
-        if (!lead.activities) lead.activities = [];
-        lead.activities.push({
-          type: 'STAGE_MOVED',
-          description: `Moved from ${prev} → ${newStage}`,
-          timestamp: new Date().toISOString()
-        });
-        this.svc._saveToStorage ? this.svc._saveToStorage() : this.svc.saveAll();
-        this.toast(`Lead moved from ${prev} → ${newStage}`);
-        this.renderPipeline();
-      }
-    }
-  }
-
-  // ──────────────────────────────────────────────────────────
-  // UNIFIED 3-COLUMN INBOX (Section 14 & 15)
-  // ──────────────────────────────────────────────────────────
-
-  _getContactInitials(name) {
-    if (!name) return '?';
-    const clean = name.replace(/^@/, '').trim();
-    const parts = clean.split(/[\s._-]+/).filter(Boolean);
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
-    }
-    return clean.slice(0, 2).toUpperCase() || '?';
-  }
-
-  _getAvatarColor(name) {
-    const colors = [
-      { bg: '#EEF2FF', text: '#4338CA' }, // Indigo
-      { bg: '#F5F3FF', text: '#6D28D9' }, // Purple
-      { bg: '#ECFDF5', text: '#047857' }, // Emerald
-      { bg: '#F0F9FF', text: '#0369A1' }, // Sky
-      { bg: '#FEF3C7', text: '#B45309' }, // Amber
-      { bg: '#FFF1F2', text: '#BE123C' }, // Rose
-      { bg: '#F1F5F9', text: '#334155' }  // Slate
-    ];
-    let hash = 0;
-    for (let i = 0; i < (name || '').length; i++) {
-      hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const idx = Math.abs(hash) % colors.length;
-    return colors[idx];
-  }
-
   renderInbox() {
     this.el.title.textContent = this.user.role === 'staff' ? 'My Messages' : 'Messages';
     this.el.actions.innerHTML = `
-      <button class="btn btn-primary btn-sm btn-inbox-refresh" id="btn-inbox-refresh" onclick="window.app.refreshRealInbox()">
-        ${this._icon('refresh', 13)} Refresh Inbox
+      <button class="btn btn-dark btn-sm btn-inbox-refresh" id="btn-inbox-refresh" onclick="window.app.refreshRealInbox()">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        <span>Refresh Inbox</span>
       </button>
-      <button class="btn btn-secondary btn-sm btn-inbox-sync" id="btn-inbox-sync" onclick="window.app.syncConnections()">
-        ${this._icon('refresh', 13)} Sync Accounts
+      <button class="btn btn-outline btn-sm btn-inbox-sync" id="btn-inbox-sync" onclick="window.app.syncConnections()">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+        <span>Sync Accounts</span>
       </button>`;
 
     // Ensure content wrapper has inbox-view-container for viewport-fit layout
@@ -2743,9 +2706,11 @@ class MetaCRMApp {
       ? accessibleConvs.filter(c => c.is_archived === true)
       : accessibleConvs.filter(c => !c.is_archived);
 
-    // Filter by channel or unread
+    // Filter by channel, unread or starred
     if (activeTab === 'unread') {
       filteredConvs = filteredConvs.filter(c => (c.unread || c.unread_count || 0) > 0);
+    } else if (activeTab === 'starred') {
+      filteredConvs = filteredConvs.filter(c => c.starred === true);
     } else if (activeTab === 'facebook' || activeTab === 'messenger') {
       filteredConvs = filteredConvs.filter(c => !c.channel || c.channel.toLowerCase().includes('mess') || c.channel.toLowerCase().includes('face'));
     } else if (activeTab === 'instagram') {
@@ -2780,6 +2745,7 @@ class MetaCRMApp {
     const activeScopedConvs = accessibleConvs.filter(c => !c.is_archived);
     const totalCount = activeScopedConvs.length;
     const unreadInboxCount = activeScopedConvs.filter(c => (c.unread || c.unread_count || 0) > 0).length;
+    const starredCount = activeScopedConvs.filter(c => c.starred === true).length;
     const fbCount = activeScopedConvs.filter(c => !c.channel || c.channel.toLowerCase().includes('mess') || c.channel.toLowerCase().includes('face')).length;
     const igCount = activeScopedConvs.filter(c => c.channel && c.channel.toLowerCase().includes('insta')).length;
 
@@ -2800,36 +2766,14 @@ class MetaCRMApp {
       ${this._renderTip('messages', 'When someone messages your Facebook Page or Instagram, you can reply directly from here.')}
 
       <div class="inbox-layout ${this.mobileInboxView === 'chat' ? 'view-chat' : 'view-list'} ${sessionStorage.getItem('inbox_details_collapsed') === 'true' ? 'details-collapsed' : ''}">
-        <!-- LEFT: CONVERSATIONS LIST (300-340px) -->
+        <!-- LEFT: CONVERSATIONS LIST (320px) -->
         <div class="inbox-sidebar">
           <div class="inbox-sidebar-header">
             <div class="inbox-sidebar-title-row">
-              <div class="inbox-sidebar-title-group">
-                <h2 class="inbox-sidebar-title">Inbox</h2>
-                <span class="inbox-count-badge" id="inbox-total-badge">${totalCount} ${totalCount === 1 ? 'chat' : 'chats'}</span>
-              </div>
+              <h2 class="inbox-sidebar-title">Inbox</h2>
               <button class="inbox-action-btn-sm" onclick="window.app.refreshInbox()" title="Refresh conversations">
-                ↻ Refresh
+                <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
               </button>
-            </div>
-
-            <div class="inbox-search-wrap">
-              <span class="inbox-search-icon">
-                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-              </span>
-              <input type="text" class="inbox-search-input" id="inbox-search-input" placeholder="Search conversations…" value="${escapeHtml(this.inboxSearchQuery || '')}" oninput="window.app.searchInboxConversations(this.value)">
-              ${this.inboxSearchQuery ? `<button class="inbox-search-clear" onclick="window.app.clearInboxSearch()" title="Clear search">✕</button>` : ''}
-            </div>
-
-            <div class="inbox-sort-bar">
-              <span style="font-weight:600;font-size:10px;text-transform:uppercase;color:#8C9196;">Sort</span>
-              <div style="display:flex;align-items:center;gap:4px;">
-                <button class="inbox-sort-btn ${sortMode === 'latest' ? 'active' : ''}" onclick="window.app.setInboxSort('latest')">Latest</button>
-                <span style="color:#CBD5E1;">·</span>
-                <button class="inbox-sort-btn ${sortMode === 'unread' ? 'active' : ''}" onclick="window.app.setInboxSort('unread')">Unread first</button>
-                <span style="color:#CBD5E1;">·</span>
-                <button class="inbox-sort-btn ${sortMode === 'oldest' ? 'active' : ''}" onclick="window.app.setInboxSort('oldest')">Oldest</button>
-              </div>
             </div>
 
             <div class="inbox-filter-tabs" id="inbox-filter-tabs">
@@ -2841,18 +2785,18 @@ class MetaCRMApp {
                 <span>Unread</span>
                 ${unreadInboxCount > 0 ? `<span class="inbox-tab-count">${unreadInboxCount}</span>` : ''}
               </div>
-              <div class="inbox-tab ${(activeTab === 'facebook' || activeTab === 'messenger') ? 'active' : ''}" onclick="window.app.setInboxTab('facebook')">
-                <span>Facebook</span>
-                <span class="inbox-tab-count">${fbCount}</span>
+              <div class="inbox-tab ${activeTab === 'starred' ? 'active' : ''}" onclick="window.app.setInboxTab('starred')">
+                <span>Starred</span>
+                ${starredCount > 0 ? `<span class="inbox-tab-count">${starredCount}</span>` : ''}
               </div>
-              <div class="inbox-tab ${activeTab === 'instagram' ? 'active' : ''}" onclick="window.app.setInboxTab('instagram')">
-                <span>Instagram</span>
-                <span class="inbox-tab-count">${igCount}</span>
-              </div>
-              <div class="inbox-tab ${activeTab === 'archived' ? 'active' : ''}" onclick="window.app.setInboxTab('archived')">
-                <span>Archived</span>
-                ${archivedCount > 0 ? `<span class="inbox-tab-count">${archivedCount}</span>` : ''}
-              </div>
+            </div>
+
+            <div class="inbox-search-wrap">
+              <span class="inbox-search-icon">
+                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              </span>
+              <input type="text" class="inbox-search-input" id="inbox-search-input" placeholder="Search conversations…" value="${escapeHtml(this.inboxSearchQuery || '')}" oninput="window.app.searchInboxConversations(this.value)">
+              ${this.inboxSearchQuery ? `<button class="inbox-search-clear" onclick="window.app.clearInboxSearch()" title="Clear search">✕</button>` : ''}
             </div>
           </div>
 
@@ -2863,9 +2807,9 @@ class MetaCRMApp {
             ${convList.length === 0 ? `
               <div class="inbox-conv-empty">
                 <div class="inbox-conv-empty-icon" style="display:flex;justify-content:center;">${activeTab === 'instagram' ? this._icon('instagram', 32) : this._icon('facebook', 32)}</div>
-                <strong class="inbox-conv-empty-title">${activeTab === 'archived' ? 'No archived conversations' : 'No conversations yet'}</strong>
+                <strong class="inbox-conv-empty-title">${activeTab === 'archived' ? 'No archived conversations' : (activeTab === 'starred' ? 'No starred conversations' : 'No conversations yet')}</strong>
                 <p class="inbox-conv-empty-desc">
-                  ${activeTab === 'archived' ? 'Conversations you archive will appear here.' : `Incoming messages from your connected ${activeTab === 'instagram' ? 'Instagram' : (activeTab === 'facebook' ? 'Facebook' : 'Facebook & Instagram')} account will appear here automatically.`}
+                  ${activeTab === 'archived' ? 'Conversations you archive will appear here.' : (activeTab === 'starred' ? 'Star important conversations to see them here.' : `Incoming messages from your connected ${activeTab === 'instagram' ? 'Instagram' : (activeTab === 'facebook' ? 'Facebook' : 'Facebook & Instagram')} account will appear here automatically.`)}
                 </p>
                 <button class="btn btn-secondary btn-sm" onclick="window.app.refreshInbox()">
                   ↻ Refresh Messages
@@ -2873,12 +2817,14 @@ class MetaCRMApp {
               </div>
             ` : convList.map(c => {
               const isIg = c.channel && c.channel.toLowerCase().includes('insta');
+              const isWa = c.channel && c.channel.toLowerCase().includes('what');
               const initials = this._getContactInitials(c.name);
               const color = this._getAvatarColor(c.name);
               const isUnread = (c.unread || c.unread_count || 0) > 0;
               const isCurrentActive = activeConv && String(c.id) === String(activeConv.id);
               const searchText = `${c.name || ''} ${c.preview || ''} ${c.participantUsername || ''}`.toLowerCase();
               const displayTime = this._formatMessageTime(c.last_message_at || c.time);
+              const itemLead = (this.svc && this.svc.leads) ? this.svc.leads.find(l => l.name === c.name || (c.phone && l.phone === c.phone)) : null;
 
               return `
               <div class="inbox-conv-item ${isCurrentActive ? 'active' : ''}" data-conv-id="${c.id}" data-search-text="${escapeHtml(searchText)}" onclick="window.app.selectInboxConv('${c.id}')">
@@ -2888,23 +2834,25 @@ class MetaCRMApp {
                 </div>
                 <div class="conv-info">
                   <div class="conv-name-row">
-                    <span class="conv-name">${escapeHtml(c.name)}</span>
-                    <div style="display:flex;align-items:center;gap:4px;">
-                      <span class="conv-time">${displayTime}</span>
-                      <button class="conv-options-btn" onclick="window.app.toggleConvMenu('${c.id}', event)" title="Conversation options">⋮</button>
+                    <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1;">
+                      <span class="conv-name text-truncate">${escapeHtml(c.name)}</span>
+                      ${isUnread ? `<span class="conv-unread-count-bubble">${c.unread || c.unread_count || 1}</span>` : ''}
                     </div>
+                    <span class="conv-time">${displayTime}</span>
                   </div>
                   <div class="conv-preview ${isUnread ? 'is-unread' : ''}">${escapeHtml(c.preview || '')}</div>
                   <div class="conv-channel-row">
-                    <span class="conv-channel-pill ${isIg ? 'pill-ig' : 'pill-fb'}">
-                      ${isIg ? this._icon('instagram', 11) + ' Instagram' : this._icon('facebook', 11) + ' Messenger'}
+                    <span class="conv-channel-pill">
+                      ${isIg ? this._icon('instagram', 11) + ' Instagram' : (isWa ? '🟢 WhatsApp' : this._icon('facebook', 11) + ' Messenger')}
                     </span>
-                    <span class="conv-channel-sep">·</span>
-                    <span class="conv-page-name">${escapeHtml(this._pageName(c.page_id))}</span>
-                    ${isUnread ? `<span class="conv-unread">${c.unread || c.unread_count || 1}</span>` : ''}
+                    <span class="conv-lead-pill">${itemLead ? escapeHtml(itemLead.status || 'Lead') : 'New Lead'}</span>
+                    <button class="conv-options-btn" style="margin-left:auto;" onclick="window.app.toggleConvMenu('${c.id}', event)" title="Conversation options">⋮</button>
                   </div>
                 </div>
                 <div id="conv-menu-${c.id}" class="conv-item-dropdown" style="display:none;" onclick="event.stopPropagation()">
+                  <div class="conv-dropdown-item" onclick="window.app.toggleStarConversation('${c.id}')">
+                    <span>${c.starred ? '★' : '☆'}</span> <span>${c.starred ? 'Unstar conversation' : 'Star conversation'}</span>
+                  </div>
                   ${isUnread ? `
                     <div class="conv-dropdown-item" onclick="window.app.markConversationRead('${c.id}')">
                       <span>✓</span> <span>Mark as read</span>
@@ -2923,7 +2871,7 @@ class MetaCRMApp {
           </div>
         </div>
 
-        <!-- CENTER: ACTIVE CONVERSATION (50-60% FLEXIBLE) -->
+        <!-- CENTER: ACTIVE CONVERSATION WORKSPACE (Column 2) -->
         <div class="inbox-main">
           ${activeConv ? `
             <div class="inbox-thread-header">
@@ -2936,19 +2884,21 @@ class MetaCRMApp {
               <div class="thread-meta">
                 <div class="thread-name-row">
                   <span class="thread-name text-truncate">${escapeHtml(activeConv.name)}</span>
-                  ${matchingLead ? `<span class="thread-lead-badge">${escapeHtml(matchingLead.status || 'Lead')}</span>` : `<span class="thread-lead-badge">Direct Contact</span>`}
                 </div>
                 <div class="thread-sub text-truncate">
-                  <span class="inbox-platform-badge ${isIgActive ? 'badge-ig' : 'badge-fb'}">
-                    ${isIgActive ? this._icon('instagram', 11) + ' Instagram Direct' : this._icon('facebook', 11) + ' Facebook Messenger'}
-                  </span>
-                  <span>·</span>
-                  <span>${escapeHtml(this._pageName(activeConv.page_id))}</span>
+                  <span>${isIgActive ? 'Instagram Direct' : 'Facebook Messenger'}</span>
+                  <span class="thread-lead-badge">${matchingLead ? escapeHtml(matchingLead.status || 'Lead') : 'Lead'}</span>
                 </div>
               </div>
               <div class="thread-header-actions">
-                <button class="btn-thread-action" onclick="window.app.toggleConversationUnread('${activeConv.id}')" title="Toggle unread status">
-                  ${(activeConv.unread || 0) > 0 ? '✓ Mark Read' : '● Mark Unread'}
+                <button class="btn-thread-star ${activeConv.starred ? 'active' : ''}" onclick="window.app.toggleStarConversation('${activeConv.id}')" title="Star conversation">
+                  <svg width="16" height="16" fill="${activeConv.starred ? '#FF6A00' : 'none'}" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                </button>
+                <button class="btn-thread-more" onclick="window.app.toggleConvMenu('${activeConv.id}', event)" title="More options">
+                  <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>
+                </button>
+                <button class="btn-thread-action btn-mark-read" onclick="window.app.toggleConversationUnread('${activeConv.id}')" title="Toggle unread status">
+                  Mark Read
                 </button>
                 <button class="inbox-info-btn" onclick="window.app.toggleInboxDetails()" title="Toggle Customer &amp; CRM Details">
                   <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
@@ -2958,7 +2908,7 @@ class MetaCRMApp {
 
             <div class="inbox-thread" id="inbox-thread">
               ${messages.length ? `
-                <div class="msg-date-divider"><span>Today</span></div>
+                <div class="msg-date-divider"><span>Today, ${activeConv.time || '10:24 AM'}</span></div>
                 ${messages.map((m) => {
                   const isMedia = m.text && (m.text.includes('[Photo/Media Attachment]') || m.text.includes('Replied to your story'));
                   if (m.incoming) {
@@ -3019,10 +2969,6 @@ class MetaCRMApp {
                       <span>📞 Follow-up: Specialist calling shortly</span>
                       <span>↵</span>
                     </button>
-                    <button class="btn-suggested-prompt" onclick="window.app.insertSavedReply('Could you please share your preferred phone number and best time for a quick consultation?')">
-                      <span>📅 Contact details request</span>
-                      <span>↵</span>
-                    </button>
                   </div>
                 </div>
               `}
@@ -3031,27 +2977,15 @@ class MetaCRMApp {
             <div class="inbox-composer" ondragover="event.preventDefault(); this.classList.add('drag-over');" ondragleave="this.classList.remove('drag-over');" ondrop="window.app.handleComposerDrop(event)">
               <input type="file" id="inbox-file-input" style="display:none;" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt" onchange="window.app.handleFileSelected(event)">
               <div id="inbox-attachment-preview-bar" style="display:none;padding:8px 14px;background:#F8FAFC;border-bottom:1px solid var(--border);align-items:center;gap:10px;"></div>
-              <div class="composer-top-bar">
-                <div class="composer-channel-info">
-                  ${isIgActive ? this._icon('instagram', 13) : this._icon('facebook', 13)}
-                  <span>Replying on <strong>${isIgActive ? 'Instagram Direct' : 'Facebook Messenger'}</strong></span>
-                </div>
-                <div style="display:flex;align-items:center;gap:10px;">
-                  <select class="composer-quick-select" onchange="if(this.value){window.app.insertSavedReply(this.value); this.selectedIndex=0;}">
-                    <option value="">⚡ Quick Saved Reply…</option>
-                    <option value="Hello! Thanks for reaching out. How can our team help you today?">Greeting: How can we help?</option>
-                    <option value="Our team has received your inquiry. A specialist will call you shortly to discuss options.">Follow-up: Specialist calling shortly</option>
-                    <option value="Could you please share your preferred phone number and best time for a quick consultation?">Contact details request</option>
-                    <option value="Thank you for your interest! Here is our latest pricing guide and product details.">Catalog &amp; Pricing info</option>
-                  </select>
-                  <span class="composer-shortcut-hint">↵ Enter to send · Shift+Enter new line</span>
-                </div>
-              </div>
-              <div class="composer-input-row">
+              
+              <div class="composer-bar-container">
                 <button class="btn-composer-attach" onclick="window.app.handleAttachmentClick()" title="Attach photo, video or document (max 25MB)" type="button">
-                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                  <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                 </button>
-                <textarea class="inbox-msg-textarea" id="inbox-msg-input" placeholder="Type a reply or paste/drag an image…" rows="2" onkeydown="window.app.handleComposerKeydown(event)" oninput="window.app.handleComposerInput(this)" onpaste="window.app.handleComposerPaste(event)"></textarea>
+                <textarea class="inbox-msg-textarea" id="inbox-msg-input" placeholder="Type a reply…" rows="1" onkeydown="window.app.handleComposerKeydown(event)" oninput="window.app.handleComposerInput(this)" onpaste="window.app.handleComposerPaste(event)"></textarea>
+                <button class="btn-composer-emoji" type="button" onclick="window.app.insertEmoji('😊')" title="Insert emoji">
+                  <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                </button>
                 <button class="btn-send-msg" id="inbox-send-btn" onclick="window.app.sendInboxMessage()">
                   <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
                   <span>Send</span>
@@ -3079,7 +3013,7 @@ class MetaCRMApp {
           `}
         </div>
 
-        <!-- RIGHT: CUSTOMER & CRM LINK DETAILS (280-320px) -->
+        <!-- RIGHT: CUSTOMER & CRM LINK DETAILS (Column 3) -->
         <div class="inbox-details" id="inbox-details">
           ${activeConv ? `
             <div class="inbox-details-header">
@@ -3093,88 +3027,83 @@ class MetaCRMApp {
                 <div class="idetail-avatar" style="background-color:${activeColor.bg};color:${activeColor.text};">
                   ${activeInitials}
                 </div>
-                <div class="idetail-name text-truncate" style="max-width:230px;">${escapeHtml(activeConv.name)}</div>
-                <div class="idetail-handle text-truncate" style="max-width:230px;">${escapeHtml(activeConv.participantUsername ? `@${activeConv.participantUsername.replace(/^@/, '')}` : (activeConv.phone || (isIgActive ? 'Instagram Direct Inquiry' : 'Messenger Inquiry')))}</div>
+                <div class="idetail-name text-truncate" style="max-width:240px;">${escapeHtml(activeConv.name)}</div>
+                <div class="idetail-handle text-truncate" style="max-width:240px;">${escapeHtml(activeConv.participantUsername ? `@${activeConv.participantUsername.replace(/^@/, '')}` : (isIgActive ? 'Instagram User' : 'Messenger User'))}</div>
                 <div class="idetail-badge-wrap">
-                  <span class="idetail-channel-pill">${isIgActive ? this._icon('instagram', 12) + ' Instagram DM' : this._icon('facebook', 12) + ' Messenger Chat'}</span>
+                  <span class="idetail-lead-pill">${matchingLead ? escapeHtml(matchingLead.status || 'Lead') : 'New Lead'}</span>
                 </div>
-                ${matchingLead ? `
-                  <button class="btn-profile-link" onclick="window.app.openLeadDrawer('${matchingLead.id}')">
-                    <span>Open Full CRM Profile</span>
-                    <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14m-7-7 7 7-7 7"/></svg>
-                  </button>
-                ` : `
-                  <button class="btn-profile-link" onclick="window.app.createLeadFromConv('${escapeHtml(activeConv.name)}', '${activeConv.page_id}')">
-                    <span>+ Create Lead in CRM</span>
-                  </button>
-                `}
+                
+                <button class="btn-meta-action" onclick="window.app.openMetaConversation('${activeConv.id}')">
+                  <svg width="15" height="15" fill="#1877F2" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.145 2 11.258c0 2.91 1.455 5.518 3.735 7.21V22l3.415-1.874c.907.251 1.865.387 2.85.387 5.523 0 10-4.145 10-9.258C22 6.145 17.523 2 12 2zm1.054 12.433l-2.585-2.756-5.044 2.756 5.549-5.89 2.651 2.756 4.978-2.756-5.549 5.89z"/></svg>
+                  <span>Message in Meta</span>
+                </button>
+                <button class="btn-create-lead-action" onclick="${matchingLead ? `window.app.openLeadDrawer('${matchingLead.id}')` : `window.app.createLeadFromConv('${escapeHtml(activeConv.name)}', '${activeConv.page_id}')`}">
+                  <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                  <span>${matchingLead ? 'Open Full CRM Profile' : 'Create Lead in CRM'}</span>
+                </button>
               </div>
 
-              <!-- Account Info Card -->
+              <!-- ACCOUNT INFORMATION -->
               <div class="idetail-card">
-                <div class="idetail-section-heading">Account Information</div>
+                <div class="idetail-section-heading">ACCOUNT INFORMATION</div>
                 <div class="idetail-row">
                   <span class="idetail-label">Channel</span>
                   <span class="idetail-value">
-                    ${isIgActive ? this._icon('instagram', 12) + ' Instagram Direct' : this._icon('facebook', 12) + ' Facebook Messenger'}
+                    ${isIgActive ? this._icon('instagram', 13) + ' Instagram Direct' : `<svg width="13" height="13" fill="#1877F2" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.145 2 11.258c0 2.91 1.455 5.518 3.735 7.21V22l3.415-1.874c.907.251 1.865.387 2.85.387 5.523 0 10-4.145 10-9.258C22 6.145 17.523 2 12 2zm1.054 12.433l-2.585-2.756-5.044 2.756 5.549-5.89 2.651 2.756 4.978-2.756-5.549 5.89z"/></svg> Facebook Messenger`}
                   </span>
                 </div>
                 <div class="idetail-row">
-                  <span class="idetail-label">Account / Page</span>
-                  <span class="idetail-value text-truncate" style="max-width:160px;" title="${escapeHtml(this._pageName(activeConv.page_id))}">
-                    ${escapeHtml(this._pageName(activeConv.page_id))}
+                  <span class="idetail-label">Account ID</span>
+                  <span class="idetail-value text-truncate" style="max-width:160px;" title="${escapeHtml(activeConv.accountId || activeConv.page_id || 'fb_123456789012345')}">
+                    ${escapeHtml(activeConv.accountId ? `fb_${activeConv.accountId.substring(0, 15)}` : 'fb_123456789012345')}
                   </span>
                 </div>
                 <div class="idetail-row">
-                  <span class="idetail-label">Channel Status</span>
-                  <span class="idetail-value"><span class="status-dot-green"></span> Active Channel</span>
+                  <span class="idetail-label">Channel Fb ID</span>
+                  <span class="idetail-value text-truncate" style="max-width:160px;">
+                    ${escapeHtml(activeConv.channelFbId || activeConv.sender_id || '100012345678901')}
+                  </span>
                 </div>
                 <div class="idetail-row">
-                  <span class="idetail-label">Last Activity</span>
-                  <span class="idetail-value">${activeConv.time || 'Recently'}</span>
+                  <span class="idetail-label">Lead Activity</span>
+                  <span class="idetail-value"><span class="status-dot-green"></span> Active (${activeConv.time || '2h ago'})</span>
                 </div>
               </div>
 
-              <!-- CRM Status Card -->
+              <!-- CRM INFORMATION -->
               <div class="idetail-card">
-                <div class="idetail-section-heading">CRM Information</div>
+                <div class="idetail-section-heading">CRM INFORMATION</div>
                 <div class="idetail-row">
                   <span class="idetail-label">Lead Stage</span>
                   <span class="idetail-value">
-                    ${matchingLead ? `
-                      <select class="idetail-select" onchange="window.app.setLeadStageFromInbox('${matchingLead.id}', this.value)">
-                        ${['New Lead', 'Contacted', 'Qualified', 'Proposal Sent', 'Negotiation', 'Won', 'Lost'].map(st => `
-                          <option value="${st}" ${matchingLead.status === st ? 'selected' : ''}>${st}</option>
-                        `).join('')}
-                      </select>
-                    ` : `
-                      <span class="badge badge-neutral" style="font-size:11px;">Not in CRM</span>
-                    `}
+                    <select class="idetail-select" onchange="window.app.setLeadStageFromInbox('${matchingLead ? matchingLead.id : ''}', this.value)">
+                      ${['New Lead', 'Contacted', 'Qualified', 'Proposal Sent', 'Negotiation', 'Won', 'Lost'].map(st => `
+                        <option value="${st}" ${(matchingLead && matchingLead.status === st) || (!matchingLead && st === 'New Lead') ? 'selected' : ''}>${st}</option>
+                      `).join('')}
+                    </select>
                   </span>
                 </div>
                 <div class="idetail-row">
                   <span class="idetail-label">Assigned Staff</span>
                   <span class="idetail-value">
                     <select class="idetail-select" onchange="window.app.assignConversation('${activeConv.id}', this.value)">
-                      <option value="">Unassigned</option>
+                      <option value="">John Doe</option>
                       ${(this.svc ? (this.svc.staff || []) : []).map(s => `
                         <option value="${s.id}" ${(activeConv.assigned_staff_id || activeConv.assignedStaffId || (matchingLead && (matchingLead.assigned_staff_id || matchingLead.assignedStaffId))) === s.id ? 'selected' : ''}>${s.name}</option>
                       `).join('')}
                     </select>
                   </span>
                 </div>
-                ${matchingLead ? `
-                  <div class="idetail-row">
-                    <span class="idetail-label">Source</span>
-                    <span class="idetail-value text-truncate" style="max-width:150px;">${escapeHtml(matchingLead.source || 'Direct Messaging')}</span>
-                  </div>
-                ` : ''}
               </div>
 
-              <!-- Internal Team Notes -->
+              <!-- INTERNAL TEAM NOTES -->
               <div class="idetail-card">
-                <div class="idetail-section-heading">Internal Team Notes</div>
-                <div class="idetail-notes-list" id="inbox-notes-list">
+                <div class="idetail-section-heading">INTERNAL TEAM NOTES</div>
+                <div class="idetail-notes-container">
+                  <textarea class="idetail-notes-textarea" id="inbox-note-input" placeholder="Add internal notes, tags or reminders..."></textarea>
+                  <button class="btn-save-note" id="btn-save-note" onclick="window.app.saveInboxNote('${activeConv.id}')">Save</button>
+                </div>
+                <div class="idetail-notes-list" id="inbox-notes-list" style="${(activeConv.notes && activeConv.notes.length) ? '' : 'display:none;'}">
                   ${(activeConv.notes && activeConv.notes.length) ? activeConv.notes.map(n => `
                     <div class="idetail-note-item">
                       <div class="idetail-note-text">${escapeHtml(n.content)}</div>
@@ -3183,31 +3112,8 @@ class MetaCRMApp {
                         <span>${this._timeAgo(n.created_at || n.createdAt)}</span>
                       </div>
                     </div>
-                  `).join('') : '<div style="font-size:11.5px;color:#94A3B8;padding:4px 0;">No internal notes yet.</div>'}
+                  `).join('') : ''}
                 </div>
-                <div class="idetail-note-form">
-                  <input type="text" class="input input-sm flex-1" id="inbox-note-input" placeholder="Add private note for team…" style="font-size:11.5px;" onkeydown="if(event.key==='Enter')window.app.saveInboxNote('${activeConv.id}')">
-                  <button class="btn-save-note" onclick="window.app.saveInboxNote('${activeConv.id}')">Save</button>
-                </div>
-              </div>
-
-              <!-- Quick Actions Group -->
-              <div class="idetail-actions-group">
-                ${matchingLead ? `
-                  <button class="btn-detail-action btn-detail-primary" onclick="window.app.openLeadDrawer('${matchingLead.id}')">
-                    <span>Open Full CRM Profile →</span>
-                  </button>
-                  <button class="btn-detail-action btn-detail-secondary" onclick="window.app.setLeadStageFromInbox('${matchingLead.id}', 'Qualified')">
-                    <span>Mark as Qualified</span>
-                  </button>
-                  <button class="btn-detail-action btn-detail-secondary" onclick="window.app.openAddTaskModal(); setTimeout(() => { const el = document.getElementById('task-lead-id'); if(el) el.value = '${matchingLead.id}'; }, 100);">
-                    <span>+ Schedule Follow-up</span>
-                  </button>
-                ` : `
-                  <button class="btn-detail-action btn-detail-primary" onclick="window.app.createLeadFromConv('${escapeHtml(activeConv.name)}', '${activeConv.page_id}')">
-                    <span>+ Create Lead in CRM</span>
-                  </button>
-                `}
               </div>
             </div>
           ` : `
@@ -3220,7 +3126,7 @@ class MetaCRMApp {
                 ${this._getAccessiblePages().map(p => {
                   const isIg = p.channel === 'instagram' || p.name.startsWith('@');
                   return `
-                  <div class="idetail-card" style="padding:10px 12px;">
+                  <div class="idetail-card" style="padding:10px 12px;border:1px solid #E5E7EB;border-radius:8px;">
                     <div style="display:flex;align-items:center;gap:10px;">
                       <div style="width:30px;height:30px;border-radius:6px;background:${isIg ? '#FDF2F2' : '#EEF4FE'};color:${isIg ? '#D82C0D' : '#1877F2'};display:flex;align-items:center;justify-content:center;">
                         ${isIg ? this._icon('instagram', 15) : this._icon('facebook', 15)}
@@ -3253,6 +3159,42 @@ class MetaCRMApp {
   setInboxSort(sort) {
     this.inboxSortMode = sort;
     this.renderInbox();
+  }
+
+  toggleStarConversation(convId) {
+    const conv = (this.svc && this.svc.conversations) ? this.svc.conversations.find(c => String(c.id) === String(convId)) : null;
+    if (conv) {
+      conv.starred = !conv.starred;
+      if (this.svc && this.svc._saveToStorage) this.svc._saveToStorage();
+      else if (this.svc && this.svc.saveAll) this.svc.saveAll();
+      this.toast(conv.starred ? 'Conversation starred' : 'Conversation unstarred', 'info');
+      this.renderInbox();
+    }
+  }
+
+  openMetaConversation(convId) {
+    this.toast('Opening conversation in Meta Business Suite…', 'info');
+    window.open('https://business.facebook.com/latest/inbox', '_blank', 'noopener,noreferrer');
+  }
+
+  insertEmoji(emoji) {
+    const input = document.getElementById('inbox-msg-input');
+    if (!input) return;
+    const start = input.selectionStart || input.value.length;
+    const end = input.selectionEnd || input.value.length;
+    input.value = input.value.substring(0, start) + emoji + input.value.substring(end);
+    input.selectionStart = input.selectionEnd = start + emoji.length;
+    input.focus();
+    this.handleComposerInput(input);
+  }
+
+  handleGlobalSearch(query) {
+    this.inboxSearchQuery = query;
+    if (this.currentRoute !== 'inbox') {
+      this.navigate('inbox');
+    } else {
+      this.renderInbox();
+    }
   }
 
   toggleConvMenu(convId, event) {
@@ -6913,6 +6855,28 @@ class MetaCRMApp {
     // Fetch integrations from server or local state
     const integrations = this.svc ? (this.svc.integrations || []) : [];
     const pages = this.svc ? (this.svc.pages || []) : [];
+    const emailMessages = this.svc ? (this.svc.emailMessages || []) : [];
+
+    const metaAdsInt = integrations.find(i => i.provider === 'meta_ads' || i.id === 'int_meta_ads_01');
+    const isMetaConnected = Boolean(metaAdsInt && metaAdsInt.status !== 'disconnected');
+
+    const googleInt = integrations.find(i => i.provider === 'google' || i.id === 'int_google_email_01');
+    const isGoogleConnected = Boolean(googleInt && googleInt.status !== 'disconnected');
+    const googleMsgCount = emailMessages.filter(m => m.account_id === (googleInt && googleInt.id)).length;
+
+    const msInt = integrations.find(i => i.provider === 'microsoft' || i.id === 'int_ms_email_01');
+    const isMsConnected = Boolean(msInt && msInt.status !== 'disconnected');
+
+    const resendConfigured = Boolean(window.CONFIG && window.CONFIG.resendApiKey);
+    const resendFromEmail = (window.CONFIG && window.CONFIG.resendFromEmail) || 'onboarding@resend.dev';
+    const isSenderVerified = Boolean(window.CONFIG && window.CONFIG.resendSenderVerified);
+
+    const auditLogs = (this.svc && typeof this.svc.getAuditLogs === 'function') ? this.svc.getAuditLogs() : [];
+    const syncLogs = auditLogs.filter(l => {
+      const act = (l.action || '').toLowerCase();
+      const det = (l.details || '').toLowerCase();
+      return act.includes('sync') || act.includes('integration') || det.includes('sync') || det.includes('integration');
+    }).slice(0, 10);
 
     this.el.content.innerHTML = `
       <div class="integrations-view" style="max-width:1100px;">
@@ -6937,7 +6901,9 @@ class MetaCRMApp {
                     <span class="text-xs text-gray">Campaigns, Ad Sets &amp; Insights</span>
                   </div>
                 </div>
-                <span class="badge badge-success" style="font-size:11px;">Connected</span>
+                ${isMetaConnected 
+                  ? '<span class="badge badge-success" style="font-size:11px;">Connected</span>' 
+                  : '<span class="badge badge-secondary" style="font-size:11px;">Not Connected</span>'}
               </div>
 
               <p class="text-xs text-gray" style="line-height:1.5;margin-bottom:12px;">
@@ -6945,27 +6911,37 @@ class MetaCRMApp {
               </p>
 
               <div style="background:#F8FAFC;border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:11px;margin-bottom:16px;">
-                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-                  <span class="text-gray">Portfolio:</span>
-                  <strong>TechNova Enterprise Global</strong>
-                </div>
-                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-                  <span class="text-gray">Ad Accounts:</span>
-                  <span>2 Accounts (act_104829104812, act_205938102931)</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;">
-                  <span class="text-gray">Last Sync:</span>
-                  <span>15 mins ago</span>
-                </div>
+                ${isMetaConnected ? `
+                  <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                    <span class="text-gray">Portfolio:</span>
+                    <strong>${escapeHtml(metaAdsInt.name || 'Connected Portfolio')}</strong>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                    <span class="text-gray">Ad Account:</span>
+                    <span>${escapeHtml(metaAdsInt.account_id || 'Active')}</span>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;">
+                    <span class="text-gray">Last Sync:</span>
+                    <span>${metaAdsInt.last_sync_at ? this.formatRelativeTime(metaAdsInt.last_sync_at) : 'Not synced yet'}</span>
+                  </div>
+                ` : `
+                  <div class="text-gray" style="line-height:1.4;">
+                    No Meta Ads portfolio currently connected. Authorize your Meta Business account to synchronize campaigns and ad spend.
+                  </div>
+                `}
               </div>
             </div>
 
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button class="btn btn-secondary btn-sm flex-1" onclick="window.app.syncIntegrationUI('int_meta_ads_01')">Sync Now</button>
-              ${isAdmin ? `
-                <button class="btn btn-secondary btn-sm" onclick="window.app.openAssignStaffModal('int_meta_ads_01')">Assign Staff</button>
-                <button class="btn btn-ghost btn-sm text-red-500" onclick="window.app.disconnectIntegrationUI('int_meta_ads_01')">Disconnect</button>
-              ` : ''}
+              ${isMetaConnected ? `
+                <button class="btn btn-secondary btn-sm flex-1" onclick="window.app.syncIntegrationUI('${metaAdsInt.id}')">Sync Now</button>
+                ${isAdmin ? `
+                  <button class="btn btn-secondary btn-sm" onclick="window.app.openAssignStaffModal('${metaAdsInt.id}')">Assign Staff</button>
+                  <button class="btn btn-ghost btn-sm text-red-500" onclick="window.app.disconnectIntegrationUI('${metaAdsInt.id}')">Disconnect</button>
+                ` : ''}
+              ` : `
+                <button class="btn btn-primary btn-sm flex-1" onclick="window.app.navigate('connections')">Connect Portfolio</button>
+              `}
             </div>
           </div>
 
@@ -6982,39 +6958,37 @@ class MetaCRMApp {
                     <span class="text-xs text-gray">Modern Transactional Email API</span>
                   </div>
                 </div>
-                <span class="badge badge-success" style="font-size:11px;">Active</span>
+                ${resendConfigured 
+                  ? '<span class="badge badge-success" style="font-size:11px;">Active</span>' 
+                  : '<span class="badge badge-secondary" style="font-size:11px;">Not Configured</span>'}
               </div>
 
               <p class="text-xs text-gray" style="line-height:1.5;margin-bottom:12px;">
                 High-deliverability direct email delivery via Resend API. Dispatches notifications, lead follow-ups, and customer replies without OAuth prompts.
               </p>
 
-              ${(!window.CONFIG || !window.CONFIG.resendSenderVerified) ? `
+              ${!isSenderVerified ? `
               <div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:6px;padding:10px 12px;font-size:11px;color:#92400E;margin-bottom:12px;line-height:1.4;display:flex;align-items:flex-start;gap:8px;">
                 <span style="font-size:14px;line-height:1;">⚠️</span>
                 <div>
-                  <strong>Sender Unverified:</strong> Emails will only reach the Resend account owner until a domain is verified and RESEND_FROM_EMAIL is set.
+                  <strong>Sender Unverified:</strong> Emails will only reach the Resend account owner until a verified domain is configured in RESEND_FROM_EMAIL.
                 </div>
               </div>` : ''}
 
               <div style="background:#F8FAFC;border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:11px;margin-bottom:16px;">
                 <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
                   <span class="text-gray">Sender:</span>
-                  <span><strong>${escapeHtml((window.CONFIG && window.CONFIG.resendFromEmail) || 'onboarding@resend.dev')}</strong> ${(!window.CONFIG || !window.CONFIG.resendSenderVerified) ? '<span class="badge badge-warning" style="font-size:9px;padding:1px 4px;margin-left:4px;">Unverified</span>' : '<span class="badge badge-success" style="font-size:9px;padding:1px 4px;margin-left:4px;">Verified</span>'}</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-                  <span class="text-gray">Target:</span>
-                  <span>crm567625@gmail.com</span>
+                  <span><strong>${escapeHtml(resendFromEmail)}</strong> ${!isSenderVerified ? '<span class="badge badge-warning" style="font-size:9px;padding:1px 4px;margin-left:4px;">Unverified</span>' : '<span class="badge badge-success" style="font-size:9px;padding:1px 4px;margin-left:4px;">Verified</span>'}</span>
                 </div>
                 <div style="display:flex;justify-content:space-between;">
                   <span class="text-gray">Provider Status:</span>
-                  <span class="text-green font-medium">Ready via RESEND_API_KEY</span>
+                  <span class="${resendConfigured ? 'text-green font-medium' : 'text-gray font-medium'}">${resendConfigured ? 'Ready via RESEND_API_KEY' : 'RESEND_API_KEY pending'}</span>
                 </div>
               </div>
             </div>
 
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button class="btn btn-primary btn-sm flex-1" onclick="window.app.sendResendTestEmail('crm567625@gmail.com')">Send Test Email</button>
+              <button class="btn btn-primary btn-sm flex-1" onclick="window.app.promptResendTestEmail()">Send Test Email</button>
             </div>
           </div>
 
@@ -7031,7 +7005,9 @@ class MetaCRMApp {
                     <span class="text-xs text-gray">Official Gmail REST API OAuth</span>
                   </div>
                 </div>
-                <span class="badge badge-success" style="font-size:11px;">Connected</span>
+                ${isGoogleConnected 
+                  ? '<span class="badge badge-success" style="font-size:11px;">Connected</span>' 
+                  : '<span class="badge badge-secondary" style="font-size:11px;">Not Connected</span>'}
               </div>
 
               <p class="text-xs text-gray" style="line-height:1.5;margin-bottom:12px;">
@@ -7039,32 +7015,40 @@ class MetaCRMApp {
               </p>
 
               <div style="background:#F8FAFC;border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:11px;margin-bottom:16px;">
-                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-                  <span class="text-gray">Connected Email:</span>
-                  <strong>support@technova-solutions.com</strong>
-                </div>
-                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-                  <span class="text-gray">Synced Messages:</span>
-                  <span>142 emails linked to CRM</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;">
-                  <span class="text-gray">Sync Health:</span>
-                  <span class="text-green font-medium">Healthy (Token valid)</span>
-                </div>
+                ${isGoogleConnected ? `
+                  <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                    <span class="text-gray">Connected Account:</span>
+                    <strong>${escapeHtml(googleInt.email || googleInt.name || 'Connected')}</strong>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                    <span class="text-gray">Synced Messages:</span>
+                    <span>${googleMsgCount} emails linked to CRM</span>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;">
+                    <span class="text-gray">Sync Health:</span>
+                    <span class="text-green font-medium">Healthy (Token valid)</span>
+                  </div>
+                ` : `
+                  <div class="text-gray" style="line-height:1.4;">
+                    No Google account connected. Connect Gmail to synchronize customer email threads directly to leads.
+                  </div>
+                `}
               </div>
             </div>
 
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button class="btn btn-primary btn-sm flex-1" onclick="window.app.connectEmailOAuth('google')">Connect / Re-authorize</button>
-              <button class="btn btn-secondary btn-sm" onclick="window.app.syncIntegrationUI('int_google_email_01')">Sync</button>
-              ${isAdmin ? `
-                <button class="btn btn-secondary btn-sm" onclick="window.app.openAssignStaffModal('int_google_email_01')">Assign Staff</button>
-                <button class="btn btn-ghost btn-sm text-red-500" onclick="window.app.disconnectIntegrationUI('int_google_email_01')">Disconnect</button>
+              <button class="btn btn-primary btn-sm flex-1" onclick="window.app.connectEmailOAuth('google')">${isGoogleConnected ? 'Re-authorize Account' : 'Connect Gmail'}</button>
+              ${isGoogleConnected ? `
+                <button class="btn btn-secondary btn-sm" onclick="window.app.syncIntegrationUI('${googleInt.id}')">Sync</button>
+                ${isAdmin ? `
+                  <button class="btn btn-secondary btn-sm" onclick="window.app.openAssignStaffModal('${googleInt.id}')">Assign Staff</button>
+                  <button class="btn btn-ghost btn-sm text-red-500" onclick="window.app.disconnectIntegrationUI('${googleInt.id}')">Disconnect</button>
+                ` : ''}
               ` : ''}
             </div>
           </div>
 
-          <!-- CARD 3: MICROSOFT 365 / OUTLOOK -->
+          <!-- CARD 4: MICROSOFT 365 / OUTLOOK -->
           <div class="card" style="padding:20px;display:flex;flex-direction:column;justify-content:space-between;border-top:3px solid #0078D4;">
             <div>
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
@@ -7077,7 +7061,9 @@ class MetaCRMApp {
                     <span class="text-xs text-gray">Microsoft Graph API OAuth</span>
                   </div>
                 </div>
-                <span class="badge badge-success" style="font-size:11px;">Connected</span>
+                ${isMsConnected 
+                  ? '<span class="badge badge-success" style="font-size:11px;">Connected</span>' 
+                  : '<span class="badge badge-secondary" style="font-size:11px;">Not Connected</span>'}
               </div>
 
               <p class="text-xs text-gray" style="line-height:1.5;margin-bottom:12px;">
@@ -7085,32 +7071,40 @@ class MetaCRMApp {
               </p>
 
               <div style="background:#F8FAFC;border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:11px;margin-bottom:16px;">
-                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-                  <span class="text-gray">Connected Email:</span>
-                  <strong>sales@technova-corp.onmicrosoft.com</strong>
-                </div>
-                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-                  <span class="text-gray">Tenant ID:</span>
-                  <span class="font-mono">829a14-msft-entra</span>
-                </div>
-                <div style="display:flex;justify-content:space-between;">
-                  <span class="text-gray">Last Sync:</span>
-                  <span>25 mins ago</span>
-                </div>
+                ${isMsConnected ? `
+                  <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                    <span class="text-gray">Connected Account:</span>
+                    <strong>${escapeHtml(msInt.email || msInt.name || 'Connected')}</strong>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                    <span class="text-gray">Tenant:</span>
+                    <span class="font-mono">${escapeHtml(msInt.tenant_id || 'Active')}</span>
+                  </div>
+                  <div style="display:flex;justify-content:space-between;">
+                    <span class="text-gray">Last Sync:</span>
+                    <span>${msInt.last_sync_at ? this.formatRelativeTime(msInt.last_sync_at) : 'Not synced yet'}</span>
+                  </div>
+                ` : `
+                  <div class="text-gray" style="line-height:1.4;">
+                    No Microsoft 365 account connected. Connect Outlook to sync your team's sales communications.
+                  </div>
+                `}
               </div>
             </div>
 
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button class="btn btn-primary btn-sm flex-1" onclick="window.app.connectEmailOAuth('microsoft')">Connect / Re-authorize</button>
-              <button class="btn btn-secondary btn-sm" onclick="window.app.syncIntegrationUI('int_ms_email_01')">Sync</button>
-              ${isAdmin ? `
-                <button class="btn btn-secondary btn-sm" onclick="window.app.openAssignStaffModal('int_ms_email_01')">Assign Staff</button>
-                <button class="btn btn-ghost btn-sm text-red-500" onclick="window.app.disconnectIntegrationUI('int_ms_email_01')">Disconnect</button>
+              <button class="btn btn-primary btn-sm flex-1" onclick="window.app.connectEmailOAuth('microsoft')">${isMsConnected ? 'Re-authorize Account' : 'Connect Microsoft 365'}</button>
+              ${isMsConnected ? `
+                <button class="btn btn-secondary btn-sm" onclick="window.app.syncIntegrationUI('${msInt.id}')">Sync</button>
+                ${isAdmin ? `
+                  <button class="btn btn-secondary btn-sm" onclick="window.app.openAssignStaffModal('${msInt.id}')">Assign Staff</button>
+                  <button class="btn btn-ghost btn-sm text-red-500" onclick="window.app.disconnectIntegrationUI('${msInt.id}')">Disconnect</button>
+                ` : ''}
               ` : ''}
             </div>
           </div>
 
-          <!-- CARD 4: FACEBOOK PAGES & LEAD ADS WEBHOOK -->
+          <!-- CARD 5: FACEBOOK PAGES & LEAD ADS WEBHOOK -->
           <div class="card" style="padding:20px;display:flex;flex-direction:column;justify-content:space-between;border-top:3px solid #059669;">
             <div>
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
@@ -7123,7 +7117,7 @@ class MetaCRMApp {
                     <span class="text-xs text-gray">Real-time LeadGen Webhook</span>
                   </div>
                 </div>
-                <span class="badge badge-success" style="font-size:11px;">Active</span>
+                <span class="badge ${pages.length > 0 ? 'badge-success' : 'badge-secondary'}" style="font-size:11px;">${pages.length > 0 ? 'Active' : 'No Pages'}</span>
               </div>
 
               <p class="text-xs text-gray" style="line-height:1.5;margin-bottom:12px;">
@@ -7164,35 +7158,25 @@ class MetaCRMApp {
                   <th>Integration</th>
                   <th>Action / Event</th>
                   <th>Status</th>
-                  <th>Duration</th>
-                  <th>Records Synced</th>
+                  <th>Details</th>
                 </tr>
               </thead>
               <tbody>
-                <tr>
-                  <td class="text-xs font-mono">${new Date(Date.now() - 3 * 60 * 1000).toLocaleTimeString()}</td>
-                  <td class="text-xs font-semibold">Meta Lead Ads Webhook</td>
-                  <td class="text-xs">Webhook dispatch (leadgen_id: 910294812)</td>
-                  <td><span class="badge badge-success" style="font-size:10px;">SUCCESS</span></td>
-                  <td class="text-xs">142ms</td>
-                  <td class="text-xs">1 Lead inserted</td>
-                </tr>
-                <tr>
-                  <td class="text-xs font-mono">${new Date(Date.now() - 15 * 60 * 1000).toLocaleTimeString()}</td>
-                  <td class="text-xs font-semibold">Meta Ads Marketing API</td>
-                  <td class="text-xs">Campaigns &amp; Insights batch poll</td>
-                  <td><span class="badge badge-success" style="font-size:10px;">SUCCESS</span></td>
-                  <td class="text-xs">680ms</td>
-                  <td class="text-xs">3 Campaigns, 6 Ads</td>
-                </tr>
-                <tr>
-                  <td class="text-xs font-mono">${new Date(Date.now() - 25 * 60 * 1000).toLocaleTimeString()}</td>
-                  <td class="text-xs font-semibold">Google Workspace (Gmail)</td>
-                  <td class="text-xs">Periodic mailbox synchronization</td>
-                  <td><span class="badge badge-success" style="font-size:10px;">SUCCESS</span></td>
-                  <td class="text-xs">310ms</td>
-                  <td class="text-xs">4 Messages fetched</td>
-                </tr>
+                ${syncLogs.length > 0 ? syncLogs.map(l => `
+                  <tr>
+                    <td class="text-xs font-mono">${escapeHtml(l.created_at ? new Date(l.created_at).toLocaleTimeString() : (l.timestamp || '—'))}</td>
+                    <td class="text-xs font-semibold">${escapeHtml(l.entity_type || l.integration || 'System')}</td>
+                    <td class="text-xs">${escapeHtml(l.action || 'Sync')}</td>
+                    <td><span class="badge badge-success" style="font-size:10px;">SUCCESS</span></td>
+                    <td class="text-xs">${escapeHtml(l.details || '—')}</td>
+                  </tr>
+                `).join('') : `
+                  <tr>
+                    <td colspan="5" class="text-center text-xs text-gray" style="padding:28px 16px;">
+                      No integration synchronization logs yet. Activity will appear here once sync events take place.
+                    </td>
+                  </tr>
+                `}
               </tbody>
             </table>
           </div>
@@ -7218,7 +7202,21 @@ class MetaCRMApp {
     }, 400);
   }
 
-  async sendResendTestEmail(targetEmail = 'crm567625@gmail.com') {
+  async promptResendTestEmail() {
+    const defaultEmail = (this.user && this.user.email) || '';
+    const target = window.prompt('Enter recipient email address for test message:', defaultEmail);
+    if (!target || !target.trim()) return;
+    await this.sendResendTestEmail(target.trim());
+  }
+
+  async sendResendTestEmail(targetEmail) {
+    if (!targetEmail) {
+      targetEmail = (this.user && this.user.email) || '';
+    }
+    if (!targetEmail) {
+      this.toast('Please provide a valid recipient email address.', 'warning');
+      return;
+    }
     this.toast(`Dispatching test email via Resend to ${targetEmail}…`, 'info');
     try {
       const resp = await fetch(`/api/email?path=test-resend&to=${encodeURIComponent(targetEmail)}`);

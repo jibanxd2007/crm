@@ -218,7 +218,7 @@ async function metaCampaignsUnifiedHandler(req, res) {
   // D. AD SETS & ADS DRILLDOWN MODES
   // --------------------------------------------------------------------------
   if (action === 'adsets' || url.includes('/adsets')) {
-    const { ad_account_id = 'act_104829104812', date_preset = 'last_30d', campaign_id } = query;
+    const { ad_account_id = process.env.META_AD_ACCOUNT_ID || '', date_preset = 'last_30d', campaign_id } = query;
     if (!token) {
       return res.status(200).json({ status: "success", count: 0, adSets: [], message: "Meta token not configured" });
     }
@@ -259,7 +259,7 @@ async function metaCampaignsUnifiedHandler(req, res) {
   }
 
   if (action === 'ads' || url.includes('/ads')) {
-    const { ad_account_id = 'act_104829104812', date_preset = 'last_30d', adset_id, campaign_id } = query;
+    const { ad_account_id = process.env.META_AD_ACCOUNT_ID || '', date_preset = 'last_30d', adset_id, campaign_id } = query;
     if (!token) {
       return res.status(200).json({ status: "success", count: 0, ads: [], message: "Meta token not configured" });
     }
@@ -305,7 +305,7 @@ async function metaCampaignsUnifiedHandler(req, res) {
   // D. CAMPAIGNS MODE (/api/meta/campaigns)
   // --------------------------------------------------------------------------
   if (req.method === 'GET') {
-    const { ad_account_id = 'act_104829104812', date_preset = 'last_30d' } = query;
+    const { ad_account_id = process.env.META_AD_ACCOUNT_ID || '', date_preset = 'last_30d' } = query;
 
     if (!token) {
       let connectedAccounts = [];
@@ -425,7 +425,7 @@ async function metaCampaignsUnifiedHandler(req, res) {
         status: status || 'ACTIVE',
         objective: objective || 'OUTCOME_LEADS',
         daily_budget: daily_budget ? Number(daily_budget) : 50,
-        account_id: account_id || '1342542735606057',
+        account_id: account_id || process.env.META_AD_ACCOUNT_ID || '',
         metrics: { spend: 0, impressions: 0, reach: 0, clicks: 0, ctr: 0, cpc: 0, cpm: 0, leads: 0, cost_per_lead: 0 }
       };
       if (supabase) {

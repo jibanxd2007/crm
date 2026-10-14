@@ -1,25 +1,17 @@
 import React, { useState } from 'react';
 import { 
-  Search, 
   LayoutDashboard, 
-  FolderKanban, 
   Users, 
   Settings, 
   LogOut,
-  Hash,
   ChevronDown,
   ChevronRight,
   Inbox,
   Calendar,
-  Activity,
-  CreditCard,
-  Globe,
-  Terminal,
-  Blocks,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Command,
-  X
+  Layers,
+  Facebook,
+  Instagram,
+  Zap
 } from 'lucide-react';
 
 export type NavItemData = {
@@ -36,67 +28,41 @@ export type NavGroupData = {
   items: NavItemData[];
 };
 
-export const mockNavGroups: NavGroupData[] = [
+export const crmNavGroups: NavGroupData[] = [
   {
     items: [
-      { id: 'search', title: 'Search', icon: Search, shortcut: '⌘K' },
-      { id: 'home', title: 'Home', icon: LayoutDashboard },
-      { id: 'inbox', title: 'Inbox', icon: Inbox, badge: 12 },
-      { id: 'analytics', title: 'Analytics', icon: Activity },
+      { id: 'dashboard', title: 'Dashboard', icon: LayoutDashboard, shortcut: '⌘D' },
+      { id: 'leads', title: 'Leads', icon: Users, shortcut: '⌘L' },
+      { id: 'inbox', title: 'Messages', icon: Inbox, shortcut: '⌘M' },
+      { id: 'pipeline', title: 'Pipelines', icon: Layers, shortcut: '⌘P' },
     ]
   },
   {
-    heading: 'Workspace',
+    heading: 'Management',
     items: [
+      { id: 'tasks', title: 'Follow-ups', icon: Calendar, shortcut: '⌘T' },
       { 
-        id: 'projects', 
-        title: 'Projects', 
-        icon: FolderKanban,
+        id: 'channels', 
+        title: 'Meta Channels', 
+        icon: Facebook,
         children: [
-          { id: 'p-active', title: 'Active', icon: Hash },
-          { id: 'p-archived', title: 'Archived', icon: Hash },
+          { id: 'fb-pages', title: 'Facebook Pages', icon: Facebook },
+          { id: 'ig-accounts', title: 'Instagram Direct', icon: Instagram },
         ]
       },
-      { id: 'calendar', title: 'Calendar', icon: Calendar },
-      { 
-        id: 'team', 
-        title: 'Team', 
-        icon: Users,
-        children: [
-          { id: 't-design', title: 'Designers', icon: Hash },
-          { id: 't-eng', title: 'Engineering', icon: Hash },
-          { id: 't-product', title: 'Product', icon: Hash },
-        ]
-      },
-      { 
-        id: 'customers', 
-        title: 'Customers', 
-        icon: Globe,
-        children: [
-          { id: 'c-enterprise', title: 'Enterprise', icon: Hash },
-          { id: 'c-smb', title: 'SMB', icon: Hash },
-        ]
-      },
-      { id: 'finance', title: 'Finance', icon: CreditCard },
-    ]
-  },
-  {
-    heading: 'Developers',
-    items: [
-      { id: 'api', title: 'API Keys', icon: Terminal },
-      { id: 'webhooks', title: 'Webhooks', icon: Blocks },
+      { id: 'integrations', title: 'Integrations', icon: Zap },
     ]
   }
 ];
 
-export const mockBottomItems: NavItemData[] = [
+export const crmBottomItems: NavItemData[] = [
   { id: 'settings', title: 'Settings', icon: Settings, shortcut: '⌘,' },
   { id: 'logout', title: 'Log out', icon: LogOut },
 ];
 
 export function WorkspaceSwitcher({ selected, onSelect }: { selected?: string, onSelect?: (ws: string) => void }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [internalSelected, setInternalSelected] = useState('Acme Corp');
+  const [internalSelected, setInternalSelected] = useState('MetaCRM Workspace');
   
   const current = selected || internalSelected;
   const handleSelect = onSelect || setInternalSelected;
@@ -113,7 +79,7 @@ export function WorkspaceSwitcher({ selected, onSelect }: { selected?: string, o
           </div>
           <div className="flex flex-col overflow-hidden">
             <span className="text-[13px] font-medium leading-none mb-1 text-foreground truncate max-w-[120px]">{current}</span>
-            <span className="text-[11px] text-muted-foreground leading-none">Pro Plan</span>
+            <span className="text-[11px] text-muted-foreground leading-none">Production Plan</span>
           </div>
         </div>
         <ChevronDown className="w-4 h-4 text-muted-foreground/50 group-hover:text-foreground/70 transition-colors shrink-0" strokeWidth={1.5} />
@@ -123,7 +89,7 @@ export function WorkspaceSwitcher({ selected, onSelect }: { selected?: string, o
         <>
           <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
           <div className="absolute top-[52px] left-0 w-full bg-card border border-border/50 rounded-lg shadow-xl z-50 py-1 flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-100">
-            {['Acme Corp', 'Personal Workspace', 'Client Sandbox'].map(ws => (
+            {['MetaCRM Workspace', 'Production CRM'].map(ws => (
               <div 
                 key={ws}
                 onClick={() => { handleSelect(ws); setIsOpen(false); }}
@@ -250,7 +216,7 @@ export function SidebarNav({
   activeWorkspace?: string,
   onWorkspaceSelect?: (ws: string) => void
 }) {
-  const [internalId, setInternalId] = useState('home');
+  const [internalId, setInternalId] = useState('dashboard');
   const currentId = activeId !== undefined ? activeId : internalId;
   const handleSelect = onSelect || setInternalId;
 
@@ -259,7 +225,7 @@ export function SidebarNav({
       <WorkspaceSwitcher selected={activeWorkspace} onSelect={onWorkspaceSelect} />
 
       <div className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] flex flex-col gap-4 mt-2">
-        {mockNavGroups.map((group, idx) => (
+        {crmNavGroups.map((group, idx) => (
           <div key={idx} className="flex flex-col gap-0.5">
             {group.heading && (
               <span className="px-2.5 mb-1 text-[11px] font-semibold tracking-wider text-muted-foreground/50 uppercase">
@@ -279,7 +245,7 @@ export function SidebarNav({
       </div>
 
       <div className="mt-auto pt-4 border-t border-border/50 flex flex-col gap-0.5">
-        {mockBottomItems.map(item => (
+        {crmBottomItems.map(item => (
           <NavItem 
             key={item.id} 
             item={item} 
@@ -292,128 +258,4 @@ export function SidebarNav({
   );
 }
 
-const allItems = [...mockNavGroups.flatMap(g => g.items), ...mockBottomItems];
-const flattenItems = (items: NavItemData[]): NavItemData[] => {
-  return items.reduce((acc, item) => {
-    acc.push(item);
-    if (item.children) acc.push(...flattenItems(item.children));
-    return acc;
-  }, [] as NavItemData[]);
-};
-const flatMockData = flattenItems(allItems);
-
-export default function SidebarNavPreview() {
-  const [isOpen, setIsOpen] = useState(true);
-  const [activeId, setActiveId] = useState('home');
-  const [activeWorkspace, setActiveWorkspace] = useState('Acme Corp');
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
-
-  const activeItem = flatMockData.find(i => i.id === activeId);
-  const activeTitle = activeItem ? activeItem.title : 'Dashboard';
-
-  const handleSelect = (id: string) => {
-    if (id === 'search') {
-      setIsSearchOpen(true);
-      return;
-    }
-    setActiveId(id);
-  };
-
-  return (
-    <div className="flex flex-col items-center justify-center w-full min-h-[700px] bg-background p-4 md:p-8">
-      <div className="relative w-full max-w-4xl h-[700px] bg-card rounded-xl border border-border/50 flex overflow-hidden shadow-sm ring-1 ring-black/5 dark:ring-white/5">
-        <div 
-          className={`h-full transition-all duration-300 ease-in-out shrink-0 overflow-hidden bg-card/50 border-r border-border/50 ${
-            isOpen ? 'w-[260px] opacity-100' : 'w-0 opacity-0 border-none'
-          }`}
-        >
-          <SidebarNav 
-            className="w-[260px] border-none bg-transparent" 
-            activeId={activeId}
-            onSelect={handleSelect}
-            activeWorkspace={activeWorkspace}
-            onWorkspaceSelect={setActiveWorkspace}
-          />
-        </div>
-        
-        <div className="flex-1 bg-black/[0.02] dark:bg-white/[0.02] flex flex-col min-w-0 transition-all duration-300">
-           <div className="h-14 border-b border-border/50 flex items-center px-4 justify-between bg-card shrink-0">
-             <div className="flex items-center gap-3">
-               <button 
-                 onClick={() => setIsOpen(!isOpen)}
-                 className="p-1.5 rounded-md text-muted-foreground hover:bg-black/5 dark:hover:bg-white/5 hover:text-foreground transition-colors"
-               >
-                 {isOpen ? <PanelLeftClose className="w-[18px] h-[18px]" strokeWidth={1.5} /> : <PanelLeftOpen className="w-[18px] h-[18px]" strokeWidth={1.5} />}
-               </button>
-               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                 <span className="truncate">{activeWorkspace}</span>
-                 <span>/</span>
-                 <span className="font-medium text-foreground truncate">{activeTitle}</span>
-               </div>
-             </div>
-             
-             <div className="flex items-center gap-3">
-               <div className="w-64 h-8 bg-black/5 dark:bg-white/5 rounded-md hidden md:block" />
-               <div className="w-8 h-8 bg-primary/10 rounded-full border border-primary/20" />
-             </div>
-           </div>
-
-           <div className="p-6 md:p-8 overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-             <div className="flex items-center justify-between mb-8">
-               <div className="w-48 h-8 bg-black/5 dark:bg-white/5 rounded-md" />
-             </div>
-             
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-               <div className="h-32 bg-card rounded-xl border border-border/50 shadow-sm" />
-               <div className="h-32 bg-card rounded-xl border border-border/50 shadow-sm" />
-             </div>
-
-             <div className="w-full bg-card rounded-xl border border-border/50 shadow-sm p-6">
-                <div className="w-1/3 h-5 bg-black/5 dark:bg-white/5 rounded-md mb-6" />
-                <div className="w-full h-[1px] bg-border/50 mb-6" />
-                
-                <div className="flex flex-col gap-4">
-                  <div className="w-full h-12 bg-black/5 dark:bg-white/5 rounded-lg" />
-                  <div className="w-full h-12 bg-black/5 dark:bg-white/5 rounded-lg" />
-                  <div className="w-full h-12 bg-black/5 dark:bg-white/5 rounded-lg" />
-                  <div className="w-full h-12 bg-black/5 dark:bg-white/5 rounded-lg" />
-               </div>
-             </div>
-           </div>
-        </div>
-
-        {isSearchOpen && (
-          <div className="absolute inset-0 z-50 flex items-start justify-center pt-[15vh] bg-background/40 backdrop-blur-sm px-4">
-            <div className="absolute inset-0" onClick={() => setIsSearchOpen(false)} />
-            <div className="relative w-full max-w-xl bg-card border border-border/50 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-              <div className="flex items-center px-4 border-b border-border/50">
-                <Search className="w-[18px] h-[18px] text-muted-foreground/70 mr-3 shrink-0" strokeWidth={1.5} />
-                <input 
-                  autoFocus
-                  className="flex-1 bg-transparent py-4 outline-none text-[14px] text-foreground placeholder:text-muted-foreground/50"
-                  placeholder="Search projects, docs, or actions..."
-                />
-                <kbd 
-                  onClick={() => setIsSearchOpen(false)}
-                  className="hidden sm:inline-flex items-center justify-center h-5 px-1.5 ml-2 text-[10px] font-medium font-mono text-muted-foreground/70 bg-black/5 dark:bg-white/10 border border-black/10 dark:border-white/10 rounded-[4px] cursor-pointer hover:text-foreground hover:bg-black/10 dark:hover:bg-white/20 transition-colors"
-                >
-                  ESC
-                </kbd>
-                <button 
-                  onClick={() => setIsSearchOpen(false)}
-                  className="ml-3 p-1 rounded-md text-muted-foreground/70 hover:bg-black/5 dark:hover:bg-white/10 hover:text-foreground transition-colors"
-                >
-                  <X className="w-[18px] h-[18px]" strokeWidth={1.5} />
-                </button>
-              </div>
-              <div className="p-2 py-8 flex flex-col items-center justify-center">
-                 <Command className="w-6 h-6 text-muted-foreground/30 mb-2" strokeWidth={1.5} />
-                 <p className="text-[13px] text-muted-foreground font-medium">Type a command or search...</p>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+export default SidebarNav;

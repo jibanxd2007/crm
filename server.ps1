@@ -843,63 +843,7 @@ while ($listener.IsListening) {
             # /api/integrations
             if ($urlPath -eq "/api/integrations" -or $urlPath.StartsWith("/api/integrations/")) {
                 if ($request.HttpMethod -eq "GET") {
-                    $integrations = @(
-                        @{
-                            id = "int_meta_ads_01";
-                            provider = "meta_ads";
-                            account_id = "act_104829104812";
-                            account_name = "TechNova Meta Ads Portfolio";
-                            status = "connected";
-                            scopes = @("ads_read", "ads_management", "leads_retrieval", "business_management");
-                            assigned_staff_ids = @("admin", "rahul", "amit");
-                            last_synced_at = (Get-Date).AddMinutes(-15).ToString("o");
-                            next_sync_at = (Get-Date).AddMinutes(45).ToString("o");
-                            last_error = $null;
-                            metadata = @{
-                                business_name = "TechNova Solutions Ltd";
-                                currency = "INR";
-                                timezone = "Asia/Kolkata";
-                                ad_accounts_count = 2;
-                                pages_count = 2
-                            }
-                        },
-                        @{
-                            id = "int_google_email_01";
-                            provider = "google_email";
-                            account_id = "sales@technova.io";
-                            account_name = "TechNova Sales (Google Workspace)";
-                            status = "connected";
-                            scopes = @("gmail.readonly", "gmail.send", "userinfo.email");
-                            assigned_staff_ids = @("admin", "rahul");
-                            last_synced_at = (Get-Date).AddMinutes(-5).ToString("o");
-                            next_sync_at = (Get-Date).AddMinutes(25).ToString("o");
-                            last_error = $null;
-                            metadata = @{
-                                provider = "google";
-                                email = "sales@technova.io";
-                                unread_count = 4;
-                                total_messages = 128
-                            }
-                        },
-                        @{
-                            id = "int_ms_email_01";
-                            provider = "microsoft_email";
-                            account_id = "support@technova.onmicrosoft.com";
-                            account_name = "TechNova Support (Microsoft 365)";
-                            status = "connected";
-                            scopes = @("Mail.ReadWrite", "Mail.Send", "User.Read");
-                            assigned_staff_ids = @("admin", "amit", "priya");
-                            last_synced_at = (Get-Date).AddMinutes(-30).ToString("o");
-                            next_sync_at = (Get-Date).AddMinutes(30).ToString("o");
-                            last_error = $null;
-                            metadata = @{
-                                provider = "microsoft";
-                                email = "support@technova.onmicrosoft.com";
-                                unread_count = 1;
-                                total_messages = 64
-                            }
-                        }
-                    )
+                    $integrations = @()
                     Send-JsonResponse $response 200 @{
                         status = "success";
                         authorized = $true;
@@ -955,87 +899,15 @@ while ($listener.IsListening) {
                     $qEmail = $request.QueryString["email"]
                     $qFolder = if ($request.QueryString["folder"]) { $request.QueryString["folder"] } else { "inbox" }
 
-                    $mockEmails = @(
-                        @{
-                            id = "em_001";
-                            account_id = "int_google_email_01";
-                            provider_message_id = "msg_g_101";
-                            thread_id = "th_g_101";
-                            folder = "inbox";
-                            direction = "incoming";
-                            from_address = "arjun.nair@enterprise.in";
-                            from_name = "Arjun Nair";
-                            to_addresses = @("sales@technova.io");
-                            subject = "Inquiry: Cloud Migration Package & Consultation Schedule";
-                            snippet = "Hello TechNova team, we saw your recent Facebook campaign regarding enterprise cloud migrations and would love to schedule a demo...";
-                            body_html = "<p>Hello TechNova team,</p><p>We saw your recent Facebook campaign regarding enterprise cloud migrations and would love to schedule a demo for our technical leads this Thursday.</p><p>Could you please provide your standard SLA terms and pricing sheets?</p><p>Best regards,<br><strong>Arjun Nair</strong></p>";
-                            body_text = "Hello TechNova team, we saw your recent Facebook campaign regarding enterprise cloud migrations and would love to schedule a demo for our technical leads this Thursday. Best regards, Arjun Nair";
-                            has_attachments = $true;
-                            attachments = @(@{ name = "RFP_Requirements.pdf"; size = "1.2 MB"; type = "application/pdf" });
-                            is_read = $false;
-                            delivery_status = "delivered";
-                            lead_id = "lead_01";
-                            received_at = (Get-Date).AddMinutes(-35).ToString("o")
-                        },
-                        @{
-                            id = "em_002";
-                            account_id = "int_google_email_01";
-                            provider_message_id = "msg_g_102";
-                            thread_id = "th_g_102";
-                            folder = "inbox";
-                            direction = "incoming";
-                            from_address = "priya.sharma@designcraft.co";
-                            from_name = "Priya Sharma";
-                            to_addresses = @("sales@technova.io");
-                            subject = "Partnership Proposal: Digital Marketing & Creative Assets";
-                            snippet = "Hi Sales Team, following up on our Instagram message from yesterday. We have prepared the scope of work document...";
-                            body_html = "<p>Hi Sales Team,</p><p>Following up on our Instagram message from yesterday. We have prepared the scope of work document and wanted to align on delivery timelines.</p><p>Warmly,<br><strong>Priya Sharma</strong></p>";
-                            body_text = "Hi Sales Team, Following up on our Instagram message from yesterday. We have prepared the scope of work document and wanted to align on delivery timelines. Warmly, Priya Sharma";
-                            has_attachments = $false;
-                            attachments = @();
-                            is_read = $true;
-                            delivery_status = "delivered";
-                            lead_id = "lead_02";
-                            received_at = (Get-Date).AddHours(-2).ToString("o")
-                        },
-                        @{
-                            id = "em_003";
-                            account_id = "int_google_email_01";
-                            provider_message_id = "msg_g_103";
-                            thread_id = "th_g_101";
-                            folder = "sent";
-                            direction = "outgoing";
-                            from_address = "sales@technova.io";
-                            from_name = "TechNova Sales";
-                            to_addresses = @("arjun.nair@enterprise.in");
-                            subject = "Re: Inquiry: Cloud Migration Package & Consultation Schedule";
-                            snippet = "Hi Arjun, thank you for reaching out! We would be delighted to host the consultation this Thursday at 3 PM IST...";
-                            body_html = "<p>Hi Arjun,</p><p>Thank you for reaching out! We would be delighted to host the consultation this Thursday at 3:00 PM IST.</p><p>Attached is our comprehensive enterprise brochure and standard SLA commitment.</p><p>Regards,<br><strong>TechNova Client Success Team</strong></p>";
-                            body_text = "Hi Arjun, Thank you for reaching out! We would be delighted to host the consultation this Thursday at 3:00 PM IST. Regards, TechNova Client Success Team";
-                            has_attachments = $true;
-                            attachments = @(@{ name = "TechNova_Enterprise_Cloud_2026.pdf"; size = "3.4 MB"; type = "application/pdf" });
-                            is_read = $true;
-                            delivery_status = "delivered";
-                            lead_id = "lead_01";
-                            sent_at = (Get-Date).AddMinutes(-15).ToString("o");
-                            received_at = (Get-Date).AddMinutes(-15).ToString("o")
-                        }
-                    )
-
-                    $filteredEmails = $mockEmails
-                    if ($qEmail) {
-                        $filteredEmails = @($mockEmails | Where-Object { $_.from_address.ToLower().Contains($qEmail.ToLower()) -or $_.to_addresses -contains $qEmail })
-                    } elseif ($qFolder -and $qFolder -ne "all") {
-                        $filteredEmails = @($mockEmails | Where-Object { $_.folder -eq $qFolder })
-                    }
+                    $filteredEmails = @()
 
                     Send-JsonResponse $response 200 @{
                         status = "success";
                         folder = $qFolder;
-                        count = $filteredEmails.Count;
-                        unreadCount = (@($filteredEmails | Where-Object { -not $_.is_read })).Count;
+                        count = 0;
+                        unreadCount = 0;
                         messages = $filteredEmails;
-                        pagination = @{ limit = 50; offset = 0; total = $filteredEmails.Count }
+                        pagination = @{ limit = 50; offset = 0; total = 0 }
                     }
                     continue
                 }
@@ -1052,8 +924,8 @@ while ($listener.IsListening) {
                         provider_message_id = "pmsg_" + (Get-Random);
                         folder = "sent";
                         direction = "outgoing";
-                        from_address = "sales@technova.io";
-                        from_name = "TechNova Sales";
+                        from_address = if ($bJson.from) { $bJson.from } else { "notifications@crm.local" };
+                        from_name = if ($bJson.from_name) { $bJson.from_name } else { "CRM System" };
                         to_addresses = if ($bJson.to) { @($bJson.to) } else { @("customer@example.com") };
                         subject = if ($bJson.subject) { $bJson.subject } else { "(No subject)" };
                         body_html = if ($bJson.body) { $bJson.body } else { "" };
@@ -1080,205 +952,22 @@ while ($listener.IsListening) {
                 $qAction = $request.QueryString["action"]
 
                 if ($qAction -eq "adsets" -or $urlPath.Contains("/adsets")) {
-                    $adSets = @(
-                        @{
-                            id = 'adset_01';
-                            name = 'CTO and Decision Makers - Pan India';
-                            campaign_id = 'cmp_leadgen_01';
-                            status = 'ACTIVE';
-                            daily_budget = 1500;
-                            metrics = @{
-                                spend = 24500.00;
-                                impressions = 94000;
-                                clicks = 3120;
-                                ctr = 3.32;
-                                cpc = 7.85;
-                                cpm = 260.64;
-                                leads = 28;
-                                cost_per_lead = 875.00
-                            }
-                        },
-                        @{
-                            id = 'adset_02';
-                            name = 'DevOps and Cloud Engineers - Lookalike 2%';
-                            campaign_id = 'cmp_leadgen_01';
-                            status = 'ACTIVE';
-                            daily_budget = 1200;
-                            metrics = @{
-                                spend = 20500.00;
-                                impressions = 78000;
-                                clicks = 2380;
-                                ctr = 3.05;
-                                cpc = 8.61;
-                                cpm = 262.82;
-                                leads = 17;
-                                cost_per_lead = 1205.88
-                            }
-                        },
-                        @{
-                            id = 'adset_03';
-                            name = 'Luxury Decor Enthusiasts - Metro Cities';
-                            campaign_id = 'cmp_leadgen_02';
-                            status = 'ACTIVE';
-                            daily_budget = 1000;
-                            metrics = @{
-                                spend = 32000.00;
-                                impressions = 142000;
-                                clicks = 4850;
-                                ctr = 3.42;
-                                cpc = 6.60;
-                                cpm = 225.35;
-                                leads = 22;
-                                cost_per_lead = 1454.55
-                            }
-                        }
-                    )
-                    Send-JsonResponse $response 200 @{ status = 'success'; count = $adSets.Count; adSets = $adSets }
+                    $adSets = @()
+                    Send-JsonResponse $response 200 @{ status = 'success'; count = 0; adSets = $adSets }
                     continue
                 }
 
                 if ($qAction -eq 'ads' -or $urlPath.Contains('/ads')) {
-                    $ads = @(
-                        @{
-                            id = 'ad_01';
-                            name = 'Video: Cloud Modernization Case Study';
-                            adset_id = 'adset_01';
-                            campaign_id = 'cmp_leadgen_01';
-                            status = 'ACTIVE';
-                            creative = @{
-                                title = 'Cut Cloud Costs by 35% in 90 Days';
-                                body = 'Enterprise grade migrations with zero downtime. Get a customized cost roadmap.';
-                                image_url = 'https://images.unsplash.com/photo-1451187580459-43490279c0fa'
-                            };
-                            metrics = @{
-                                spend = 14200.00;
-                                impressions = 56000;
-                                clicks = 1920;
-                                ctr = 3.43;
-                                cpc = 7.40;
-                                cpm = 253.57;
-                                leads = 18;
-                                cost_per_lead = 788.89
-                            }
-                        },
-                        @{
-                            id = 'ad_02';
-                            name = 'Carousel: 5 Cloud Architecture Patterns';
-                            adset_id = 'adset_01';
-                            campaign_id = 'cmp_leadgen_01';
-                            status = 'ACTIVE';
-                            creative = @{
-                                title = 'Free Architecture Review and SLA Blueprint';
-                                body = 'Download our battle-tested blueprints trusted by 100+ high-growth companies.';
-                                image_url = 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31'
-                            };
-                            metrics = @{
-                                spend = 10300.00;
-                                impressions = 38000;
-                                clicks = 1200;
-                                ctr = 3.16;
-                                cpc = 8.58;
-                                cpm = 271.05;
-                                leads = 10;
-                                cost_per_lead = 1030.00
-                            }
-                        },
-                        @{
-                            id = 'ad_03';
-                            name = 'Image: Minimalist Living Room Setup';
-                            adset_id = 'adset_03';
-                            campaign_id = 'cmp_leadgen_02';
-                            status = 'ACTIVE';
-                            creative = @{
-                                title = 'Transform Your Home with Aura Living';
-                                body = 'Exclusive Spring Interior Collection. Book your private showroom consultation.';
-                                image_url = 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6'
-                            };
-                            metrics = @{
-                                spend = 32000.00;
-                                impressions = 142000;
-                                clicks = 4850;
-                                ctr = 3.42;
-                                cpc = 6.60;
-                                cpm = 225.35;
-                                leads = 22;
-                                cost_per_lead = 1454.55
-                            }
-                        }
-                    )
-                    Send-JsonResponse $response 200 @{ status = 'success'; count = $ads.Count; ads = $ads }
+                    $ads = @()
+                    Send-JsonResponse $response 200 @{ status = 'success'; count = 0; ads = $ads }
                     continue
                 }
 
-                $campaigns = @(
-                    @{
-                        id = "cmp_leadgen_01";
-                        name = "TechNova Enterprise Cloud Lead Gen 2026";
-                        status = "ACTIVE";
-                        objective = "OUTCOME_LEADS";
-                        daily_budget = 2700.00;
-                        lifetime_budget = $null;
-                        start_time = "2026-03-01T00:00:00+05:30";
-                        stop_time = $null;
-                        metrics = @{
-                            spend = 45000.00;
-                            impressions = 172000;
-                            reach = 124000;
-                            clicks = 5500;
-                            ctr = 3.20;
-                            cpc = 8.18;
-                            cpm = 261.63;
-                            leads = 45;
-                            cost_per_lead = 1000.00
-                        }
-                    },
-                    @{
-                        id = "cmp_leadgen_02";
-                        name = "Aura Living Spring Interior Launch";
-                        status = "ACTIVE";
-                        objective = "OUTCOME_LEADS";
-                        daily_budget = 1000.00;
-                        lifetime_budget = $null;
-                        start_time = "2026-03-10T00:00:00+05:30";
-                        stop_time = $null;
-                        metrics = @{
-                            spend = 32000.00;
-                            impressions = 142000;
-                            reach = 98000;
-                            clicks = 4850;
-                            ctr = 3.42;
-                            cpc = 6.60;
-                            cpm = 225.35;
-                            leads = 22;
-                            cost_per_lead = 1454.55
-                        }
-                    },
-                    @{
-                        id = "cmp_leadgen_03";
-                        name = "Zenith Retail Retargeting & Brand Awareness";
-                        status = "PAUSED";
-                        objective = "OUTCOME_TRAFFIC";
-                        daily_budget = 800.00;
-                        lifetime_budget = $null;
-                        start_time = "2026-02-15T00:00:00+05:30";
-                        stop_time = $null;
-                        metrics = @{
-                            spend = 18500.00;
-                            impressions = 96000;
-                            reach = 64000;
-                            clicks = 2950;
-                            ctr = 3.07;
-                            cpc = 6.27;
-                            cpm = 192.71;
-                            leads = 8;
-                            cost_per_lead = 2312.50
-                        }
-                    }
-                )
+                $campaigns = @()
 
                 Send-JsonResponse $response 200 @{
                     status = "success";
-                    count = $campaigns.Count;
+                    count = 0;
                     campaigns = $campaigns;
                     timestamp = (Get-Date).ToString("o")
                 }
@@ -1317,8 +1006,10 @@ while ($listener.IsListening) {
             $response.ContentType = $contentType
             $response.ContentLength64 = $bytes.Length
             $response.StatusCode = 200
-            $response.OutputStream.Write($bytes, 0, $bytes.Length)
-            $response.OutputStream.Flush()
+            if ($request.HttpMethod -ne "HEAD") {
+                $response.OutputStream.Write($bytes, 0, $bytes.Length)
+                $response.OutputStream.Flush()
+            }
             $response.Close()
         } else {
             Send-TextResponse $response 404 "404 Not Found: $urlPath"

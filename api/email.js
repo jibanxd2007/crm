@@ -19,7 +19,12 @@ async function emailUnifiedHandler(req, res) {
       });
     }
     const { httpsRequest } = require('./_utils/index.js');
-    const targetEmail = req.query?.to || req.body?.to || 'crm567625@gmail.com';
+    const targetEmail = req.query?.to || req.body?.to;
+    if (!targetEmail) {
+      return res.status(400).json({
+        error: "Missing required 'to' email address in request query or body."
+      });
+    }
     const fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
     const isSenderUnverified = !process.env.RESEND_FROM_EMAIL || process.env.RESEND_FROM_EMAIL.trim() === '' || process.env.RESEND_FROM_EMAIL.trim().toLowerCase() === 'onboarding@resend.dev';
     try {

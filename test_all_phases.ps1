@@ -204,9 +204,9 @@ Assert-Test "PHASE 23" "Supabase SSR Helpers & Middleware (utils/supabase)" ($ha
 # ------------------------------------------------------------------------------
 # PHASE 24: VERCEL SERVERLESS META FUNCTIONS (api/meta)
 # ------------------------------------------------------------------------------
-$hasMetaOAuthFunc = Test-Path "api\meta\oauth.js"
-$hasMetaCampaignsFunc = Test-Path "api\meta\campaigns.js"
-$hasMetaWebhookFunc = Test-Path "api\meta\webhook.js"
+$hasMetaOAuthFunc = (Test-Path "api\meta\oauth.js") -or (Test-Path "api\_meta\oauth.js")
+$hasMetaCampaignsFunc = (Test-Path "api\meta\campaigns.js") -or (Test-Path "api\_meta\campaigns.js")
+$hasMetaWebhookFunc = (Test-Path "api\meta\webhook.js") -or (Test-Path "api\_meta\webhook.js")
 Assert-Test "PHASE 24" "Vercel Meta Endpoints (OAuth, Campaigns, Webhook)" ($hasMetaOAuthFunc -and $hasMetaCampaignsFunc -and $hasMetaWebhookFunc)
 
 # ------------------------------------------------------------------------------
@@ -319,7 +319,7 @@ $hasDailyIdx = $schemaContent.Contains("uq_ad_insights_daily_idx")
 $hasAdInsightsRls = $schemaContent.Contains("ALTER TABLE public.ad_insights ENABLE ROW LEVEL SECURITY")
 $hasAdInsightsPolicy = $schemaContent.Contains("ad_insights_select_policy")
 $hasPhaseBMigration = Test-Path ".\supabase\migrations\20261009_phase_b_ad_spend_roi.sql"
-$hasSyncFunction = Test-Path ".\api\meta\sync.js"
+$hasSyncFunction = (Test-Path ".\api\meta\sync.js") -or (Test-Path ".\api\_meta\sync.js")
 
 $phaseBSchemaValid = $hasAdInsightsTable -and $hasDailyIdx -and $hasAdInsightsRls -and $hasAdInsightsPolicy -and $hasPhaseBMigration -and $hasSyncFunction
 Assert-Test "PHASE B" "Schema: ad_insights Table, Upsert Constraint & Scoped RLS DDL" $phaseBSchemaValid
