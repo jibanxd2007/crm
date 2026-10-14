@@ -2802,6 +2802,17 @@ class MetaCRMApp {
     const igCount = activeScopedConvs.filter(c => c.channel && c.channel.toLowerCase().includes('insta')).length;
 
     const convList = filteredConvs;
+    const activeConv = convList.find(c => c.id === this.activeConvId) || convList[0] || null;
+    if (activeConv && (!activeConv.messages || activeConv.messages.length === 0) && !activeConv._fetchingMsgs) {
+      activeConv._fetchingMsgs = true;
+      setTimeout(() => this.fetchRealConversationMessages(activeConv), 50);
+    }
+    const matchingLead = (this.svc && activeConv) ? this.svc.leads.find(l => l.name === activeConv.name || (activeConv.phone && l.phone === activeConv.phone)) : null;
+    const messages = activeConv ? (activeConv.messages || (activeConv.preview ? [{ text: activeConv.preview, incoming: true, time: activeConv.time }] : [])) : [];
+    const isIgActive = activeConv ? (activeConv.channel && activeConv.channel.toLowerCase().includes('insta')) : (activeTab === 'instagram');
+
+    const activeInitials = activeConv ? this._getContactInitials(activeConv.name) : '?';
+    const activeColor = activeConv ? this._getAvatarColor(activeConv.name) : { bg: '#F1F5F9', text: '#334155' };
 
     this.el.content.innerHTML = `
       <div class="inbox-layout ${this.mobileInboxView === 'chat' ? 'view-chat' : 'view-list'} ${sessionStorage.getItem('inbox_details_collapsed') === 'true' ? 'details-collapsed' : ''}">
