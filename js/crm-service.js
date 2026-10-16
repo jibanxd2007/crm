@@ -457,22 +457,32 @@ class CRMService {
       const res = await fetch('/api/messages', { headers }).catch(() => null);
       if (res && res.ok) {
         const data = await res.json();
-        if (data && Array.isArray(data.conversations) && data.conversations.length > 0) {
-          this.conversations = data.conversations.map(c => ({
-            id: String(c.id),
-            conversationId: String(c.id),
-            name: c.participant_name || c.name || 'Anonymous',
-            channel: c.channel || 'messenger',
-            page_id: c.page_id || c.accountId,
-            accountId: c.accountId || c.page_id,
-            unread: c.unread_count || c.unread || 0,
-            unread_count: c.unread_count || c.unread || 0,
-            last_message_at: c.last_message_at || c.created_at || new Date().toISOString(),
-            time: c.last_message_at ? new Date(c.last_message_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'Recently',
-            preview: c.last_message || c.preview || 'Direct message',
-            last_message: c.last_message || c.preview || 'Direct message',
-            messages: c.messages || []
-          }));
+        const convList = Array.isArray(data) ? data : (data.conversations || data.data || []);
+        if (Array.isArray(convList) && convList.length > 0) {
+          const currentMap = new Map((this.conversations || []).map(c => [String(c.id), c]));
+          this.conversations = convList.map(c => {
+            const cid = String(c.id || c.conversationId);
+            const prev = currentMap.get(cid);
+            const isFb = c.channel === 'messenger' || c.channel === 'facebook' || c.platform === 'facebook';
+            const pName = c.participant_name || c.participantName || c.customer_name || c.name || (isFb ? 'Facebook User' : 'Instagram User');
+            return {
+              id: cid,
+              conversationId: cid,
+              name: c.name || (isFb ? pName : (pName.startsWith('@') ? pName : `@${pName}`)),
+              participant_name: pName,
+              participantUsername: c.participantUsername,
+              channel: isFb ? 'messenger' : 'instagram',
+              page_id: c.page_id || c.accountId,
+              accountId: c.accountId || c.page_id,
+              unread: c.unread_count || c.unread || 0,
+              unread_count: c.unread_count || c.unread || 0,
+              last_message_at: c.last_message_at || c.updatedTime || c.created_at || new Date().toISOString(),
+              time: c.last_message_at ? new Date(c.last_message_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : (c.time || 'Recently'),
+              preview: c.last_message || c.lastMessage || c.preview || 'Direct message',
+              last_message: c.last_message || c.lastMessage || c.preview || 'Direct message',
+              messages: (prev && prev.messages && prev.messages.length > 0) ? prev.messages : (c.messages || [])
+            };
+          });
           this.conversations.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
           this.saveConversations();
           this.notifyChange('conversations_updated');
@@ -486,12 +496,15 @@ class CRMService {
         const zData = await zRes.json();
         const rawList = Array.isArray(zData) ? zData : (zData.conversations || zData.data || []);
         if (Array.isArray(rawList) && rawList.length > 0) {
+          const currentMap = new Map((this.conversations || []).map(c => [String(c.id), c]));
           this.conversations = rawList.map(c => {
+            const cid = String(c.id);
+            const prev = currentMap.get(cid);
             const isFb = c.platform === 'facebook' || c.platform === 'messenger';
             const pName = c.participantName || c.participantUsername || (isFb ? 'Facebook User' : 'Instagram User');
             return {
-              id: String(c.id),
-              conversationId: String(c.id),
+              id: cid,
+              conversationId: cid,
               name: isFb ? pName : (pName.startsWith('@') ? pName : `@${pName}`),
               participant_name: pName,
               participantUsername: c.participantUsername,
@@ -504,7 +517,7 @@ class CRMService {
               last_message_at: c.updatedTime || new Date().toISOString(),
               unread: c.unreadCount || 0,
               unread_count: c.unreadCount || 0,
-              messages: []
+              messages: (prev && prev.messages && prev.messages.length > 0) ? prev.messages : []
             };
           });
           this.conversations.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
@@ -613,6 +626,18 @@ class CRMService {
       localStorage.setItem(this.metaConfigKey, JSON.stringify(this.metaConfig));
     } catch (e) {
       console.warn("Storage save error:", e);
+    }
+  }
+
+  _saveToStorage() {
+    this.saveAll();
+  }
+
+  saveConversations() {
+    try {
+      localStorage.setItem(this.conversationsKey, JSON.stringify(this.conversations));
+    } catch (e) {
+      console.warn("Conversations storage save error:", e);
     }
   }
 
@@ -2300,9 +2325,9 @@ class CRMService {
     };
   }
 
-  sendReplyMessage(convId, text, optimisticId = null) {
-    if (!text || text.trim() === "") {
-      return { success: false, error: "Reply text cannot be empty" };
+  sendReplyMessage(convId, text, optimisticId = null, attachment = null) {
+    if ((!text || text.trim() === "") && !attachment) {
+      return { success: false, error: "Reply text or attachment is required" };
     }
 
     const conv = this.conversations.find(c => String(c.id) === String(convId));
@@ -2315,13 +2340,17 @@ class CRMService {
     const user = this.currentUser;
     const userName = user ? (user.displayName || user.name) : "Staff";
     const nowIso = new Date().toISOString();
+    const resolvedText = (text && text.trim()) || (attachment ? `📎 ${attachment.name || 'Attachment'}` : '');
     const newMsg = {
       id: optimisticId || ("m_" + Date.now()),
       client_msg_id: optimisticId,
       sender_type: "staff",
       sender_name: userName,
       sender_id: user ? user.id : null,
-      text: text.trim(),
+      text: resolvedText,
+      attachment: attachment || null,
+      attachments: attachment ? [attachment] : [],
+      attachment_url: attachment?.url || null,
       timestamp: "Just now",
       created_at: nowIso,
       status: "sent",
@@ -2330,8 +2359,8 @@ class CRMService {
 
     conv.messages = conv.messages || [];
     conv.messages.push(newMsg);
-    conv.last_message = text.trim();
-    conv.preview = "You: " + text.trim();
+    conv.last_message = resolvedText;
+    conv.preview = "You: " + resolvedText;
     conv.last_message_at = nowIso;
     conv.time = "Just now";
 
@@ -2343,44 +2372,50 @@ class CRMService {
     }
 
     this.saveAll();
-    this.logAudit("INBOX_MESSAGE_SENT", `${conv.customer_name || conv.name} via ${conv.channel}`, "SUCCESS", text.substring(0, 50));
+    this.logAudit("INBOX_MESSAGE_SENT", `${conv.customer_name || conv.name} via ${conv.channel}`, "SUCCESS", resolvedText.substring(0, 50));
     this.notifyChange("message_sent", { convId, message: newMsg, conversation: conv });
     return { success: true, message: newMsg, conversation: conv };
   }
 
   receiveIncomingMessage(convId, text, options = {}) {
-    if (!convId || !text) return null;
+    const rawAtt = options.attachment || (Array.isArray(options.attachments) && options.attachments[0]) || null;
+    if (!convId || (!text && !rawAtt && (!options.attachments || options.attachments.length === 0))) return null;
+
     let conv = this.conversations.find(c => String(c.id) === String(convId));
-    const nowIso = new Date().toISOString();
+    const nowIso = options.createdAt || options.created_at || new Date().toISOString();
+    const resolvedText = text || (rawAtt ? ((rawAtt.type && rawAtt.type.startsWith('image')) ? 'Sent a photo 📷' : `📎 ${rawAtt.name || 'Attachment'}`) : 'Direct message');
 
     if (!conv) {
       conv = {
         id: String(convId),
+        conversationId: String(convId),
         name: options.senderName || "New Inquirer",
         channel: options.channel || "messenger",
         page_id: options.pageId || "page_01",
+        accountId: options.accountId || options.pageId || "page_01",
         unread: 1,
         unread_count: 1,
         time: "Just now",
         last_message_at: nowIso,
-        preview: text,
-        last_message: text,
+        preview: resolvedText,
+        last_message: resolvedText,
         messages: []
       };
       this.conversations.unshift(conv);
     } else {
       // Deduplication check: prevent duplicate messages from webhook retries
       conv.messages = conv.messages || [];
+      const mid = options.metaMid || options.id;
       const isDupe = conv.messages.some(m => {
-        if (options.metaMid && (m.meta_mid === options.metaMid || m.id === options.metaMid)) return true;
-        return m.incoming && m.text === text && Math.abs(new Date(m.created_at || 0).getTime() - Date.now()) < 3000;
+        if (mid && (m.meta_mid === mid || m.id === mid)) return true;
+        return m.incoming && m.text === resolvedText && Math.abs(new Date(m.created_at || 0).getTime() - new Date(nowIso).getTime()) < 3000;
       });
       if (isDupe) return conv;
 
       conv.unread = (conv.unread || 0) + 1;
       conv.unread_count = (conv.unread_count || 0) + 1;
-      conv.preview = text;
-      conv.last_message = text;
+      conv.preview = resolvedText;
+      conv.last_message = resolvedText;
       conv.last_message_at = nowIso;
       conv.time = "Just now";
 
@@ -2392,14 +2427,19 @@ class CRMService {
       }
     }
 
+    const cleanAttachments = options.attachments || (rawAtt ? [rawAtt] : []);
     const newMsg = {
-      id: options.metaMid || ("m_in_" + Date.now()),
-      meta_mid: options.metaMid,
-      text: text,
+      id: options.metaMid || options.id || ("m_in_" + Date.now()),
+      meta_mid: options.metaMid || options.id,
+      text: resolvedText,
       incoming: true,
       sender_type: "customer",
       sender_name: conv.name,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      attachment: rawAtt,
+      attachments: cleanAttachments,
+      attachment_url: rawAtt?.url || rawAtt?.storagePath || options.attachment_url || null,
+      attachment_storage_path: rawAtt?.storagePath || rawAtt?.storage_path || null,
+      time: new Date(nowIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       created_at: nowIso,
       status: "sent",
       is_read: false

@@ -1,6 +1,6 @@
 const https = require('https');
 const crypto = require('crypto');
-const { resolveUser, httpsRequest, createVercelHandler } = require('./_utils/index.js');
+const { resolveUser, httpsRequest, createVercelHandler, toDeterministicUuid } = require('./_utils/index.js');
 let createClient = null;
 try {
   createClient = require('@supabase/supabase-js').createClient;
@@ -54,6 +54,7 @@ async function messagesHandler(req, res) {
     return res.status(401).json({ error: "Unauthorized: Authentication required" });
   }
 
+  const supabase = getSupabaseAdmin();
   const requestedPage = req.query?.page_id || req.query?.pageId;
   const requestedConv = req.query?.conversation_id || req.query?.conversationId;
 
@@ -96,7 +97,6 @@ async function messagesHandler(req, res) {
     if (body.is_archived !== undefined) updates.is_archived = !!body.is_archived;
     if (body.unread_count !== undefined) updates.unread_count = Math.max(0, parseInt(body.unread_count, 10) || 0);
 
-    const supabase = getSupabaseAdmin();
     if (supabase) {
       try {
         const { data: updated, error: updErr } = await supabase
@@ -137,7 +137,6 @@ async function messagesHandler(req, res) {
       }
     }
 
-    const supabase = getSupabaseAdmin();
     if (!supabase) {
       return res.status(500).json({ error: "Supabase client unavailable" });
     }
@@ -252,7 +251,33 @@ async function messagesHandler(req, res) {
     const conversationId = body.conversationId || body.conversation_id || body.convId;
     if (zernioApiKey && conversationId && !conversationId.startsWith('sim_')) {
       try {
-        const accountId = body.accountId || '6aca1c00e12ba0b652e62f45';
+        let accountId = body.accountId;
+        if (!accountId && supabase) {
+          try {
+            const dbCId = toDeterministicUuid(conversationId);
+            const { data: convRow } = await supabase
+              .from('conversations')
+              .select('*')
+              .eq('id', dbCId)
+              .limit(1)
+              .maybeSingle();
+            if (convRow && (convRow.account_id || convRow.page_id)) {
+              accountId = convRow.account_id || convRow.page_id;
+            }
+          } catch (cLookupErr) {
+            // Non-critical account lookup fallback
+          }
+        }
+        if (!accountId) accountId = '6aca1c00e12ba0b652e62f45';
+
+        const postBodyPayload = {
+          accountId: accountId,
+          message: text || (attachment ? `📎 ${attachment.name || 'Attachment'}` : '')
+        };
+        if (attachment) {
+          postBodyPayload.attachment = { type: attachment.type, url: attachment.url, name: attachment.name };
+        }
+
         const zernioRes = await httpsRequest(`https://zernio.com/api/v1/inbox/conversations/${conversationId}/messages`, {
           method: 'POST',
           headers: {
@@ -260,18 +285,39 @@ async function messagesHandler(req, res) {
             'Content-Type': 'application/json',
             'Accept': 'application/json'
           },
-          body: {
-            accountId: accountId,
-            message: text || (attachment ? `📎 ${attachment.name || 'Attachment'}` : ''),
-            ...(attachment ? { attachment: { type: attachment.type, url: attachment.url, name: attachment.name } } : {})
-          }
+          body: postBodyPayload
         });
+
+        const providerMid = (zernioRes && (zernioRes.id || zernioRes.messageId)) || `zmid_${Date.now()}`;
+
+        // Persist confirmed outbound message to Supabase
+        if (supabase) {
+          const dbConvId = toDeterministicUuid(conversationId);
+          const rawPath = attachment?.storagePath || attachment?.storage_path || extractStoragePath(attachment?.url || body.attachmentUrl || body.attachment_url) || null;
+          await supabase
+            .from('messages')
+            .insert({
+              conversation_id: dbConvId,
+              meta_mid: String(providerMid),
+              external_id: String(providerMid),
+              sender_id: user.id || null,
+              sender_type: 'staff',
+              sender_name: user.name || 'Agent',
+              text: text || (attachment?.name ? `📎 ${attachment.name}` : '[Attachment]'),
+              message_text: text || (attachment?.name ? `📎 ${attachment.name}` : '[Attachment]'),
+              direction: 'outbound',
+              attachment_url: rawPath,
+              attachments: attachment ? [attachment] : [],
+              created_at: new Date().toISOString()
+            })
+            .catch(e => console.warn('[Message Persist Warning]:', e.message));
+        }
 
         const successRes = {
           status: "sent",
           metaVerified: true,
           zernioVerified: true,
-          messageId: (zernioRes && (zernioRes.id || zernioRes.messageId)) || `zmid_${Date.now()}`,
+          messageId: providerMid,
           client_msg_id: clientMsgId,
           recipient: recipientId || conversationId,
           content: text || (attachment ? `📎 ${attachment.name || 'Attachment'}` : ''),
@@ -281,7 +327,14 @@ async function messagesHandler(req, res) {
         setCachedResponse(clientMsgId, successRes);
         return res.status(200).json(successRes);
       } catch (ze) {
-        console.warn("[Zernio Outbound Dispatch Warning]:", ze.message);
+        console.warn("[Zernio Outbound Dispatch Error]:", ze.message);
+        if (!pageAccessToken) {
+          return res.status(400).json({
+            error: "Failed to deliver message via Zernio",
+            detail: ze.message,
+            status: "failed"
+          });
+        }
       }
     }
 
@@ -378,22 +431,22 @@ async function messagesHandler(req, res) {
 
         // Database trigger fn_sync_conversation_last_message on public.messages
         // automatically updates conversation recency and preview without double-counting.
-        await supabase
-          .from('messages')
-          .insert({
-            conversation_id: conversationId,
-            sender_id: user.id || null,
-            sender_type: 'staff',
-            sender_name: user.name || 'Agent',
-            text: text || (attachment?.name ? `📎 ${attachment.name}` : '[Attachment]'),
-            message_text: text || (attachment?.name ? `📎 ${attachment.name}` : '[Attachment]'),
-            direction: 'outbound',
-            attachment_url: rawPath,
-            attachments: cleanAttachment ? [cleanAttachment] : [],
-            attachment_storage_path: rawPath,
-            created_at: new Date().toISOString()
-          })
-          .catch(e => console.warn('[Message Persist Warning]:', e.message));
+        const msgPayload = {
+          conversation_id: toDeterministicUuid(conversationId),
+          sender_id: user.id || null,
+          sender_name: user.name || 'Agent',
+          message_text: text || (attachment?.name ? `📎 ${attachment.name}` : '[Attachment]'),
+          direction: 'outbound',
+          attachment_url: rawPath,
+          created_at: new Date().toISOString()
+        };
+        try {
+          await supabase
+            .from('messages')
+            .insert(msgPayload);
+        } catch (e) {
+          console.warn('[Message Persist Warning]:', e.message);
+        }
       } catch (dbErr) {
         console.warn('[DB Error on Outbound Message]:', dbErr.message);
       }
@@ -418,7 +471,6 @@ async function messagesHandler(req, res) {
   const limit = Math.min(parseInt(req.query?.limit || '50', 10), 100);
   const offset = parseInt(req.query?.offset || '0', 10);
 
-  const supabase = getSupabaseAdmin();
   if (supabase) {
     try {
       // Check for dedicated backfill action
@@ -496,11 +548,12 @@ async function messagesHandler(req, res) {
       }
 
       if (requestedConv) {
+        const dbConvId = toDeterministicUuid(requestedConv);
         // Fetch thread messages in chronological order
         const { data: threadMsgs, error: threadErr } = await supabase
           .from('messages')
           .select('*')
-          .eq('conversation_id', requestedConv)
+          .eq('conversation_id', dbConvId)
           .order('created_at', { ascending: true })
           .range(offset, offset + limit - 1);
 
@@ -591,6 +644,7 @@ async function messagesHandler(req, res) {
             authorized: true,
             userRole: user.role,
             conversations: convData,
+            data: convData,
             pagination: { limit, offset, total: totalCount || convData.length }
           });
         }

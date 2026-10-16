@@ -81,6 +81,22 @@ class SupabaseService {
     if (!this.client) return;
 
     try {
+      let wasDisconnected = false;
+      const onStatusChange = (channelName) => (status) => {
+        if (status === 'SUBSCRIBED') {
+          if (wasDisconnected) {
+            wasDisconnected = false;
+            console.log(`[Supabase Realtime] Reconnected on channel ${channelName}`);
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new CustomEvent('crm:realtime_reconnected', { detail: { channel: channelName } }));
+            }
+          }
+        } else if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+          wasDisconnected = true;
+          console.warn(`[Supabase Realtime] Disrupted on channel ${channelName}: ${status}`);
+        }
+      };
+
       // 1. Inbound Leads Realtime Stream
       this.realtimeChannel = this.client
         .channel('public:leads')
@@ -90,7 +106,7 @@ class SupabaseService {
             window.dispatchEvent(new CustomEvent('crm:remote_lead_received', { detail: payload.new }));
           }
         })
-        .subscribe();
+        .subscribe(onStatusChange('leads'));
 
       // 2. Inbound Messages Realtime Stream (Instant messaging across Facebook/Instagram)
       this.messagesChannel = this.client
@@ -106,7 +122,7 @@ class SupabaseService {
             window.dispatchEvent(new CustomEvent('crm:remote_message_updated', { detail: payload.new }));
           }
         })
-        .subscribe();
+        .subscribe(onStatusChange('messages'));
 
       // 3. Conversation Recency & Unread Counter Stream
       this.conversationsChannel = this.client
@@ -117,7 +133,7 @@ class SupabaseService {
             window.dispatchEvent(new CustomEvent('crm:remote_conversation_updated', { detail: payload.new }));
           }
         })
-        .subscribe();
+        .subscribe(onStatusChange('conversations'));
     } catch (e) {
       console.warn("[Supabase Realtime] Subscription error:", e);
     }

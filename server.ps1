@@ -9,18 +9,20 @@ param (
 $baseDir = $PSScriptRoot
 try { Add-Type -AssemblyName System.Web -ErrorAction SilentlyContinue } catch {}
 
-# Load environment variables from .env if present
-$envFile = Join-Path $baseDir ".env"
+# Load environment variables from .env and .env.local if present
 $envVars = @{}
-if (Test-Path $envFile) {
-    Get-Content $envFile | ForEach-Object {
-        $line = $_.Trim()
-        if ($line -and -not $line.StartsWith("#") -and $line.Contains("=")) {
-            $parts = $line.Split("=", 2)
-            $key = $parts[0].Trim()
-            $val = $parts[1].Trim().Trim('"').Trim("'")
-            $envVars[$key] = $val
-            [System.Environment]::SetEnvironmentVariable($key, $val, "Process")
+foreach ($fName in @(".env", ".env.local")) {
+    $ePath = Join-Path $baseDir $fName
+    if (Test-Path $ePath) {
+        Get-Content $ePath | ForEach-Object {
+            $line = $_.Trim()
+            if ($line -and -not $line.StartsWith("#") -and $line.Contains("=")) {
+                $parts = $line.Split("=", 2)
+                $key = $parts[0].Trim()
+                $val = $parts[1].Trim().Trim('"').Trim("'")
+                $envVars[$key] = $val
+                [System.Environment]::SetEnvironmentVariable($key, $val, "Process")
+            }
         }
     }
 }
@@ -293,11 +295,80 @@ while ($listener.IsListening) {
             # GET /api/zernio/inbox/conversations (Fetch conversations from Zernio)
             if (($urlPath -eq "/api/zernio/inbox/conversations" -or ($urlPath -eq "/api/zernio" -and ($subPath -eq "inbox/conversations" -or $subPath -eq "inbox-conversations"))) -and $request.HttpMethod -eq "GET") {
                 try {
-                    $zHeaders = @{ "Authorization" = "Bearer $ZERNIO_API_KEY" }
-                    $convRes = Invoke-RestMethod -Uri "$ZERNIO_BASE_URL/inbox/conversations" -Headers $zHeaders -Method Get -TimeoutSec 8
+                    $zHeaders = @{ "Authorization" = "Bearer $ZERNIO_API_KEY"; "Accept" = "application/json" }
+                    $convRes = Invoke-RestMethod -Uri "$ZERNIO_BASE_URL/inbox/conversations" -Headers $zHeaders -Method Get -TimeoutSec 10
                     Send-JsonResponse $response 200 $convRes
                 } catch {
                     Send-JsonResponse $response 200 @{ data = @(); error = $_.Exception.Message }
+                }
+                continue
+            }
+
+            # /api/zernio?path=inbox-messages or /api/zernio/inbox/conversations/{id}/messages
+            if ($urlPath -match "/api/zernio/inbox/conversations/([^/]+)/messages" -or ($urlPath -eq "/api/zernio" -and ($subPath -eq "inbox/messages" -or $subPath -eq "inbox-messages"))) {
+                $cId = if ($matches -and $matches[1]) { $matches[1] } elseif ($queryParams["conversationId"]) { $queryParams["conversationId"] } else { $null }
+                $accId = if ($queryParams["accountId"]) { $queryParams["accountId"] } else { "6aca1c00e12ba0b652e62f45" }
+                if ($request.HttpMethod -eq "GET") {
+                    try {
+                        $zHeaders = @{ "Authorization" = "Bearer $ZERNIO_API_KEY"; "Accept" = "application/json" }
+                        $uri = "$ZERNIO_BASE_URL/inbox/conversations/$cId/messages?accountId=$([System.Uri]::EscapeDataString($accId))"
+                        $msgRes = Invoke-RestMethod -Uri $uri -Headers $zHeaders -Method Get -TimeoutSec 10
+                        Send-JsonResponse $response 200 $msgRes
+                    } catch {
+                        Send-JsonResponse $response 200 @{ messages = @(); error = $_.Exception.Message }
+                    }
+                    continue
+                } elseif ($request.HttpMethod -eq "POST") {
+                    $bStr = Read-RequestBody $request
+                    $bJson = if ($bStr) { $bStr | ConvertFrom-Json } else { @{} }
+                    $msgText = if ($bJson.message) { $bJson.message } else { $bJson.text }
+                    try {
+                        $zHeaders = @{ "Authorization" = "Bearer $ZERNIO_API_KEY"; "Content-Type" = "application/json"; "Accept" = "application/json" }
+                        $postObj = @{ accountId = $accId; message = $msgText }
+                        if ($bJson.attachment) { $postObj["attachment"] = $bJson.attachment }
+                        $uri = "$ZERNIO_BASE_URL/inbox/conversations/$cId/messages"
+                        $sendRes = Invoke-RestMethod -Uri $uri -Headers $zHeaders -Method Post -Body ($postObj | ConvertTo-Json -Depth 5) -TimeoutSec 15
+                        Send-JsonResponse $response 200 $sendRes
+                    } catch {
+                        Send-JsonResponse $response 400 @{ error = "Zernio rejected message: $($_.Exception.Message)"; status = "failed" }
+                    }
+                    continue
+                }
+            }
+
+            # GET /api/zernio/sync-inbox or /api/zernio?path=sync-inbox
+            if (($urlPath -eq "/api/zernio/sync-inbox" -or ($urlPath -eq "/api/zernio" -and ($subPath -eq "sync-inbox" -or $subPath -eq "sync_inbox"))) -and $request.HttpMethod -eq "GET") {
+                try {
+                    $zHeaders = @{ "Authorization" = "Bearer $ZERNIO_API_KEY"; "Accept" = "application/json" }
+                    $cursor = if ($queryParams["cursor"]) { $queryParams["cursor"] } else { $null }
+                    $syncUri = "$ZERNIO_BASE_URL/inbox/conversations"
+                    if ($cursor) { $syncUri += "?cursor=$([System.Uri]::EscapeDataString($cursor))" }
+                    $convRes = Invoke-RestMethod -Uri $syncUri -Headers $zHeaders -Method Get -TimeoutSec 10
+                    $list = if ($convRes.conversations) { $convRes.conversations } elseif ($convRes.data) { $convRes.data } else { @() }
+                    $nextCur = if ($convRes.nextCursor) { $convRes.nextCursor } else { $convRes.cursor }
+                    Send-JsonResponse $response 200 @{
+                        status = "success";
+                        syncedConversations = $list.Count;
+                        nextCursor = $nextCur;
+                        checkpoint = $nextCur;
+                        timestamp = (Get-Date).ToString("o")
+                    }
+                } catch {
+                    Send-JsonResponse $response 500 @{ error = $_.Exception.Message }
+                }
+                continue
+            }
+
+            # GET /api/zernio/diagnostics or /api/zernio?path=diagnostics
+            if (($urlPath -eq "/api/zernio/diagnostics" -or ($urlPath -eq "/api/zernio" -and $subPath -eq "diagnostics")) -and $request.HttpMethod -eq "GET") {
+                Send-JsonResponse $response 200 @{
+                    status = "success";
+                    service = "zernio-sync-gateway";
+                    diagnostics = @{
+                        hasApiKey = (-not [string]::IsNullOrEmpty($ZERNIO_API_KEY));
+                        hasProfileId = (-not [string]::IsNullOrEmpty($ZERNIO_PROFILE_ID));
+                        timestamp = (Get-Date).ToString("o")
+                    }
                 }
                 continue
             }

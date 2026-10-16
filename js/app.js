@@ -282,6 +282,13 @@ class MetaCRMApp {
     window.addEventListener('crm:remote_message_updated', (e) => this.handleRemoteMessageUpdated(e.detail));
     window.addEventListener('crm:remote_conversation_updated', (e) => this.handleRemoteConversationUpdated(e.detail));
 
+    // Realtime Reconnection & Tab Focus Catch-Up
+    window.addEventListener('crm:realtime_reconnected', () => this.catchUpInbox());
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') this.catchUpInbox();
+    });
+    window.addEventListener('online', () => this.catchUpInbox());
+
     // Keyboard Shortcuts (Ctrl+K for command palette, Escape, and module navigation)
     window.addEventListener('keydown', e => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -4414,15 +4421,40 @@ class MetaCRMApp {
     if (!convId) return;
 
     const convList = (this.svc ? (this.svc.conversations || []) : []);
-    let targetConv = convList.find(c => String(c.id) === convId);
+    let targetConv = convList.find(c => String(c.id) === convId || String(c.conversationId) === convId || String(c.external_id) === convId);
+
+    // If this confirms an optimistic message sent from this client, reconcile it
+    if (targetConv && msg.client_msg_id) {
+      const existingOpt = (targetConv.messages || []).find(m => m.client_msg_id === msg.client_msg_id || m.id === msg.client_msg_id);
+      if (existingOpt) {
+        existingOpt.status = 'sent';
+        if (msg.id) existingOpt.id = msg.id;
+        if (msg.meta_mid) existingOpt.meta_mid = msg.meta_mid;
+        this._updateMessageBubbleStatus(msg.client_msg_id, 'sent');
+        return;
+      }
+    }
+
+    const att = this._extractAttachment ? this._extractAttachment(msg) : null;
+    let resolvedText = msg.text || msg.message || msg.message_text || '';
+    if (!resolvedText || !resolvedText.trim()) {
+      if (att) {
+        resolvedText = (att.type && att.type.startsWith('image')) ? 'Sent a photo 📷' : `📎 ${att.name || 'Attachment'}`;
+      } else {
+        resolvedText = 'Direct message';
+      }
+    }
 
     if (!targetConv) {
       if (this.svc && this.svc.receiveIncomingMessage) {
-        targetConv = this.svc.receiveIncomingMessage(convId, msg.text || msg.message, {
-          senderName: msg.sender_name,
-          channel: msg.channel || 'messenger',
-          pageId: msg.page_id,
-          metaMid: msg.meta_mid || msg.id
+        targetConv = this.svc.receiveIncomingMessage(convId, resolvedText, {
+          senderName: msg.sender_name || msg.participantName || 'Contact',
+          channel: msg.channel || (msg.platform === 'instagram' ? 'instagram' : 'messenger'),
+          pageId: msg.page_id || msg.accountId,
+          accountId: msg.accountId || msg.page_id,
+          metaMid: msg.meta_mid || msg.id,
+          attachment: att,
+          attachments: msg.attachments
         });
       }
       if (this.currentRoute === 'inbox') this.renderInbox();
@@ -4439,13 +4471,18 @@ class MetaCRMApp {
 
     if (isDupe) return;
 
-    const isIncoming = msg.sender_type !== 'staff' && msg.incoming !== false;
-    const nowIso = msg.created_at || new Date().toISOString();
+    const isIncoming = msg.sender_type !== 'staff' && msg.incoming !== false && msg.direction !== 'outbound';
+    const nowIso = msg.created_at || msg.sentAt || new Date().toISOString();
     const formattedMsg = {
       id: msg.id || ('msg_' + Date.now()),
       meta_mid: msg.meta_mid,
-      text: msg.text || msg.message || '',
+      client_msg_id: msg.client_msg_id,
+      text: resolvedText,
       incoming: isIncoming,
+      attachment: att,
+      attachments: msg.attachments || (att ? [att] : []),
+      attachment_url: att?.url || msg.attachment_url,
+      attachment_storage_path: att?.storagePath || msg.attachment_storage_path,
       status: 'sent',
       time: new Date(nowIso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       created_at: nowIso
@@ -4454,14 +4491,19 @@ class MetaCRMApp {
     targetConv.messages.push(formattedMsg);
     targetConv.last_message_at = nowIso;
     targetConv.time = 'Just now';
-    targetConv.preview = isIncoming ? formattedMsg.text : ('You: ' + formattedMsg.text);
+    targetConv.preview = isIncoming ? resolvedText : ('You: ' + resolvedText);
+    targetConv.last_message = resolvedText;
 
     const isActive = String(this.activeConvId) === convId;
     if (!isActive && isIncoming) {
       targetConv.unread = (targetConv.unread || 0) + 1;
+      targetConv.unread_count = (targetConv.unread_count || 0) + 1;
     }
 
-    if (this.svc && this.svc._saveToStorage) this.svc._saveToStorage();
+    if (this.svc) {
+      if (this.svc._saveToStorage) this.svc._saveToStorage();
+      else if (this.svc.saveAll) this.svc.saveAll();
+    }
 
     this._moveSidebarConvToTop(convId, targetConv.preview, 'Just now', targetConv.unread);
 
@@ -4482,7 +4524,10 @@ class MetaCRMApp {
               <div class="msg-mini-avatar" style="background-color:${color.bg};color:${color.text};">
                 ${initials}
               </div>
-              <div class="msg-bubble">${escapeHtml(formattedMsg.text)}</div>
+              <div class="msg-bubble">
+                ${this._renderAttachmentInBubble ? this._renderAttachmentInBubble(formattedMsg, false) : ''}
+                ${escapeHtml(formattedMsg.text)}
+              </div>
             </div>
             <span class="msg-time">${formattedMsg.time}</span>
           `;
@@ -4490,7 +4535,10 @@ class MetaCRMApp {
           msgDiv.className = 'msg msg-out';
           msgDiv.setAttribute('data-msg-id', formattedMsg.id);
           msgDiv.innerHTML = `
-            <div class="msg-bubble">${escapeHtml(formattedMsg.text)}</div>
+            <div class="msg-bubble">
+              ${this._renderAttachmentInBubble ? this._renderAttachmentInBubble(formattedMsg, true) : ''}
+              ${escapeHtml(formattedMsg.text)}
+            </div>
             <span class="msg-time">${formattedMsg.time} <span class="msg-status-check">✓✓</span></span>
           `;
         }
@@ -4514,18 +4562,72 @@ class MetaCRMApp {
   handleRemoteConversationUpdated(detail) {
     if (!detail) return;
     const conv = detail.conversation || detail;
-    const convId = String(conv.id || conv.conversationId || '');
+    const convId = String(conv.id || conv.conversationId || conv.external_id || '');
     if (!convId) return;
 
     const convList = (this.svc ? (this.svc.conversations || []) : []);
-    const existing = convList.find(c => String(c.id) === convId);
+    const existing = convList.find(c => String(c.id) === convId || String(c.conversationId) === convId || String(c.external_id) === convId);
     if (existing) {
-      if (conv.last_message) existing.preview = conv.last_message;
+      if (conv.last_message) {
+        existing.preview = conv.last_message;
+        existing.last_message = conv.last_message;
+      }
       if (conv.last_message_at) existing.last_message_at = conv.last_message_at;
-      if (typeof conv.unread_count === 'number') existing.unread = conv.unread_count;
+      if (typeof conv.unread_count === 'number') {
+        existing.unread = conv.unread_count;
+        existing.unread_count = conv.unread_count;
+      }
+      if (this.svc) {
+        if (this.svc._saveToStorage) this.svc._saveToStorage();
+        else if (this.svc.saveAll) this.svc.saveAll();
+      }
       this._moveSidebarConvToTop(convId, existing.preview, 'Just now', existing.unread);
+    } else {
+      const isFb = conv.channel === 'messenger' || conv.channel === 'facebook' || conv.platform === 'facebook';
+      const pName = conv.customer_name || conv.participant_name || conv.participantName || 'Customer';
+      const newConv = {
+        id: String(conv.external_id || conv.customer_psid || conv.id),
+        conversationId: String(conv.external_id || conv.customer_psid || conv.id),
+        name: isFb ? pName : (pName.startsWith('@') ? pName : `@${pName}`),
+        participant_name: pName,
+        channel: isFb ? 'messenger' : 'instagram',
+        page_id: conv.page_id || conv.account_id,
+        accountId: conv.account_id || conv.page_id,
+        preview: conv.last_message || 'Direct message',
+        last_message: conv.last_message || 'Direct message',
+        time: 'Just now',
+        last_message_at: conv.last_message_at || new Date().toISOString(),
+        unread: conv.unread_count || 1,
+        unread_count: conv.unread_count || 1,
+        messages: []
+      };
+      if (this.svc && this.svc.conversations) {
+        this.svc.conversations.unshift(newConv);
+        if (this.svc._saveToStorage) this.svc._saveToStorage();
+        else if (this.svc.saveAll) this.svc.saveAll();
+      }
+      if (this.currentRoute === 'inbox') {
+        this.renderInbox();
+      }
     }
   }
+
+  async catchUpInbox() {
+    try {
+      if (this.fetchRealInstagramConversations) {
+        await this.fetchRealInstagramConversations();
+      }
+      const activeConv = (this.svc && this.svc.conversations) 
+        ? this.svc.conversations.find(c => String(c.id) === String(this.activeConvId)) 
+        : null;
+      if (activeConv && this.fetchRealConversationMessages) {
+        await this.fetchRealConversationMessages(activeConv);
+      }
+    } catch (e) {
+      console.warn('[Inbox catch-up warning]:', e);
+    }
+  }
+
 
   simulateInboundMessage(preferredChannel) {
     const isIg = preferredChannel ? preferredChannel.toLowerCase().includes('insta') : (Math.random() > 0.5);

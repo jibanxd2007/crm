@@ -153,10 +153,21 @@ function createVercelHandler(fn) {
   return handler;
 }
 
+function toDeterministicUuid(id) {
+  if (!id) return '00000000-0000-0000-0000-000000000000';
+  const strId = String(id).trim();
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(strId)) {
+    return strId;
+  }
+  const hash = crypto.createHash('md5').update('crm_zernio_' + strId).digest('hex');
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+}
+
 module.exports = {
   USER_PERMISSIONS,
   resolveUser,
   httpsRequest,
   verifyMetaSignature,
-  createVercelHandler
+  createVercelHandler,
+  toDeterministicUuid
 };
