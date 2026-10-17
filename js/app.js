@@ -3831,41 +3831,93 @@ class MetaCRMApp {
     this.renderInbox();
   }
 
+  retryFetchConversationMessages(convId) {
+    if (!this.svc || !this.svc.conversations) return;
+    const conv = this.svc.conversations.find(c => String(c.id) === String(convId) || String(c.external_id) === String(convId));
+    if (conv) {
+      conv._fetchingMsgs = false;
+      this.fetchRealConversationMessages(conv);
+    }
+  }
+
   async fetchRealConversationMessages(conv) {
     if (!conv) return;
-    try {
-      const thread = document.getElementById('inbox-thread');
-      if (thread && (!conv.messages || conv.messages.length === 0)) {
-        thread.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-secondary);"><span class="spinner"></span> Loading real conversation messages…</div>';
-      }
+    if (conv._fetchingMsgs) return;
+    conv._fetchingMsgs = true;
 
+    if (!this._msgAbortControllers) this._msgAbortControllers = new Map();
+    if (this._msgAbortControllers.has(conv.id)) {
+      try { this._msgAbortControllers.get(conv.id).abort(); } catch (e) {}
+    }
+    const ac = new AbortController();
+    this._msgAbortControllers.set(conv.id, ac);
+    const timeoutId = setTimeout(() => {
+      try { ac.abort(); } catch (e) {}
+    }, 7500);
+
+    const thread = document.getElementById('inbox-thread');
+    const hasMessages = Array.isArray(conv.messages) && conv.messages.length > 0;
+    const hasPreview = !!(conv.preview && conv.preview.trim());
+
+    if (thread && this.activeConvId === conv.id) {
+      if (!hasMessages && !hasPreview) {
+        thread.innerHTML = `
+          <div class="inbox-thread-loading" id="inbox-thread-loading" style="padding:60px 20px;text-align:center;color:var(--text-secondary);">
+            <div class="spinner" style="display:inline-block;width:24px;height:24px;border:2.5px solid var(--border-color);border-top-color:var(--primary);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:12px;"></div>
+            <div style="font-size:13px;font-weight:500;">Loading conversation messages…</div>
+          </div>
+        `;
+      } else {
+        const existingLoader = document.getElementById('inbox-sync-indicator');
+        if (!existingLoader) {
+          const syncInd = document.createElement('div');
+          syncInd.id = 'inbox-sync-indicator';
+          syncInd.style.cssText = 'padding:4px 12px;margin:8px auto;background:rgba(0,0,0,0.04);border-radius:12px;font-size:11px;color:var(--text-secondary);text-align:center;width:fit-content;';
+          syncInd.innerHTML = '<span>⟳ Syncing latest messages…</span>';
+          thread.prepend(syncInd);
+        }
+      }
+    }
+
+    try {
+      const accountId = conv.accountId || conv.page_id || '6accd8b0d52dc43d8bf6034c';
+      const externalId = conv.external_id || conv.id;
       let rawMsgs = [];
-      // 1. Try Supabase messages first (which contains permanently stored attachments)
+
+      // 1. Fetch from Supabase via unified /api/messages with accountId and external_id
       try {
-        const dbRes = await fetch(`/api/messages?conversation_id=${encodeURIComponent(conv.id)}`, {
-          headers: { 'X-User-Id': (this.user && this.user.id) || 'admin' }
+        const dbRes = await fetch(`/api/messages?conversation_id=${encodeURIComponent(conv.id)}&accountId=${encodeURIComponent(accountId)}&external_id=${encodeURIComponent(externalId)}`, {
+          headers: { 'X-User-Id': (this.user && this.user.id) || 'admin' },
+          signal: ac.signal
         });
         if (dbRes.ok) {
           const dbData = await dbRes.json();
           rawMsgs = dbData.messages || [];
         }
-      } catch (e) {}
+      } catch (e) {
+        if (e.name === 'AbortError') return;
+      }
 
-      // 2. Fallback to Zernio endpoint if Supabase had no messages for this conversation
+      // 2. Direct fast fallback to Zernio endpoint if Supabase had 0 messages
       if (!rawMsgs || rawMsgs.length === 0) {
-        const accountId = conv.accountId || conv.page_id;
-        const accParam = accountId ? `&accountId=${encodeURIComponent(accountId)}` : '';
-        const res = await fetch(`/api/zernio?path=inbox-messages&conversationId=${encodeURIComponent(conv.id)}${accParam}`);
-        if (res.ok) {
-          const data = await res.json();
-          rawMsgs = Array.isArray(data) ? data : (data.messages || data.data || []);
+        try {
+          const accParam = `&accountId=${encodeURIComponent(accountId)}`;
+          const res = await fetch(`/api/zernio?path=inbox-messages&conversationId=${encodeURIComponent(externalId)}${accParam}`, {
+            signal: ac.signal
+          });
+          if (res.ok) {
+            const data = await res.json();
+            rawMsgs = Array.isArray(data) ? data : (data.messages || data.data || []);
+          }
+        } catch (e) {
+          if (e.name === 'AbortError') return;
         }
       }
 
       if (Array.isArray(rawMsgs) && rawMsgs.length > 0) {
         conv.messages = rawMsgs.map(m => {
           let text = m.message || m.message_text || m.text || '';
-          const att = this._extractAttachment(m);
+          const att = this._extractAttachment ? this._extractAttachment(m) : null;
           if (!text || !text.trim()) {
             if (m.isStoryMention) text = 'Replied to your story 📸';
             else if (att) text = (att.type && att.type.startsWith('image')) ? 'Sent a photo 📷' : '📎 Attachment';
@@ -3873,7 +3925,9 @@ class MetaCRMApp {
           }
           const incoming = m.direction ? (m.direction === 'incoming' || m.direction === 'inbound') : (m.sender_type === 'customer' || m.incoming === true);
           return {
-            id: m.id,
+            id: m.id || m.meta_mid || ('msg_' + Date.now()),
+            meta_mid: m.meta_mid || m.id,
+            client_msg_id: m.client_msg_id,
             text: text,
             incoming: incoming,
             attachment: att,
@@ -3881,33 +3935,65 @@ class MetaCRMApp {
             attachment_url: att?.url || m.attachment_url,
             attachment_storage_path: att?.storagePath || m.attachment_storage_path,
             created_at: m.created_at || m.createdAt || m.sentAt,
+            status: m.status || 'sent',
             time: new Date(m.sentAt || m.createdAt || m.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           };
         });
 
-        // Always sort messages oldest to newest within open conversation
+        // Sort messages chronologically
         conv.messages.sort((a, b) => {
           const tA = new Date(a.created_at || a.time || 0).getTime();
           const tB = new Date(b.created_at || b.time || 0).getTime();
           return tA - tB;
         });
 
+        const newest = conv.messages[conv.messages.length - 1];
+        if (newest) {
+          conv.preview = newest.incoming ? newest.text : ('You: ' + newest.text);
+          conv.last_message_at = newest.created_at || conv.last_message_at;
+          conv.time = newest.time || conv.time;
+        }
+
         if (this.svc) {
           if (this.svc.saveConversations) this.svc.saveConversations();
           else if (this.svc._saveToStorage) this.svc._saveToStorage();
           else if (this.svc.saveAll) this.svc.saveAll();
         }
+      } else {
+        if (!conv.messages) conv.messages = [];
+      }
 
-        if (this.activeConvId === conv.id) {
-          this.renderInbox();
-          const thread = document.getElementById('inbox-thread');
-          if (thread) {
-            setTimeout(() => { thread.scrollTop = thread.scrollHeight; }, 30);
-          }
+      if (this.activeConvId === conv.id) {
+        this.renderInbox();
+        const threadAfter = document.getElementById('inbox-thread');
+        if (threadAfter) {
+          setTimeout(() => { threadAfter.scrollTop = threadAfter.scrollHeight; }, 30);
         }
       }
     } catch (e) {
-      console.warn('[Fetch Messages Error]:', e);
+      if (e.name !== 'AbortError') {
+        console.warn('[Fetch Messages Error]:', e);
+        if (this.activeConvId === conv.id) {
+          const errThread = document.getElementById('inbox-thread');
+          if (errThread && (!conv.messages || conv.messages.length === 0) && !conv.preview) {
+            errThread.innerHTML = `
+              <div class="inbox-thread-error-state" style="padding:40px 20px;text-align:center;color:var(--text-secondary);">
+                <div style="font-size:28px;margin-bottom:8px;">⚠️</div>
+                <div style="font-size:14px;font-weight:500;margin-bottom:6px;">Unable to load conversation messages</div>
+                <p style="font-size:12px;color:var(--text-tertiary);margin-bottom:14px;">The provider timed out or network was interrupted.</p>
+                <button class="btn btn-secondary btn-sm" onclick="window.app.retryFetchConversationMessages('${conv.id}')" style="cursor:pointer;padding:6px 14px;font-size:12px;">↻ Retry Loading</button>
+              </div>
+            `;
+          }
+        }
+      }
+    } finally {
+      clearTimeout(timeoutId);
+      conv._fetchingMsgs = false;
+      const syncInd = document.getElementById('inbox-sync-indicator');
+      if (syncInd) syncInd.remove();
+      const loadInd = document.getElementById('inbox-thread-loading');
+      if (loadInd) loadInd.remove();
     }
   }
 
@@ -3926,11 +4012,12 @@ class MetaCRMApp {
 
         rawList.forEach(c => {
           const cid = String(c.id);
-          const existing = this.svc.conversations.find(x => String(x.id) === cid);
+          const existing = this.svc.conversations.find(x => String(x.id) === cid || String(x.external_id) === cid);
           const isFb = c.platform === 'facebook' || c.platform === 'messenger';
           const participantName = c.participantName || c.participantUsername || (isFb ? 'Facebook User' : 'Instagram User');
           const cleanName = isFb ? participantName : (participantName.startsWith('@') ? participantName : `@${participantName}`);
           const channel = isFb ? 'messenger' : 'instagram';
+          const accId = c.accountId || '6accd8b0d52dc43d8bf6034c';
 
           if (existing) {
             existing.name = cleanName;
@@ -3939,17 +4026,24 @@ class MetaCRMApp {
             existing.time = c.updatedTime ? new Date(c.updatedTime).toLocaleDateString([], { month: 'short', day: 'numeric' }) : existing.time;
             existing.last_message_at = c.updatedTime || existing.last_message_at || new Date().toISOString();
             existing.unread = c.unreadCount || 0;
-            existing.accountId = c.accountId || existing.accountId;
-            existing.page_id = c.accountId || existing.page_id;
+            existing.accountId = accId;
+            existing.page_id = accId;
+            existing.external_id = c.external_id || cid;
+            if (c.participant_id || c.participantId || c.customer_psid) {
+              existing.participant_id = c.participant_id || c.participantId || c.customer_psid;
+            }
           } else {
             this.svc.conversations.push({
               id: cid,
               conversationId: cid,
-              accountId: c.accountId || '6acd4daed19284a3227d7870',
+              external_id: c.external_id || cid,
+              participant_id: c.participant_id || c.participantId || c.customer_psid,
+              customer_psid: c.customer_psid || c.participant_id,
+              accountId: accId,
               name: cleanName,
               participantUsername: c.participantUsername,
               channel: channel,
-              page_id: c.accountId || '6acd4daed19284a3227d7870',
+              page_id: accId,
               time: c.updatedTime ? new Date(c.updatedTime).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'Recently',
               last_message_at: c.updatedTime || new Date().toISOString(),
               preview: c.lastMessage || 'Direct message',
@@ -3978,10 +4072,6 @@ class MetaCRMApp {
 
         if (this.currentRoute === 'inbox') {
           this.renderInbox();
-          const active = this.svc.conversations.find(x => x.id === this.activeConvId);
-          if (active && (!active.messages || active.messages.length === 0)) {
-            this.fetchRealConversationMessages(active);
-          }
         }
       }
     } catch (e) {
@@ -4052,7 +4142,13 @@ class MetaCRMApp {
   _moveSidebarConvToTop(convId, preview, timeText = 'Just now', unreadCount = null) {
     const list = document.getElementById('inbox-conv-list');
     if (list) {
-      const item = list.querySelector(`.inbox-conv-item[data-conv-id="${convId}"]`);
+      let item = list.querySelector(`.inbox-conv-item[data-conv-id="${convId}"]`);
+      if (!item && this.svc && this.svc.conversations) {
+        const conv = this.svc.conversations.find(c => String(c.id) === String(convId) || String(c.external_id) === String(convId) || String(c.conversationId) === String(convId));
+        if (conv) {
+          item = list.querySelector(`.inbox-conv-item[data-conv-id="${conv.id}"]`) || list.querySelector(`.inbox-conv-item[data-conv-id="${conv.external_id}"]`);
+        }
+      }
       if (item) {
         if (preview) {
           const prevEl = item.querySelector('.conv-preview');
@@ -4096,7 +4192,7 @@ class MetaCRMApp {
     }
 
     if (this.svc && this.svc.conversations) {
-      const idx = this.svc.conversations.findIndex(c => String(c.id) === String(convId));
+      const idx = this.svc.conversations.findIndex(c => String(c.id) === String(convId) || String(c.external_id) === String(convId) || String(c.conversationId) === String(convId));
       if (idx !== -1) {
         const target = this.svc.conversations[idx];
         const nowIso = new Date().toISOString();
@@ -4264,7 +4360,8 @@ class MetaCRMApp {
 
     const isIg = activeConv.channel && activeConv.channel.toLowerCase().includes('insta');
     const channelName = isIg ? 'Instagram Direct' : 'Facebook Messenger';
-    const accountId = activeConv.accountId || '6aca1c00e12ba0b652e62f45';
+    const accountId = activeConv.accountId || activeConv.page_id || '6accd8b0d52dc43d8bf6034c';
+    const externalId = activeConv.external_id || activeConv.id;
 
     try {
       // 1. Try unified POST /api/messages endpoint with deduplication idempotency key
@@ -4281,13 +4378,15 @@ class MetaCRMApp {
           body: JSON.stringify({
             conversation_id: activeConv.id,
             conversationId: activeConv.id,
-            page_id: activeConv.page_id,
-            pageId: activeConv.page_id,
+            external_id: externalId,
+            externalId: externalId,
+            page_id: activeConv.page_id || accountId,
+            pageId: activeConv.page_id || accountId,
             message: text,
             attachment: msgObj.attachment || null,
             client_msg_id: clientMsgId,
             accountId: accountId,
-            recipient_id: activeConv.sender_id || activeConv.customer_psid || activeConv.participantUsername
+            recipient_id: activeConv.sender_id || activeConv.customer_psid || activeConv.participant_id || activeConv.participantUsername
           })
         });
         if (res.ok) {
@@ -4307,7 +4406,7 @@ class MetaCRMApp {
 
       // 2. If /api/messages was not available or gave 404, fallback to /api/zernio
       if (!data || (!res.ok && res.status === 404)) {
-        const zernioRes = await fetch(`/api/zernio?path=inbox-messages&conversationId=${activeConv.id}`, {
+        const zernioRes = await fetch(`/api/zernio?path=inbox-messages&conversationId=${encodeURIComponent(externalId)}&accountId=${encodeURIComponent(accountId)}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -4328,8 +4427,9 @@ class MetaCRMApp {
 
       // Reconcile optimistic message
       msgObj.status = 'sent';
-      if (data && (data.messageId || data.id)) {
+      if (data && (data.messageId || data.id || data.meta_mid)) {
         msgObj.id = data.messageId || data.id;
+        msgObj.meta_mid = data.meta_mid || data.messageId || data.id;
       }
       this._updateMessageBubbleStatus(clientMsgId, 'sent');
 
@@ -4418,19 +4518,27 @@ class MetaCRMApp {
     if (!detail) return;
     const msg = detail.message || detail;
     const convId = String(detail.convId || detail.conversation_id || msg.conversation_id || '');
-    if (!convId) return;
+    const clientMsgId = msg.client_msg_id || msg.clientMsgId;
+    const externalMid = msg.meta_mid || msg.id;
 
     const convList = (this.svc ? (this.svc.conversations || []) : []);
-    let targetConv = convList.find(c => String(c.id) === convId || String(c.conversationId) === convId || String(c.external_id) === convId);
+    let targetConv = convList.find(c => 
+      (convId && (String(c.id) === convId || String(c.conversationId) === convId || String(c.external_id) === convId)) ||
+      (detail.participant_id && String(c.participant_id) === String(detail.participant_id)) ||
+      (detail.customer_psid && String(c.customer_psid) === String(detail.customer_psid)) ||
+      (msg.participant_id && String(c.participant_id) === String(msg.participant_id)) ||
+      (msg.customer_psid && String(c.customer_psid) === String(msg.customer_psid)) ||
+      (msg.sender_id && String(c.sender_id) === String(msg.sender_id))
+    );
 
     // If this confirms an optimistic message sent from this client, reconcile it
-    if (targetConv && msg.client_msg_id) {
-      const existingOpt = (targetConv.messages || []).find(m => m.client_msg_id === msg.client_msg_id || m.id === msg.client_msg_id);
+    if (targetConv && clientMsgId) {
+      const existingOpt = (targetConv.messages || []).find(m => m.client_msg_id === clientMsgId || m.id === clientMsgId);
       if (existingOpt) {
         existingOpt.status = 'sent';
         if (msg.id) existingOpt.id = msg.id;
-        if (msg.meta_mid) existingOpt.meta_mid = msg.meta_mid;
-        this._updateMessageBubbleStatus(msg.client_msg_id, 'sent');
+        if (externalMid) existingOpt.meta_mid = externalMid;
+        this._updateMessageBubbleStatus(clientMsgId, 'sent');
         return;
       }
     }
@@ -4450,9 +4558,9 @@ class MetaCRMApp {
         targetConv = this.svc.receiveIncomingMessage(convId, resolvedText, {
           senderName: msg.sender_name || msg.participantName || 'Contact',
           channel: msg.channel || (msg.platform === 'instagram' ? 'instagram' : 'messenger'),
-          pageId: msg.page_id || msg.accountId,
-          accountId: msg.accountId || msg.page_id,
-          metaMid: msg.meta_mid || msg.id,
+          pageId: msg.page_id || msg.accountId || '6accd8b0d52dc43d8bf6034c',
+          accountId: msg.accountId || msg.page_id || '6accd8b0d52dc43d8bf6034c',
+          metaMid: externalMid,
           attachment: att,
           attachments: msg.attachments
         });
@@ -4463,8 +4571,8 @@ class MetaCRMApp {
 
     targetConv.messages = targetConv.messages || [];
     const isDupe = targetConv.messages.some(m => {
-      if (msg.client_msg_id && (m.client_msg_id === msg.client_msg_id || m.id === msg.client_msg_id)) return true;
-      if (msg.meta_mid && (m.meta_mid === msg.meta_mid || m.id === msg.meta_mid)) return true;
+      if (clientMsgId && (m.client_msg_id === clientMsgId || m.id === clientMsgId)) return true;
+      if (externalMid && (m.meta_mid === externalMid || m.id === externalMid)) return true;
       if (msg.id && m.id === msg.id) return true;
       return false;
     });
@@ -4475,8 +4583,8 @@ class MetaCRMApp {
     const nowIso = msg.created_at || msg.sentAt || new Date().toISOString();
     const formattedMsg = {
       id: msg.id || ('msg_' + Date.now()),
-      meta_mid: msg.meta_mid,
-      client_msg_id: msg.client_msg_id,
+      meta_mid: externalMid,
+      client_msg_id: clientMsgId,
       text: resolvedText,
       incoming: isIncoming,
       attachment: att,
@@ -4494,7 +4602,13 @@ class MetaCRMApp {
     targetConv.preview = isIncoming ? resolvedText : ('You: ' + resolvedText);
     targetConv.last_message = resolvedText;
 
-    const isActive = String(this.activeConvId) === convId;
+    const isActive = targetConv && (
+      String(this.activeConvId) === String(targetConv.id) ||
+      String(this.activeConvId) === String(targetConv.conversationId) ||
+      String(this.activeConvId) === String(targetConv.external_id) ||
+      String(this.activeConvId) === convId
+    );
+
     if (!isActive && isIncoming) {
       targetConv.unread = (targetConv.unread || 0) + 1;
       targetConv.unread_count = (targetConv.unread_count || 0) + 1;
@@ -4505,7 +4619,7 @@ class MetaCRMApp {
       else if (this.svc.saveAll) this.svc.saveAll();
     }
 
-    this._moveSidebarConvToTop(convId, targetConv.preview, 'Just now', targetConv.unread);
+    this._moveSidebarConvToTop(targetConv.id, targetConv.preview, 'Just now', targetConv.unread);
 
     if (isActive && this.currentRoute === 'inbox') {
       const thread = document.getElementById('inbox-thread');
@@ -4566,7 +4680,13 @@ class MetaCRMApp {
     if (!convId) return;
 
     const convList = (this.svc ? (this.svc.conversations || []) : []);
-    const existing = convList.find(c => String(c.id) === convId || String(c.conversationId) === convId || String(c.external_id) === convId);
+    const existing = convList.find(c => 
+      String(c.id) === convId || 
+      String(c.conversationId) === convId || 
+      String(c.external_id) === convId ||
+      (conv.customer_psid && String(c.customer_psid) === String(conv.customer_psid)) ||
+      (conv.participant_id && String(c.participant_id) === String(conv.participant_id))
+    );
     if (existing) {
       if (conv.last_message) {
         existing.preview = conv.last_message;
@@ -4581,18 +4701,22 @@ class MetaCRMApp {
         if (this.svc._saveToStorage) this.svc._saveToStorage();
         else if (this.svc.saveAll) this.svc.saveAll();
       }
-      this._moveSidebarConvToTop(convId, existing.preview, 'Just now', existing.unread);
+      this._moveSidebarConvToTop(existing.id, existing.preview, 'Just now', existing.unread);
     } else {
       const isFb = conv.channel === 'messenger' || conv.channel === 'facebook' || conv.platform === 'facebook';
       const pName = conv.customer_name || conv.participant_name || conv.participantName || 'Customer';
+      const accId = conv.page_id || conv.account_id || '6accd8b0d52dc43d8bf6034c';
       const newConv = {
         id: String(conv.external_id || conv.customer_psid || conv.id),
         conversationId: String(conv.external_id || conv.customer_psid || conv.id),
+        external_id: String(conv.external_id || conv.customer_psid || conv.id),
+        participant_id: conv.participant_id || conv.customer_psid,
+        customer_psid: conv.customer_psid || conv.participant_id,
         name: isFb ? pName : (pName.startsWith('@') ? pName : `@${pName}`),
         participant_name: pName,
         channel: isFb ? 'messenger' : 'instagram',
-        page_id: conv.page_id || conv.account_id,
-        accountId: conv.account_id || conv.page_id,
+        page_id: accId,
+        accountId: accId,
         preview: conv.last_message || 'Direct message',
         last_message: conv.last_message || 'Direct message',
         time: 'Just now',

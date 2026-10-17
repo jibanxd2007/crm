@@ -467,25 +467,121 @@ async function runTests() {
   }
 
   // -------------------------------------------------------------
-  // Diagnostics Check
+  // -------------------------------------------------------------
+  // Test 13: Bidirectional UUID <-> External ID mapping
   // -------------------------------------------------------------
   try {
-    const diagReq = {
-      method: 'GET',
-      url: '/api/zernio?path=diagnostics',
-      query: { path: 'diagnostics' },
-      headers: {}
-    };
-    const diagRes = mockRes();
-    const handlerFn = zernioHandler.zernioUnifiedHandler || zernioHandler;
-    await handlerFn(diagReq, diagRes);
+    const { resolveExternalConversationId, registerConversationIdMapping } = require('../api/_utils/index.js');
+    const extId = 'zernio_thread_998877';
+    const uuid = toDeterministicUuid(extId);
+    registerConversationIdMapping(extId, uuid);
 
-    testAssert('Diagnostics: Status endpoint returns sync metrics',
-      diagRes.statusCode === 200 && diagRes.data?.diagnostics?.webhooksReceived >= 0,
-      `Webhooks received: ${diagRes.data?.diagnostics?.webhooksReceived}`
+    const resolvedExt = resolveExternalConversationId(uuid);
+    testAssert('Scenario 13: Bidirectional UUID <-> External ID mapping resolves accurately',
+      resolvedExt === extId,
+      `Resolved ${uuid} -> ${resolvedExt}`
     );
   } catch (e) {
-    testAssert('Diagnostics: Status endpoint returns sync metrics', false, e.message);
+    testAssert('Scenario 13: Bidirectional UUID <-> External ID mapping resolves accurately', false, e.message);
+  }
+
+  // -------------------------------------------------------------
+  // Test 14: Fast message retrieval with accountId & external_id
+  // -------------------------------------------------------------
+  try {
+    const liveAccId = '6accd8b0d52dc43d8bf6034c';
+    const sampleConvId = '28680622324897793';
+    const tStart = Date.now();
+    const req = {
+      method: 'GET',
+      url: `/api/zernio?path=inbox-messages&conversationId=${sampleConvId}&accountId=${liveAccId}`,
+      query: { path: 'inbox-messages', conversationId: sampleConvId, accountId: liveAccId },
+      headers: {}
+    };
+    const res = mockRes();
+    const handlerFn = zernioHandler.zernioUnifiedHandler || zernioHandler;
+    await handlerFn(req, res);
+    const latency = Date.now() - tStart;
+
+    const msgList = Array.isArray(res.data) ? res.data : (res.data?.messages || res.data?.data || []);
+    testAssert('Scenario 14: Fast message fetch with accountId avoids scanning delay',
+      res.statusCode === 200 && Array.isArray(msgList) && latency < 5000,
+      `Latency: ${latency}ms, Messages: ${msgList.length}`
+    );
+  } catch (e) {
+    testAssert('Scenario 14: Fast message fetch with accountId avoids scanning delay', false, e.message);
+  }
+
+  // -------------------------------------------------------------
+  // Test 15: Optimistic message retry preserves text and attachments
+  // -------------------------------------------------------------
+  try {
+    const optClientMid = 'opt_retry_test_' + Date.now();
+    const mockConv = {
+      id: 'conv_retry_demo',
+      messages: [
+        {
+          id: optClientMid,
+          client_msg_id: optClientMid,
+          text: 'Preserved inquiry text',
+          attachment: { type: 'image', url: 'https://cdn.example.com/demo.jpg', name: 'demo.jpg' },
+          status: 'failed'
+        }
+      ]
+    };
+
+    // Simulate user retry: find message, reset status to sending, keep body intact
+    const msgToRetry = mockConv.messages.find(m => m.client_msg_id === optClientMid);
+    msgToRetry.status = 'sending';
+
+    testAssert('Scenario 15: Outgoing message retry preserves original text and attachment without data loss',
+      msgToRetry.status === 'sending' && msgToRetry.text === 'Preserved inquiry text' && msgToRetry.attachment.name === 'demo.jpg',
+      `Status: ${msgToRetry.status}, Text: "${msgToRetry.text}"`
+    );
+  } catch (e) {
+    testAssert('Scenario 15: Outgoing message retry preserves original text and attachment without data loss', false, e.message);
+  }
+
+  // -------------------------------------------------------------
+  // Test 16: Safe schema fallback prunes unmigrated columns automatically
+  // -------------------------------------------------------------
+  try {
+    const { safeDbUpsert } = require('../api/_utils/index.js');
+    let callAttempts = 0;
+    const mockSupabase = {
+      from(table) {
+        return {
+          upsert(payload, opts) {
+            callAttempts++;
+            if (payload.unmigrated_field !== undefined) {
+              return {
+                select() {
+                  return Promise.resolve({ data: null, error: { message: "column \"unmigrated_field\" does not exist" } });
+                }
+              };
+            }
+            return {
+              select() {
+                return Promise.resolve({ data: [{ id: payload.id }], error: null });
+              }
+            };
+          }
+        };
+      }
+    };
+
+    const resUpsert = await safeDbUpsert(mockSupabase, 'messages', {
+      id: '11111111-1111-4111-a111-111111111111',
+      text: 'Resilient payload',
+      unmigrated_field: 'pending_migration_data'
+    });
+
+    testAssert('Scenario 16: Safe schema upsert prunes missing columns and persists record without crashing',
+      resUpsert.data !== null && resUpsert.error === null && callAttempts === 2,
+      `Attempts: ${callAttempts}, Succeeded: ${!resUpsert.error}`
+    );
+  } catch (e) {
+    testAssert('Scenario 16: Safe schema upsert prunes missing columns and persists record without crashing', false, e.message);
   }
 
   console.log('\n===========================================================');

@@ -67,6 +67,17 @@ class SupabaseService {
         });
         this.isLive = true;
         console.log("[Supabase] Connected to live Supabase PostgreSQL instance:", this.config.url);
+        
+        // Listen to auth state transitions to refresh Realtime channels with authenticated credentials
+        if (this.client.auth && typeof this.client.auth.onAuthStateChange === 'function') {
+          this.client.auth.onAuthStateChange((event, session) => {
+            console.log(`[Supabase Auth] State changed: ${event}`);
+            if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+              this.initRealtimeSubscriptions();
+            }
+          });
+        }
+
         this.initRealtimeSubscriptions();
       } catch (err) {
         console.warn("[Supabase] Failed to initialize client:", err);
@@ -80,15 +91,22 @@ class SupabaseService {
   initRealtimeSubscriptions() {
     if (!this.client) return;
 
+    // Clean up any existing channels first to prevent duplicate message handlers
+    this.unsubscribeRealtime();
+
     try {
       let wasDisconnected = false;
+      let reconnectDebounce = null;
       const onStatusChange = (channelName) => (status) => {
         if (status === 'SUBSCRIBED') {
           if (wasDisconnected) {
             wasDisconnected = false;
             console.log(`[Supabase Realtime] Reconnected on channel ${channelName}`);
             if (typeof window !== "undefined") {
-              window.dispatchEvent(new CustomEvent('crm:realtime_reconnected', { detail: { channel: channelName } }));
+              if (reconnectDebounce) clearTimeout(reconnectDebounce);
+              reconnectDebounce = setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('crm:realtime_reconnected', { detail: { channel: channelName, timestamp: new Date().toISOString() } }));
+              }, 200);
             }
           }
         } else if (status === 'TIMED_OUT' || status === 'CHANNEL_ERROR' || status === 'CLOSED') {
@@ -141,9 +159,22 @@ class SupabaseService {
 
   unsubscribeRealtime() {
     if (this.client) {
-      if (this.realtimeChannel) this.client.removeChannel(this.realtimeChannel);
-      if (this.messagesChannel) this.client.removeChannel(this.messagesChannel);
-      if (this.conversationsChannel) this.client.removeChannel(this.conversationsChannel);
+      try {
+        if (this.realtimeChannel) {
+          this.client.removeChannel(this.realtimeChannel);
+          this.realtimeChannel = null;
+        }
+        if (this.messagesChannel) {
+          this.client.removeChannel(this.messagesChannel);
+          this.messagesChannel = null;
+        }
+        if (this.conversationsChannel) {
+          this.client.removeChannel(this.conversationsChannel);
+          this.conversationsChannel = null;
+        }
+      } catch (err) {
+        console.warn("[Supabase Realtime] Unsubscribe warning:", err);
+      }
     }
   }
 

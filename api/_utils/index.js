@@ -153,6 +153,30 @@ function createVercelHandler(fn) {
   return handler;
 }
 
+const UUID_TO_EXTERNAL_MAP = new Map();
+const EXTERNAL_TO_UUID_MAP = new Map();
+
+function registerConversationIdMapping(externalId, uuid) {
+  if (!externalId || !uuid) return;
+  const extStr = String(externalId).trim();
+  const uuidStr = String(uuid).trim();
+  UUID_TO_EXTERNAL_MAP.set(uuidStr, extStr);
+  EXTERNAL_TO_UUID_MAP.set(extStr, uuidStr);
+  if (UUID_TO_EXTERNAL_MAP.size > 2000) {
+    const oldest = UUID_TO_EXTERNAL_MAP.keys().next().value;
+    UUID_TO_EXTERNAL_MAP.delete(oldest);
+  }
+}
+
+function resolveExternalConversationId(id) {
+  if (!id) return id;
+  const strId = String(id).trim();
+  if (UUID_TO_EXTERNAL_MAP.has(strId)) {
+    return UUID_TO_EXTERNAL_MAP.get(strId);
+  }
+  return strId;
+}
+
 function toDeterministicUuid(id) {
   if (!id) return '00000000-0000-0000-0000-000000000000';
   const strId = String(id).trim();
@@ -160,7 +184,86 @@ function toDeterministicUuid(id) {
     return strId;
   }
   const hash = crypto.createHash('md5').update('crm_zernio_' + strId).digest('hex');
-  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+  const uuid = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+  registerConversationIdMapping(strId, uuid);
+  return uuid;
+}
+
+const KNOWN_MISSING_COLUMNS = new Map();
+
+function isUuid(val) {
+  return typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+}
+
+/**
+ * Resilient schema-adaptive database upsert:
+ * Gracefully prunes columns that do not exist in the remote Supabase schema
+ * and validates UUID columns so that webhook ingestion and message persistence
+ * never fail due to pending migrations or type mismatches.
+ */
+async function safeDbUpsert(supabase, table, record, conflictColumn = 'id') {
+  if (!supabase || !record) return { data: null, error: new Error('Supabase client or record missing') };
+  let payload = { ...record };
+
+  // Strip columns already known to not exist in remote schema
+  if (KNOWN_MISSING_COLUMNS.has(table)) {
+    const missing = KNOWN_MISSING_COLUMNS.get(table);
+    for (const col of missing) {
+      delete payload[col];
+    }
+  }
+
+  // Pre-validate UUID fields: page_id is a foreign key UUID in legacy tables
+  if (payload.page_id !== undefined && !isUuid(payload.page_id)) {
+    delete payload.page_id;
+  }
+
+  const maxAttempts = 10;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const { data, error } = await supabase
+      .from(table)
+      .upsert(payload, { onConflict: conflictColumn, ignoreDuplicates: false })
+      .select('id');
+    if (!error) {
+      return { data, error: null };
+    }
+    const msg = error.message || '';
+    const match = msg.match(/Could not find the '([^']+)' column/i) || 
+                  msg.match(/column [^.]*\.?([a-zA-Z0-9_]+) does not exist/i) ||
+                  msg.match(/column "([a-zA-Z0-9_]+)" does not exist/i);
+    if (match && match[1]) {
+      const badCol = match[1];
+      if (!KNOWN_MISSING_COLUMNS.has(table)) {
+        KNOWN_MISSING_COLUMNS.set(table, new Set());
+      }
+      KNOWN_MISSING_COLUMNS.get(table).add(badCol);
+      if (conflictColumn === badCol) {
+        conflictColumn = 'id';
+      }
+      if (payload[badCol] !== undefined) {
+        delete payload[badCol];
+        continue;
+      }
+    }
+
+    if (conflictColumn !== 'id' && msg.includes('no unique or exclusion constraint matching')) {
+      conflictColumn = 'id';
+      continue;
+    }
+
+    const matchUuid = msg.match(/invalid input syntax for type uuid: "([^"]+)"/i);
+    if (matchUuid && matchUuid[1]) {
+      const badVal = matchUuid[1];
+      const badKey = Object.keys(payload).find(k => String(payload[k]) === badVal);
+      if (badKey) {
+        delete payload[badKey];
+        continue;
+      }
+    }
+
+    return { data, error };
+  }
+  return { data: null, error: new Error('Exceeded max schema retry attempts') };
 }
 
 module.exports = {
@@ -169,5 +272,8 @@ module.exports = {
   httpsRequest,
   verifyMetaSignature,
   createVercelHandler,
-  toDeterministicUuid
+  toDeterministicUuid,
+  resolveExternalConversationId,
+  registerConversationIdMapping,
+  safeDbUpsert
 };

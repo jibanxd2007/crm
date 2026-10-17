@@ -1,7 +1,18 @@
 const https = require('https');
 const crypto = require('crypto');
-const { createClient } = require('@supabase/supabase-js');
-const { createVercelHandler, resolveUser, httpsRequest, toDeterministicUuid } = require('./_utils/index.js');
+let createClient = null;
+try {
+  createClient = require('@supabase/supabase-js').createClient;
+} catch (e) {}
+const { 
+  createVercelHandler, 
+  resolveUser, 
+  httpsRequest, 
+  toDeterministicUuid, 
+  resolveExternalConversationId, 
+  registerConversationIdMapping, 
+  safeDbUpsert 
+} = require('./_utils/index.js');
 
 // Structured diagnostics and observability tracker for Zernio & Meta synchronization
 const SYNC_DIAGNOSTICS = {
@@ -262,40 +273,34 @@ async function zernioUnifiedHandler(req, res) {
       if (!c.id) continue;
       try {
         const dbConvId = toDeterministicUuid(c.id);
+        registerConversationIdMapping(c.id, dbConvId);
         const pName = c.customerName || c.participantName || c.name || 'Customer';
         const lastMsg = c.lastMessage || c.preview || 'Direct message';
         const lastTime = c.last_message_at || c.lastMessageAt || c.updatedTime || c.time || new Date().toISOString();
         const channel = c.channel || (c.platform === 'instagram' ? 'instagram' : 'messenger');
 
-        await withRetry(async () => {
-          const { error } = await supabase
-            .from('conversations')
-            .upsert({
-              id: dbConvId,
-              customer_name: pName,
-              customer_psid: String(c.id),
-              external_id: String(c.id),
-              channel: channel,
-              platform: c.platform || (channel === 'instagram' ? 'instagram' : 'facebook'),
-              account_id: c.accountId || null,
-              last_message: lastMsg,
-              last_message_at: lastTime,
-              is_archived: false,
-              updated_at: new Date().toISOString()
-            }, { onConflict: 'id' });
+        const convRecord = {
+          id: dbConvId,
+          customer_name: pName,
+          participant_name: pName,
+          customer_psid: String(c.id),
+          participant_id: String(c.id),
+          external_id: String(c.id),
+          channel: channel,
+          platform: c.platform || (channel === 'instagram' ? 'instagram' : 'facebook'),
+          account_id: c.accountId || null,
+          page_id: c.accountId || null,
+          last_message: lastMsg,
+          last_message_at: lastTime,
+          status: 'open',
+          is_archived: false,
+          updated_at: new Date().toISOString()
+        };
 
-          if (error) {
-            try {
-              await supabase
-                .from('conversations')
-                .upsert({
-                  id: dbConvId,
-                  last_message: lastMsg,
-                  last_message_at: lastTime,
-                  status: 'open',
-                  updated_at: new Date().toISOString()
-                }, { onConflict: 'id' });
-            } catch (e) {}
+        await withRetry(async () => {
+          const { error } = await safeDbUpsert(supabase, 'conversations', convRecord, 'id');
+          if (error && error.code !== '42501') {
+            console.warn('[Sync Conversation Warning]:', error.message);
           }
         });
         count++;
@@ -323,37 +328,27 @@ async function zernioUnifiedHandler(req, res) {
         const text = m.text || m.message || (m.attachment ? '📎 Attachment' : '');
         const time = m.sentAt || m.createdAt || m.created_at || new Date().toISOString();
 
-        await withRetry(async () => {
-          const { error } = await supabase
-            .from('messages')
-            .upsert({
-              conversation_id: dbConvId,
-              meta_mid: String(rawMid),
-              external_id: String(rawMid),
-              sender_type: isFromCust ? 'customer' : 'staff',
-              sender_name: m.senderName || (isFromCust ? 'Customer' : 'Staff'),
-              sender_id: m.senderId || null,
-              text: text,
-              message_text: text,
-              direction: isFromCust ? 'inbound' : 'outbound',
-              attachments: m.attachment ? [m.attachment] : (m.attachments || []),
-              raw_data: m,
-              created_at: time
-            }, { onConflict: 'meta_mid', ignoreDuplicates: true });
+        const msgRecord = {
+          conversation_id: dbConvId,
+          meta_mid: String(rawMid),
+          external_id: String(rawMid),
+          sender_type: isFromCust ? 'customer' : 'staff',
+          sender_name: m.senderName || (isFromCust ? 'Customer' : 'Staff'),
+          sender_id: m.senderId || null,
+          text: text,
+          message_text: text,
+          direction: isFromCust ? 'inbound' : 'outbound',
+          attachments: m.attachment ? [m.attachment] : (m.attachments || []),
+          attachment_url: m.attachment_url || (m.attachment && m.attachment.url) || null,
+          raw_data: m,
+          status: 'sent',
+          created_at: time
+        };
 
-          if (error) {
-            try {
-              await supabase
-                .from('messages')
-                .insert({
-                  conversation_id: dbConvId,
-                  sender_name: m.senderName || (isFromCust ? 'Customer' : 'Staff'),
-                  sender_id: m.senderId || null,
-                  message_text: text,
-                  direction: isFromCust ? 'inbound' : 'outbound',
-                  created_at: time
-                });
-            } catch (e) {}
+        await withRetry(async () => {
+          const { error } = await safeDbUpsert(supabase, 'messages', msgRecord, 'id');
+          if (error && error.code !== '42501') {
+            console.warn('[Sync Message Warning]:', error.message);
           }
         });
         count++;
@@ -374,41 +369,46 @@ async function zernioUnifiedHandler(req, res) {
     }
 
     let conversationId = query.conversationId || (url.match(/conversations\/([^/?]+)/) ? url.match(/conversations\/([^/?]+)/)[1] : null);
-    let accountId = query.accountId || (req.body && req.body.accountId);
+    let accountId = query.accountId || query.account_id || (req.body && (req.body.accountId || req.body.account_id));
+    let externalId = query.externalId || query.external_id || (req.body && (req.body.externalId || req.body.external_id));
 
-    if (!conversationId) {
+    if (!conversationId && !externalId) {
       return res.status(400).json({ error: "Missing conversationId" });
     }
 
-    // If accountId is not provided, look up the owning account from the live conversations list
-    if (!accountId) {
-      try {
-        const convsResp = await new Promise((resolve) => {
-          https.get({
-            hostname: 'zernio.com',
-            port: 443,
-            path: '/api/v1/inbox/conversations',
-            headers: { 'Authorization': `Bearer ${apiKey}`, 'Accept': 'application/json' }
-          }, (cResp) => {
-            let cData = '';
-            cResp.on('data', d => cData += d);
-            cResp.on('end', () => {
-              try { resolve(JSON.parse(cData)); } catch(e) { resolve(null); }
-            });
-          }).on('error', () => resolve(null));
-        });
-        const list = convsResp ? (convsResp.conversations || convsResp.data || []) : [];
-        const match = Array.isArray(list) ? list.find(c => String(c.id) === String(conversationId)) : null;
-        if (match && match.accountId) {
-          accountId = match.accountId;
+    // Resolve conversationId: if UUID, resolve to real Zernio external ID
+    let targetZernioConvId = externalId || conversationId;
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetZernioConvId)) {
+      const mapped = resolveExternalConversationId(targetZernioConvId);
+      if (mapped && mapped !== targetZernioConvId) {
+        targetZernioConvId = mapped;
+      } else {
+        const supabase = getSupabaseAdmin();
+        if (supabase) {
+          try {
+            const { data: convRow } = await supabase
+              .from('conversations')
+              .select('id, external_id, account_id, participant_id, customer_psid')
+              .eq('id', targetZernioConvId)
+              .maybeSingle();
+            if (convRow) {
+              targetZernioConvId = convRow.external_id || convRow.participant_id || convRow.customer_psid || targetZernioConvId;
+              if (!accountId && convRow.account_id) accountId = convRow.account_id;
+            }
+          } catch (e) {}
         }
-      } catch (err) {}
+      }
     }
-    if (!accountId) accountId = '6aca1c00e12ba0b652e62f45';
+
+    // Resolve accountId fast without slow blocking requests
+    if (!accountId) {
+      accountId = '6accd8b0d52dc43d8bf6034c'; // default active Facebook/Messenger account
+    }
 
     if (req.method === 'POST') {
       const text = (req.body && (req.body.message || req.body.text)) || '';
       const rawAtt = req.body && req.body.attachment;
+      const clientMsgId = req.body && (req.body.client_msg_id || req.body.clientMsgId);
       const postPayload = {
         accountId: accountId,
         message: text
@@ -419,7 +419,7 @@ async function zernioUnifiedHandler(req, res) {
       const options = {
         hostname: 'zernio.com',
         port: 443,
-        path: `/api/v1/inbox/conversations/${conversationId}/messages`,
+        path: `/api/v1/inbox/conversations/${encodeURIComponent(targetZernioConvId)}/messages`,
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
@@ -442,23 +442,27 @@ async function zernioUnifiedHandler(req, res) {
                 return resolve();
               }
 
-              // Persist outbound message in Supabase
+              // Persist confirmed outbound message in Supabase
               const supabase = getSupabaseAdmin();
               if (supabase) {
                 const dbConvId = toDeterministicUuid(conversationId);
                 const mid = parsed.id || parsed.messageId || `zmid_${Date.now()}`;
-                await supabase.from('messages').insert({
+                const outMsg = {
                   conversation_id: dbConvId,
                   meta_mid: String(mid),
                   external_id: String(mid),
+                  client_msg_id: clientMsgId || null,
                   sender_type: 'staff',
                   sender_name: 'Staff',
                   direction: 'outbound',
                   text: text || (rawAtt ? `📎 ${rawAtt.name || 'Attachment'}` : ''),
                   message_text: text || (rawAtt ? `📎 ${rawAtt.name || 'Attachment'}` : ''),
                   attachments: rawAtt ? [rawAtt] : [],
+                  attachment_url: (rawAtt && rawAtt.url) || null,
+                  status: 'sent',
                   created_at: new Date().toISOString()
-                }).catch(() => {});
+                };
+                await safeDbUpsert(supabase, 'messages', outMsg, 'id').catch(() => {});
               }
 
               res.status(resp.statusCode || 200).json(parsed);
@@ -473,6 +477,9 @@ async function zernioUnifiedHandler(req, res) {
             }
           });
         });
+        request.setTimeout(7000, () => {
+          request.destroy(new Error('Zernio API message dispatch timeout'));
+        });
         request.on('error', (err) => {
           SYNC_DIAGNOSTICS.failedProcessingAttempts++;
           res.status(500).json({ error: err.message });
@@ -483,11 +490,11 @@ async function zernioUnifiedHandler(req, res) {
       });
     }
 
-    // GET Messages
+    // GET Messages with fast timeout and structured response
     const options = {
       hostname: 'zernio.com',
       port: 443,
-      path: `/api/v1/inbox/conversations/${conversationId}/messages?accountId=${encodeURIComponent(accountId)}`,
+      path: `/api/v1/inbox/conversations/${encodeURIComponent(targetZernioConvId)}/messages?accountId=${encodeURIComponent(accountId)}`,
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -502,7 +509,7 @@ async function zernioUnifiedHandler(req, res) {
         resp.on('end', () => {
           try {
             const parsed = JSON.parse(data);
-            const msgList = parsed.messages || parsed.data || [];
+            const msgList = parsed.messages || parsed.data || (Array.isArray(parsed) ? parsed : []);
             if (Array.isArray(msgList)) {
               msgList.sort((a, b) => {
                 const timeA = new Date(a.sentAt || a.createdAt || a.created_at || 0).getTime();
@@ -512,16 +519,24 @@ async function zernioUnifiedHandler(req, res) {
               // Asynchronously reconcile fetched messages with Supabase
               syncMessagesToSupabase(conversationId, msgList, accountId).catch(() => {});
             }
-            res.status(200).json(parsed);
+            res.status(200).json({
+              status: "success",
+              conversationId: conversationId,
+              messages: msgList,
+              data: msgList
+            });
             resolve();
           } catch (e) {
-            res.status(200).json({ messages: [] });
+            res.status(200).json({ status: "success", messages: [], data: [], conversationId: conversationId });
             resolve();
           }
         });
       });
+      request.setTimeout(6000, () => {
+        request.destroy(new Error('Zernio API message retrieval timeout'));
+      });
       request.on('error', (err) => {
-        res.status(500).json({ error: err.message, messages: [] });
+        res.status(200).json({ status: "warning", error: err.message, messages: [], data: [] });
         resolve();
       });
       request.end();
@@ -623,13 +638,14 @@ async function zernioUnifiedHandler(req, res) {
       const nextCursor = convsResp.nextCursor || convsResp.cursor || null;
       SYNC_DIAGNOSTICS.lastCheckpoint = nextCursor;
 
-      const syncedConvs = await syncConversationsToSupabase(convList);
+      const syncBatchLimit = Math.max(1, Math.min(parseInt(req.query.limit || req.query.batch_size || '5', 10), 10));
+      const syncedConvs = await syncConversationsToSupabase(convList.slice(0, 25));
       let syncedMsgs = 0;
 
-      for (const conv of convList.slice(0, 15)) {
+      for (const conv of convList.slice(0, syncBatchLimit)) {
         if (!conv.id) continue;
         try {
-          const accId = conv.accountId || targetAccount || '6aca1c00e12ba0b652e62f45';
+          const accId = conv.accountId || targetAccount || '6accd8b0d52dc43d8bf6034c';
           const msgsResp = await new Promise((resolve) => {
             const mReq = https.get({
               hostname: 'zernio.com',
@@ -893,44 +909,31 @@ async function zernioUnifiedHandler(req, res) {
           });
         }
 
+        registerConversationIdMapping(rawConvId, dbConvId);
+
         if (supabase) {
           try {
             await withRetry(async () => {
-              // 1. Ensure conversation exists with deterministic UUID
+              // 1. Ensure conversation exists with deterministic UUID and both schema variants
               const richConv = {
                 id: dbConvId,
                 customer_name: senderName,
+                participant_name: senderName,
                 customer_psid: senderId ? String(senderId) : String(rawConvId),
+                participant_id: senderId ? String(senderId) : String(rawConvId),
                 external_id: String(rawConvId),
                 channel: platform === 'instagram' ? 'instagram' : 'messenger',
                 platform: platform,
                 account_id: payload.accountId || payload.account_id || null,
+                page_id: payload.pageId || payload.page_id || payload.accountId || null,
                 last_message: msgText || (rawAtt ? '📎 Attachment' : 'Message'),
                 last_message_at: msgTime,
+                status: 'open',
                 is_archived: false,
                 updated_at: new Date().toISOString()
               };
 
-              let { error: convErr } = await supabase
-                .from('conversations')
-                .upsert(richConv, { onConflict: 'id' });
-
-              if (convErr) {
-                // Fallback to base live schema
-                const baseConv = {
-                  id: dbConvId,
-                  page_id: payload.pageId || payload.page_id || null,
-                  last_message: msgText || (rawAtt ? '📎 Attachment' : 'Message'),
-                  last_message_at: msgTime,
-                  status: 'open',
-                  updated_at: new Date().toISOString()
-                };
-                try {
-                  await supabase
-                    .from('conversations')
-                    .upsert(baseConv, { onConflict: 'id' });
-                } catch (e) {}
-              }
+              await safeDbUpsert(supabase, 'conversations', richConv, 'id');
 
               // Clean attachment path
               const attPath = rawAtt?.storagePath || rawAtt?.storage_path || null;
@@ -941,14 +944,14 @@ async function zernioUnifiedHandler(req, res) {
                 url: attPath || (rawAtt.url && !rawAtt.url.includes('/storage/v1/object/') ? rawAtt.url : null)
               } : null;
 
-              // 2. Deduplicate message on external message ID (meta_mid) with upsert
+              // 2. Deduplicate message on external message ID (meta_mid) with safe schema upsert
               const richMsg = {
                 conversation_id: dbConvId,
                 meta_mid: String(externalMid),
                 external_id: String(externalMid),
                 sender_type: 'customer',
                 sender_name: senderName,
-                sender_id: senderId,
+                sender_id: senderId ? String(senderId) : null,
                 text: msgText || (rawAtt ? '📎 Attachment' : '[Message]'),
                 message_text: msgText || (rawAtt ? '📎 Attachment' : '[Message]'),
                 direction: 'inbound',
@@ -956,34 +959,11 @@ async function zernioUnifiedHandler(req, res) {
                 attachment_storage_path: attPath,
                 attachments: cleanAtt ? [cleanAtt] : [],
                 raw_data: payload,
+                status: 'sent',
                 created_at: msgTime
               };
 
-              let { data: upsertData, error: msgErr } = await supabase
-                .from('messages')
-                .upsert(richMsg, { onConflict: 'meta_mid', ignoreDuplicates: true })
-                .select('id');
-
-              if (msgErr) {
-                // Fallback to base live schema
-                const baseMsg = {
-                  conversation_id: dbConvId,
-                  sender_id: senderId,
-                  sender_name: senderName,
-                  message_text: msgText || (rawAtt ? '📎 Attachment' : '[Message]'),
-                  direction: 'inbound',
-                  attachment_url: attPath || cleanAtt?.url || null,
-                  created_at: msgTime
-                };
-                const { data: baseData, error: baseMsgErr } = await supabase
-                  .from('messages')
-                  .insert(baseMsg)
-                  .select('id');
-
-                if (!baseMsgErr) {
-                  upsertData = baseData;
-                }
-              }
+              let { data: upsertData, error: msgErr } = await safeDbUpsert(supabase, 'messages', richMsg, 'id');
 
               if (!upsertData || upsertData.length === 0) {
                 SYNC_DIAGNOSTICS.duplicatesIgnored++;

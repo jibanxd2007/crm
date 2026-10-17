@@ -307,7 +307,7 @@ while ($listener.IsListening) {
             # /api/zernio?path=inbox-messages or /api/zernio/inbox/conversations/{id}/messages
             if ($urlPath -match "/api/zernio/inbox/conversations/([^/]+)/messages" -or ($urlPath -eq "/api/zernio" -and ($subPath -eq "inbox/messages" -or $subPath -eq "inbox-messages"))) {
                 $cId = if ($matches -and $matches[1]) { $matches[1] } elseif ($queryParams["conversationId"]) { $queryParams["conversationId"] } else { $null }
-                $accId = if ($queryParams["accountId"]) { $queryParams["accountId"] } else { "6aca1c00e12ba0b652e62f45" }
+                $accId = if ($queryParams["accountId"]) { $queryParams["accountId"] } else { "6accd8b0d52dc43d8bf6034c" }
                 if ($request.HttpMethod -eq "GET") {
                     try {
                         $zHeaders = @{ "Authorization" = "Bearer $ZERNIO_API_KEY"; "Accept" = "application/json" }
@@ -322,9 +322,10 @@ while ($listener.IsListening) {
                     $bStr = Read-RequestBody $request
                     $bJson = if ($bStr) { $bStr | ConvertFrom-Json } else { @{} }
                     $msgText = if ($bJson.message) { $bJson.message } else { $bJson.text }
+                    $postAccId = if ($bJson.accountId) { $bJson.accountId } else { $accId }
                     try {
                         $zHeaders = @{ "Authorization" = "Bearer $ZERNIO_API_KEY"; "Content-Type" = "application/json"; "Accept" = "application/json" }
-                        $postObj = @{ accountId = $accId; message = $msgText }
+                        $postObj = @{ accountId = $postAccId; message = $msgText }
                         if ($bJson.attachment) { $postObj["attachment"] = $bJson.attachment }
                         $uri = "$ZERNIO_BASE_URL/inbox/conversations/$cId/messages"
                         $sendRes = Invoke-RestMethod -Uri $uri -Headers $zHeaders -Method Post -Body ($postObj | ConvertTo-Json -Depth 5) -TimeoutSec 15

@@ -465,15 +465,19 @@ class CRMService {
             const prev = currentMap.get(cid);
             const isFb = c.channel === 'messenger' || c.channel === 'facebook' || c.platform === 'facebook';
             const pName = c.participant_name || c.participantName || c.customer_name || c.name || (isFb ? 'Facebook User' : 'Instagram User');
+            const extId = String(c.external_id || c.participant_id || c.customer_psid || c.participantId || cid);
             return {
               id: cid,
               conversationId: cid,
+              external_id: extId,
+              externalId: extId,
+              participant_id: extId,
               name: c.name || (isFb ? pName : (pName.startsWith('@') ? pName : `@${pName}`)),
               participant_name: pName,
               participantUsername: c.participantUsername,
               channel: isFb ? 'messenger' : 'instagram',
-              page_id: c.page_id || c.accountId,
-              accountId: c.accountId || c.page_id,
+              page_id: c.page_id || c.accountId || c.account_id || '6accd8b0d52dc43d8bf6034c',
+              accountId: c.accountId || c.account_id || c.page_id || '6accd8b0d52dc43d8bf6034c',
               unread: c.unread_count || c.unread || 0,
               unread_count: c.unread_count || c.unread || 0,
               last_message_at: c.last_message_at || c.updatedTime || c.created_at || new Date().toISOString(),
@@ -502,15 +506,19 @@ class CRMService {
             const prev = currentMap.get(cid);
             const isFb = c.platform === 'facebook' || c.platform === 'messenger';
             const pName = c.participantName || c.participantUsername || (isFb ? 'Facebook User' : 'Instagram User');
+            const extId = String(c.participantId || c.participant_id || cid);
             return {
               id: cid,
               conversationId: cid,
+              external_id: extId,
+              externalId: extId,
+              participant_id: extId,
               name: isFb ? pName : (pName.startsWith('@') ? pName : `@${pName}`),
               participant_name: pName,
               participantUsername: c.participantUsername,
               channel: isFb ? 'messenger' : 'instagram',
-              page_id: c.accountId,
-              accountId: c.accountId,
+              page_id: c.accountId || '6accd8b0d52dc43d8bf6034c',
+              accountId: c.accountId || '6accd8b0d52dc43d8bf6034c',
               preview: c.lastMessage || 'Direct message',
               last_message: c.lastMessage || 'Direct message',
               time: c.updatedTime ? new Date(c.updatedTime).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'Recently',
@@ -2381,18 +2389,31 @@ class CRMService {
     const rawAtt = options.attachment || (Array.isArray(options.attachments) && options.attachments[0]) || null;
     if (!convId || (!text && !rawAtt && (!options.attachments || options.attachments.length === 0))) return null;
 
-    let conv = this.conversations.find(c => String(c.id) === String(convId));
+    const targetIdStr = String(convId);
+    let conv = this.conversations.find(c => 
+      String(c.id) === targetIdStr || 
+      String(c.conversationId) === targetIdStr || 
+      String(c.external_id) === targetIdStr || 
+      String(c.externalId) === targetIdStr || 
+      String(c.participant_id) === targetIdStr || 
+      String(c.customer_psid) === targetIdStr
+    );
     const nowIso = options.createdAt || options.created_at || new Date().toISOString();
     const resolvedText = text || (rawAtt ? ((rawAtt.type && rawAtt.type.startsWith('image')) ? 'Sent a photo 📷' : `📎 ${rawAtt.name || 'Attachment'}`) : 'Direct message');
 
     if (!conv) {
+      const extId = String(options.externalId || options.external_id || options.participantId || options.participant_id || convId);
       conv = {
-        id: String(convId),
-        conversationId: String(convId),
+        id: targetIdStr,
+        conversationId: targetIdStr,
+        external_id: extId,
+        externalId: extId,
+        participant_id: extId,
         name: options.senderName || "New Inquirer",
+        participant_name: options.senderName || "New Inquirer",
         channel: options.channel || "messenger",
-        page_id: options.pageId || "page_01",
-        accountId: options.accountId || options.pageId || "page_01",
+        page_id: options.pageId || options.accountId || "6accd8b0d52dc43d8bf6034c",
+        accountId: options.accountId || options.pageId || "6accd8b0d52dc43d8bf6034c",
         unread: 1,
         unread_count: 1,
         time: "Just now",
@@ -2403,14 +2424,13 @@ class CRMService {
       };
       this.conversations.unshift(conv);
     } else {
-      // Deduplication check: prevent duplicate messages from webhook retries
+      // Deduplication check: prevent duplicate messages from webhook retries by message ID
       conv.messages = conv.messages || [];
-      const mid = options.metaMid || options.id;
-      const isDupe = conv.messages.some(m => {
-        if (mid && (m.meta_mid === mid || m.id === mid)) return true;
-        return m.incoming && m.text === resolvedText && Math.abs(new Date(m.created_at || 0).getTime() - new Date(nowIso).getTime()) < 3000;
-      });
-      if (isDupe) return conv;
+      const mid = options.metaMid || options.id || options.clientMsgId || options.client_msg_id;
+      if (mid) {
+        const isDupe = conv.messages.some(m => m.meta_mid === mid || m.id === mid || m.client_msg_id === mid);
+        if (isDupe) return conv;
+      }
 
       conv.unread = (conv.unread || 0) + 1;
       conv.unread_count = (conv.unread_count || 0) + 1;
@@ -2420,7 +2440,7 @@ class CRMService {
       conv.time = "Just now";
 
       // Move conversation to the very top of inbox
-      const idx = this.conversations.findIndex(c => String(c.id) === String(convId));
+      const idx = this.conversations.indexOf(conv);
       if (idx > 0) {
         this.conversations.splice(idx, 1);
         this.conversations.unshift(conv);
