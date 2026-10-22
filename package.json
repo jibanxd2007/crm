@@ -9,7 +9,8 @@
     "desktop:start": "electron .",
     "desktop:build": "node build.js && electron-builder --win --x64",
     "desktop:portable": "node build.js && electron-builder --win portable --x64",
-    "desktop:dist": "node build.js && electron-builder --win nsis portable --x64"
+    "desktop:dist": "node build.js && electron-builder --win nsis portable --x64",
+    "desktop:mac": "node build.js && electron-builder --mac"
   },
   "build": {
     "appId": "nz.co.novaautos.metacrm",
@@ -30,6 +31,32 @@
       ],
       "icon": "electron/assets/icon.ico",
       "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "electron/assets/icon.png",
+      "category": "public.app-category.business",
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "title": "${productName} Installer",
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,

@@ -1,0 +1,44 @@
+name: Desktop App Build & Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Web Bundle
+        run: node build.js
+
+      - name: Build Windows Executables
+        if: matrix.os == 'windows-latest'
+        run: npx electron-builder --win nsis portable --x64
+
+      - name: Build macOS DMG
+        if: matrix.os == 'macos-latest'
+        run: npx electron-builder --mac dmg zip
+
+      - name: Upload Release Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-artifacts-${{ matrix.os }}
+          path: dist-electron/*.*
