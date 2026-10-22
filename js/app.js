@@ -1098,6 +1098,12 @@ class MetaCRMApp {
           <span style="color:var(--text-secondary);">Assigned Pages</span>
           <span class="text-xs">${isAdmin ? 'All Connected Pages' : ((this.user.assignedPageIds || []).length > 0 ? `${this.user.assignedPageIds.length} Pages` : 'No Pages Assigned')}</span>
         </div>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border-subtle);">
+          <a href="download.html" target="_blank" class="btn btn-secondary w-full" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;font-weight:600;color:var(--text-primary);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FF6A00" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download Windows Desktop App
+          </a>
+        </div>
       </div>
     `;
     this.el.mConfirm.textContent = 'Close';
@@ -1153,6 +1159,7 @@ class MetaCRMApp {
         title: 'MANAGEMENT',
         items: [
           { id: 'pipeline',     icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`, label: 'Pipeline', shortcut: '' },
+          { id: 'download',     icon: `<svg width="16" height="16" fill="none" stroke="#FF6A00" stroke-width="1.8" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`, label: 'Download App', badge: 'v2.0', shortcut: '' },
           ...(isAdmin ? [
             { id: 'integrations', icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`, label: 'Integrations', shortcut: '' },
             { id: 'connections',  icon: `<svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>`, label: 'Connect Facebook', shortcut: '' },
@@ -1336,9 +1343,93 @@ class MetaCRMApp {
         case 'connections':  this.renderConnections(); break;
         case 'staff':        this.renderStaff(); break;
         case 'settings':     this.renderSettings(); break;
+        case 'download':
+        case 'desktop':      this.renderDownloadPage(); break;
         default:             this.renderDashboard(); break;
       }
     }, 80);
+  }
+
+  renderDownloadPage() {
+    this.el.title.textContent = 'Desktop App for Windows';
+    this.el.actions.innerHTML = `
+      <a href="download.html" target="_blank" class="btn btn-secondary btn-sm" style="display:flex;align-items:center;gap:6px;text-decoration:none;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+        <span>Open Standalone Download Page</span>
+      </a>
+    `;
+
+    this.el.content.innerHTML = `
+      <div style="max-width:960px;margin:0 auto;padding:24px 16px;">
+        <!-- Hero Download Card -->
+        <div style="background:linear-gradient(135deg, rgba(255,106,0,0.12) 0%, rgba(238,9,121,0.06) 100%), var(--bg-surface);border:1px solid rgba(255,106,0,0.3);border-radius:16px;padding:36px;margin-bottom:28px;position:relative;overflow:hidden;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+            <span style="display:inline-flex;align-items:center;gap:6px;background:rgba(52,211,153,0.15);color:#34D399;font-size:12px;font-weight:700;padding:4px 12px;border-radius:999px;border:1px solid rgba(52,211,153,0.3);">
+              <span style="width:6px;height:6px;border-radius:50%;background:#34D399;"></span>
+              Windows Production Client v2.0.0
+            </span>
+            <span style="font-size:12px;color:var(--text-secondary);">64-bit • Centralized Cloud Sync</span>
+          </div>
+          <h2 style="font-family:'Outfit',sans-serif;font-size:32px;font-weight:800;margin-bottom:10px;">MetaCRM for Windows Desktop</h2>
+          <p style="font-size:15px;line-height:1.6;color:var(--text-secondary);max-width:680px;margin-bottom:24px;">
+            Install the dedicated desktop client on your Windows PC. Enjoy instant launch, native system notifications for new leads and incoming messages, and encrypted local session storage with zero browser tab clutter.
+          </p>
+
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-bottom:20px;">
+            <a href="https://github.com/jibanxd2007/crm/releases/download/v2.0.0/MetaCRM-Setup-2.0.0.exe" class="btn btn-primary" style="display:inline-flex;align-items:center;gap:10px;padding:12px 28px;font-size:15px;font-weight:700;background:linear-gradient(135deg, #FF6A00 0%, #EE0979 100%);box-shadow:0 8px 20px rgba(255,106,0,0.3);text-decoration:none;">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span>Download Installer (.exe)</span>
+            </a>
+            <a href="https://github.com/jibanxd2007/crm/releases/download/v2.0.0/MetaCRM-Portable-2.0.0.exe" class="btn btn-secondary" style="display:inline-flex;align-items:center;gap:8px;padding:12px 22px;font-size:14px;font-weight:600;text-decoration:none;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+              <span>Download Portable (.exe)</span>
+            </a>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:20px;font-size:12px;color:var(--text-muted);flex-wrap:wrap;">
+            <span>✓ Desktop &amp; Start Menu Shortcuts</span>
+            <span>✓ Built-in Uninstaller</span>
+            <span>✓ Windows 10 &amp; 11 Compatible</span>
+            <span>✓ Size: ~115 MB</span>
+          </div>
+        </div>
+
+        <!-- Checksums & Verification -->
+        <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:12px;padding:20px 24px;margin-bottom:28px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+            <strong style="font-size:14px;">Verified Binary SHA-256 Checksums</strong>
+            <span style="font-size:11px;color:var(--text-muted);">Release v2.0.0 (x64)</span>
+          </div>
+          <div style="background:#07080A;border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:10px 14px;font-family:monospace;font-size:11px;color:#34D399;display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;overflow-x:auto;">
+            <span>MetaCRM-Setup-2.0.0.exe: c1e00275ca39307c5d4abc584992c95cfcc486257597eddb415c634404bf41e1</span>
+            <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:#FFF;" onclick="navigator.clipboard.writeText('c1e00275ca39307c5d4abc584992c95cfcc486257597eddb415c634404bf41e1'); this.innerText='Copied!'">Copy</button>
+          </div>
+          <div style="background:#07080A;border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:10px 14px;font-family:monospace;font-size:11px;color:#34D399;display:flex;align-items:center;justify-content:space-between;overflow-x:auto;">
+            <span>MetaCRM-Portable-2.0.0.exe: cef53327d16c02b42b49db7413f28b2b88217309963d63d7f65ec51e6b32f474</span>
+            <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:#FFF;" onclick="navigator.clipboard.writeText('cef53327d16c02b42b49db7413f28b2b88217309963d63d7f65ec51e6b32f474'); this.innerText='Copied!'">Copy</button>
+          </div>
+        </div>
+
+        <!-- 3-Step Walkthrough -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(260px, 1fr));gap:16px;">
+          <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:12px;padding:20px;">
+            <div style="width:28px;height:28px;border-radius:50%;background:rgba(255,106,0,0.15);color:#FF6A00;font-weight:800;display:flex;align-items:center;justify-content:center;margin-bottom:12px;">1</div>
+            <strong style="font-size:15px;display:block;margin-bottom:6px;">Download &amp; Run</strong>
+            <p style="font-size:13px;color:var(--text-secondary);line-height:1.5;">Click the Download Installer button above. When finished, double-click <code>MetaCRM-Setup-2.0.0.exe</code>.</p>
+          </div>
+          <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:12px;padding:20px;">
+            <div style="width:28px;height:28px;border-radius:50%;background:rgba(255,106,0,0.15);color:#FF6A00;font-weight:800;display:flex;align-items:center;justify-content:center;margin-bottom:12px;">2</div>
+            <strong style="font-size:15px;display:block;margin-bottom:6px;">Quick Installation</strong>
+            <p style="font-size:13px;color:var(--text-secondary);line-height:1.5;">Follow the setup wizard. It automatically creates shortcuts on your desktop and Windows Start Menu.</p>
+          </div>
+          <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:12px;padding:20px;">
+            <div style="width:28px;height:28px;border-radius:50%;background:rgba(255,106,0,0.15);color:#FF6A00;font-weight:800;display:flex;align-items:center;justify-content:center;margin-bottom:12px;">3</div>
+            <strong style="font-size:15px;display:block;margin-bottom:6px;">Team Login</strong>
+            <p style="font-size:13px;color:var(--text-secondary);line-height:1.5;">Sign in with your authorized email and password. Your leads, conversations, and assigned pages load live.</p>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   _icon(name, size = 15, className = '') {
