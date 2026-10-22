@@ -24,7 +24,7 @@ const INITIAL_CANONICAL_USERS = [
     name: 'Joy',
     displayName: 'Joy',
     role: 'admin',
-    status: 'pending_setup',
+    status: 'active',
     setupToken: 'stp_admin_2026',
     setup_token: 'stp_admin_2026',
     setupExpiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
@@ -37,7 +37,7 @@ const INITIAL_CANONICAL_USERS = [
     name: 'Dan',
     displayName: 'Dan',
     role: 'staff',
-    status: 'pending_setup',
+    status: 'active',
     setupToken: 'stp_dan_2026',
     setup_token: 'stp_dan_2026',
     setupExpiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
@@ -50,7 +50,7 @@ const INITIAL_CANONICAL_USERS = [
     name: 'Maki',
     displayName: 'Maki',
     role: 'staff',
-    status: 'pending_setup',
+    status: 'active',
     setupToken: 'stp_maki_2026',
     setup_token: 'stp_maki_2026',
     setupExpiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
@@ -63,7 +63,7 @@ const INITIAL_CANONICAL_USERS = [
     name: 'Seni',
     displayName: 'Seni',
     role: 'staff',
-    status: 'pending_setup',
+    status: 'active',
     setupToken: 'stp_seni_2026',
     setup_token: 'stp_seni_2026',
     setupExpiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
@@ -76,7 +76,7 @@ const INITIAL_CANONICAL_USERS = [
     name: 'Tala',
     displayName: 'Tala',
     role: 'staff',
-    status: 'pending_setup',
+    status: 'active',
     setupToken: 'stp_tala_2026',
     setup_token: 'stp_tala_2026',
     setupExpiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
@@ -86,10 +86,10 @@ const INITIAL_CANONICAL_USERS = [
   {
     id: '00000000-0000-4001-a006-000000000006',
     email: 'massihsales298@gmail.com',
-    name: 'massihsales298@gmail.com', // Display normalized email as initial profile name
+    name: 'massihsales298@gmail.com',
     displayName: 'massihsales298@gmail.com',
     role: 'staff',
-    status: 'pending_setup',
+    status: 'active',
     setupToken: 'stp_massih_2026',
     setup_token: 'stp_massih_2026',
     setupExpiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
@@ -99,10 +99,10 @@ const INITIAL_CANONICAL_USERS = [
   {
     id: '00000000-0000-4001-a007-000000000007',
     email: 'ania.okana@gmail.com',
-    name: 'ania.okana@gmail.com', // Display normalized email as initial profile name
+    name: 'ania.okana@gmail.com',
     displayName: 'ania.okana@gmail.com',
     role: 'staff',
-    status: 'pending_setup',
+    status: 'active',
     setupToken: 'stp_ania_2026',
     setup_token: 'stp_ania_2026',
     setupExpiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
@@ -111,20 +111,20 @@ const INITIAL_CANONICAL_USERS = [
   }
 ];
 
+// Initial credential seeds for canonical team onboarding
+const CANONICAL_INITIAL_PASSWORDS = {
+  'admina@novaautos.co.nz': 'NovaAutos#2026Admin!',
+  'danielsamoa4u@yahoo.com': 'DanSamoa#2026!',
+  'lemaki4u@yahoo.com': 'MakiNova#2026!',
+  'masimanovacars@yahoo.com': 'SeniCars#2026!',
+  'langinoavacars@yahoo.com': 'TalaCars#2026!',
+  'massihsales298@gmail.com': 'MassihSales#2026!',
+  'ania.okana@gmail.com': 'AniaOkana#2026!'
+};
+
 // In-Memory Master User Directory (persisted across serverless warm invocations)
 global.CRM_USER_STORE = global.CRM_USER_STORE || new Map();
 const USER_STORE = global.CRM_USER_STORE;
-
-// Initialize Store Idempotently
-function initUserStore(forceReload = false) {
-  if (USER_STORE.size === 0 || forceReload) {
-    USER_STORE.clear();
-    for (const u of INITIAL_CANONICAL_USERS) {
-      USER_STORE.set(u.email.toLowerCase(), { ...u });
-    }
-  }
-}
-initUserStore();
 
 // ------------------------------------------------------------------------------
 // CRYPTOGRAPHIC PASSWORD & SESSION HELPERS (Section 3)
@@ -137,6 +137,24 @@ function hashPassword(password, salt) {
   if (!password || !salt) throw new Error("Password and salt required for hashing");
   return crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
 }
+
+// Initialize Store Idempotently
+function initUserStore(forceReload = false) {
+  if (USER_STORE.size === 0 || forceReload) {
+    USER_STORE.clear();
+    for (const u of INITIAL_CANONICAL_USERS) {
+      const copy = { ...u };
+      const initPass = CANONICAL_INITIAL_PASSWORDS[copy.email.toLowerCase()];
+      if (initPass && !copy.passwordHash) {
+        copy.passwordSalt = crypto.createHash('md5').update('crm_salt_' + copy.email).digest('hex');
+        copy.passwordHash = hashPassword(initPass, copy.passwordSalt);
+        copy.status = 'active';
+      }
+      USER_STORE.set(u.email.toLowerCase(), copy);
+    }
+  }
+}
+initUserStore();
 
 /**
  * Constant-time password verification to prevent timing attacks

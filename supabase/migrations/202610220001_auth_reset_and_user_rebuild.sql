@@ -205,9 +205,9 @@ EXCEPTION
   WHEN OTHERS THEN NULL;
 END $$;
 
--- Insert/Update the exact 7 unique accounts in public.users
+-- Insert/Update the exact 7 unique accounts in public.users with active passwords
 INSERT INTO public.users (
-  id, email, name, full_name, role, status, setup_token, setup_token_expires_at, created_at, updated_at
+  id, email, name, full_name, role, status, password_salt, password_hash, setup_token, setup_token_expires_at, created_at, updated_at
 ) VALUES 
   (
     '00000000-0000-4001-a001-000000000001',
@@ -215,8 +215,10 @@ INSERT INTO public.users (
     'Joy',
     'Joy',
     'admin',
-    'setup_pending',
-    'setup_joy_admin_init_token_2026',
+    'active',
+    '25b66b02f14aa8aadebfa60a85c1b18d',
+    '36b0fc63f1e89dd92d0b4ec7962a5b10ebd4efd908309ba135dd5223e3d528f75ed8299380d8c5ab36706f8785f1a4653f8acc3c9ff677b5b5789d83bbf0dda9',
+    'stp_admin_2026',
     NOW() + INTERVAL '7 days',
     NOW(),
     NOW()
@@ -227,8 +229,10 @@ INSERT INTO public.users (
     'Dan',
     'Dan',
     'staff',
-    'setup_pending',
-    'setup_dan_staff_init_token_2026',
+    'active',
+    '9a9fb8018585c122dce31a681d24cb14',
+    'ad7306f8d2e5e9d56602551b6397d67109a329f1fbdb90eb45a48a40fe1605017a3d2d8ae856af14c6282c1daa8445baa62cda060ccfb281fbee251ffe873920',
+    'stp_dan_2026',
     NOW() + INTERVAL '7 days',
     NOW(),
     NOW()
@@ -239,8 +243,10 @@ INSERT INTO public.users (
     'Maki',
     'Maki',
     'staff',
-    'setup_pending',
-    'setup_maki_staff_init_token_2026',
+    'active',
+    '71a2adfb4d217d785fe3fb5bbeb935da',
+    '9b19527820990075597715b9f34cd15cc1c3bb7705e8172a7ec19f5272bc44d934d42a9ca49e90c0c894b0275966703b106a62979d38474621af11d3ad9be5c8',
+    'stp_maki_2026',
     NOW() + INTERVAL '7 days',
     NOW(),
     NOW()
@@ -251,8 +257,10 @@ INSERT INTO public.users (
     'Seni',
     'Seni',
     'staff',
-    'setup_pending',
-    'setup_seni_staff_init_token_2026',
+    'active',
+    'fb4ed9423fcd8b322285c68e91241e60',
+    '94734091cde7a45b1e0c8f574bd7d057f23a0196a19b8b90739ae5f82451f81a892a465d2bbcd0aa67a29ce466fd7e6981c0b1100be7f023ef89ead10bbe6445',
+    'stp_seni_2026',
     NOW() + INTERVAL '7 days',
     NOW(),
     NOW()
@@ -263,8 +271,10 @@ INSERT INTO public.users (
     'Tala',
     'Tala',
     'staff',
-    'setup_pending',
-    'setup_tala_staff_init_token_2026',
+    'active',
+    '3dfd3f8b86a08952d402f339be2aac66',
+    'a72a1eafe3491ef4a7cdfcb1206404c442fc237ce7ab774d16af51e4768ada540bd26ec0464583929fe6e43f2dbbe40f7a54d00b4eb616e3e398364a200ec50f',
+    'stp_tala_2026',
     NOW() + INTERVAL '7 days',
     NOW(),
     NOW()
@@ -275,8 +285,10 @@ INSERT INTO public.users (
     'massihsales298@gmail.com',
     'massihsales298@gmail.com',
     'staff',
-    'setup_pending',
-    'setup_massih_staff_init_token_2026',
+    'active',
+    '7921c8891cc5371dabb1165e3c572010',
+    '1be29818e692a0c0fef242cdc2ebbfb75a1b2260371e2e8392cb2d9028a14768465b1460166acf448c71718d95330d7895b624af4615a01ac1d8570797f29ed0',
+    'stp_massih_2026',
     NOW() + INTERVAL '7 days',
     NOW(),
     NOW()
@@ -287,8 +299,10 @@ INSERT INTO public.users (
     'ania.okana@gmail.com',
     'ania.okana@gmail.com',
     'staff',
-    'setup_pending',
-    'setup_ania_staff_init_token_2026',
+    'active',
+    '33391ced4a5496e3b7bb72d3d69b4bd0',
+    '457a85b376e2b6cf65114957e54a71287f049d5628f82b2428fff1b49227dc0fb32dee33b7c5c551ae487e3b860ac2708d5f295b23ebc3dda2a86b6802044070',
+    'stp_ania_2026',
     NOW() + INTERVAL '7 days',
     NOW(),
     NOW()
@@ -298,6 +312,8 @@ ON CONFLICT (email) DO UPDATE SET
   full_name = EXCLUDED.full_name,
   role = EXCLUDED.role,
   status = EXCLUDED.status,
+  password_salt = EXCLUDED.password_salt,
+  password_hash = EXCLUDED.password_hash,
   setup_token = EXCLUDED.setup_token,
   setup_token_expires_at = EXCLUDED.setup_token_expires_at,
   updated_at = NOW();
