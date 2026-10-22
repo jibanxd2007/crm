@@ -139,17 +139,80 @@ AND id NOT IN (
 
 -- 4. PROVISION THE EXACT SEVEN UNIQUE USER ACCOUNTS
 -- ------------------------------------------------------------------------------
--- All emails stored in normalized lowercase.
--- Joy (admina@novaautos.co.nz) is the sole administrator.
--- All other accounts receive staff role by default.
--- Initial setup tokens are generated with 7-day expiration.
+-- Ensure compatibility with both Supabase Auth (auth.users) and custom auth
+-- Drop users_id_fkey if present to prevent FK violations on custom user provisioning
+DO $$
+BEGIN
+  ALTER TABLE public.users DROP CONSTRAINT IF EXISTS users_id_fkey;
+EXCEPTION
+  WHEN OTHERS THEN NULL;
+END $$;
 
+-- Ensure both 'name' and 'full_name' exist and are nullable
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'name'
+  ) THEN
+    ALTER TABLE public.users ADD COLUMN name TEXT;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'full_name'
+  ) THEN
+    ALTER TABLE public.users ADD COLUMN full_name TEXT;
+  END IF;
+
+  ALTER TABLE public.users ALTER COLUMN name DROP NOT NULL;
+  ALTER TABLE public.users ALTER COLUMN full_name DROP NOT NULL;
+EXCEPTION
+  WHEN OTHERS THEN NULL;
+END $$;
+
+-- Ensure default organization exists if organizations table is present
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'organizations') THEN
+    INSERT INTO public.organizations (id, name, slug)
+    VALUES ('00000000-0000-0000-0000-000000000001', 'Default Workspace', 'default-workspace')
+    ON CONFLICT (id) DO NOTHING;
+  END IF;
+EXCEPTION
+  WHEN OTHERS THEN NULL;
+END $$;
+
+-- Satisfy auth.users if Supabase auth schema is present
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'auth' AND table_name = 'users') THEN
+    INSERT INTO auth.users (
+      id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+    ) VALUES 
+      ('00000000-0000-4001-a001-000000000001', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admina@novaautos.co.nz', '', NOW(), '{"provider":"email","providers":["email"]}'::jsonb, '{"name":"Joy","role":"admin"}'::jsonb, NOW(), NOW()),
+      ('00000000-0000-4001-a002-000000000002', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'danielsamoa4u@yahoo.com', '', NOW(), '{"provider":"email","providers":["email"]}'::jsonb, '{"name":"Dan","role":"staff"}'::jsonb, NOW(), NOW()),
+      ('00000000-0000-4001-a003-000000000003', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'lemaki4u@yahoo.com', '', NOW(), '{"provider":"email","providers":["email"]}'::jsonb, '{"name":"Maki","role":"staff"}'::jsonb, NOW(), NOW()),
+      ('00000000-0000-4001-a004-000000000004', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'masimanovacars@yahoo.com', '', NOW(), '{"provider":"email","providers":["email"]}'::jsonb, '{"name":"Seni","role":"staff"}'::jsonb, NOW(), NOW()),
+      ('00000000-0000-4001-a005-000000000005', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'langinoavacars@yahoo.com', '', NOW(), '{"provider":"email","providers":["email"]}'::jsonb, '{"name":"Tala","role":"staff"}'::jsonb, NOW(), NOW()),
+      ('00000000-0000-4001-a006-000000000006', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'massihsales298@gmail.com', '', NOW(), '{"provider":"email","providers":["email"]}'::jsonb, '{"name":"massihsales298@gmail.com","role":"staff"}'::jsonb, NOW(), NOW()),
+      ('00000000-0000-4001-a007-000000000007', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'ania.okana@gmail.com', '', NOW(), '{"provider":"email","providers":["email"]}'::jsonb, '{"name":"ania.okana@gmail.com","role":"staff"}'::jsonb, NOW(), NOW())
+    ON CONFLICT (id) DO UPDATE SET 
+      email = EXCLUDED.email,
+      updated_at = NOW();
+  END IF;
+EXCEPTION
+  WHEN OTHERS THEN NULL;
+END $$;
+
+-- Insert/Update the exact 7 unique accounts in public.users
 INSERT INTO public.users (
-  id, email, full_name, role, status, setup_token, setup_token_expires_at, created_at, updated_at
+  id, email, name, full_name, role, status, setup_token, setup_token_expires_at, created_at, updated_at
 ) VALUES 
   (
     '00000000-0000-4001-a001-000000000001',
     'admina@novaautos.co.nz',
+    'Joy',
     'Joy',
     'admin',
     'setup_pending',
@@ -162,6 +225,7 @@ INSERT INTO public.users (
     '00000000-0000-4001-a002-000000000002',
     'danielsamoa4u@yahoo.com',
     'Dan',
+    'Dan',
     'staff',
     'setup_pending',
     'setup_dan_staff_init_token_2026',
@@ -172,6 +236,7 @@ INSERT INTO public.users (
   (
     '00000000-0000-4001-a003-000000000003',
     'lemaki4u@yahoo.com',
+    'Maki',
     'Maki',
     'staff',
     'setup_pending',
@@ -184,6 +249,7 @@ INSERT INTO public.users (
     '00000000-0000-4001-a004-000000000004',
     'masimanovacars@yahoo.com',
     'Seni',
+    'Seni',
     'staff',
     'setup_pending',
     'setup_seni_staff_init_token_2026',
@@ -195,6 +261,7 @@ INSERT INTO public.users (
     '00000000-0000-4001-a005-000000000005',
     'langinoavacars@yahoo.com',
     'Tala',
+    'Tala',
     'staff',
     'setup_pending',
     'setup_tala_staff_init_token_2026',
@@ -205,7 +272,8 @@ INSERT INTO public.users (
   (
     '00000000-0000-4001-a006-000000000006',
     'massihsales298@gmail.com',
-    'Massihsales298@gmail.com',
+    'massihsales298@gmail.com',
+    'massihsales298@gmail.com',
     'staff',
     'setup_pending',
     'setup_massih_staff_init_token_2026',
@@ -217,6 +285,7 @@ INSERT INTO public.users (
     '00000000-0000-4001-a007-000000000007',
     'ania.okana@gmail.com',
     'ania.okana@gmail.com',
+    'ania.okana@gmail.com',
     'staff',
     'setup_pending',
     'setup_ania_staff_init_token_2026',
@@ -225,8 +294,12 @@ INSERT INTO public.users (
     NOW()
   )
 ON CONFLICT (email) DO UPDATE SET
+  name = EXCLUDED.name,
   full_name = EXCLUDED.full_name,
   role = EXCLUDED.role,
+  status = EXCLUDED.status,
+  setup_token = EXCLUDED.setup_token,
+  setup_token_expires_at = EXCLUDED.setup_token_expires_at,
   updated_at = NOW();
 
 -- 5. ROW LEVEL SECURITY (RLS) POLICIES FOR USERS TABLE
