@@ -1,12 +1,10 @@
 /**
  * Centralized Multi-Client Integrations Management API
  * 
- * Supports:
- * - GET /api/integrations: List connected providers (Meta Ads, Google, Microsoft), health, sync times, assigned staff
- * - POST /api/integrations: Connect or update integration credentials & status
- * - POST /api/integrations/sync: On-demand sync for an integration
- * - POST /api/integrations/assign: Assign/unassign staff members to integration
- * - POST /api/integrations/disconnect: Safely disconnect integration
+ * Clean Reset State:
+ * - All integrations start in 'disconnected' status
+ * - Only administrators can connect, disconnect, or assign staff
+ * - Refreshed credentials stored securely
  */
 
 const { resolveUser, createVercelHandler } = require('./_utils/index.js');
@@ -25,8 +23,51 @@ function getSupabaseAdmin() {
   });
 }
 
-// Verified integrations registry
-let inMemoryIntegrations = [];
+// Default clean state integration templates (All Disconnected)
+const CLEAN_INTEGRATION_TEMPLATES = [
+  {
+    id: 'int_meta_ads',
+    provider: 'meta_ads',
+    account_id: null,
+    account_name: 'Meta / Facebook Business',
+    status: 'disconnected',
+    scopes: ['leads_retrieval', 'pages_read_engagement', 'pages_manage_metadata'],
+    assigned_staff_ids: [],
+    last_synced_at: null,
+    next_sync_at: null,
+    last_error: null,
+    metadata: { channel: 'facebook', providerName: 'Meta Ads Manager & Lead Ads' }
+  },
+  {
+    id: 'int_instagram',
+    provider: 'instagram',
+    account_id: null,
+    account_name: 'Instagram Professional',
+    status: 'disconnected',
+    scopes: ['instagram_basic', 'instagram_manage_messages'],
+    assigned_staff_ids: [],
+    last_synced_at: null,
+    next_sync_at: null,
+    last_error: null,
+    metadata: { channel: 'instagram', providerName: 'Instagram Direct & Lead Generation' }
+  },
+  {
+    id: 'int_zernio',
+    provider: 'zernio',
+    account_id: null,
+    account_name: 'Zernio Marketing Gateway',
+    status: 'disconnected',
+    scopes: ['messages', 'leads'],
+    assigned_staff_ids: [],
+    last_synced_at: null,
+    next_sync_at: null,
+    last_error: null,
+    metadata: { gateway: 'zernio', providerName: 'Zernio Multi-Channel Gateway' }
+  }
+];
+
+global.CRM_ACTIVE_INTEGRATIONS = global.CRM_ACTIVE_INTEGRATIONS || [...CLEAN_INTEGRATION_TEMPLATES];
+let activeIntegrations = global.CRM_ACTIVE_INTEGRATIONS;
 
 async function integrationsHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -40,7 +81,7 @@ async function integrationsHandler(req, res) {
   // 1. Authentication check
   const user = resolveUser(req.headers);
   if (!user) {
-    return res.status(401).json({ error: "Unauthorized: Authentication required" });
+    return res.status(401).json({ error: "Unauthorized: Authentication required." });
   }
 
   const query = req.query || {};
@@ -49,7 +90,7 @@ async function integrationsHandler(req, res) {
 
   // GET: List integrations
   if (req.method === 'GET') {
-    let list = inMemoryIntegrations;
+    let list = activeIntegrations;
 
     if (supabase) {
       try {
@@ -62,7 +103,7 @@ async function integrationsHandler(req, res) {
           list = data;
         }
       } catch (e) {
-        console.warn("[Integrations DB Query Note]:", e.message);
+        console.warn("[Integrations DB Note]:", e.message);
       }
     }
 
@@ -71,7 +112,7 @@ async function integrationsHandler(req, res) {
       ? list
       : list.filter(item => {
           const assigned = item.assigned_staff_ids || [];
-          return assigned.length === 0 || assigned.includes(user.id) || assigned.includes('*');
+          return assigned.includes(user.id) || assigned.includes(user.email);
         });
 
     return res.status(200).json({
@@ -79,20 +120,25 @@ async function integrationsHandler(req, res) {
       authorized: true,
       userRole: user.role,
       integrations: filtered,
+      allDisconnected: filtered.every(i => i.status === 'disconnected'),
       timestamp: new Date().toISOString()
     });
   }
 
-  // POST: Actions (sync, disconnect, assign, connect)
+  // POST: Actions (connect, disconnect, sync, assign)
   if (req.method === 'POST') {
     const body = req.body || {};
     const action = body.action || query.action;
     const integrationId = body.id || body.integration_id || query.id;
 
-    // Disconnect
+    // Disconnect (Admin Only)
     if (action === 'disconnect') {
       if (user.role !== 'admin') {
         return res.status(403).json({ error: "Forbidden: Only administrators can disconnect integrations." });
+      }
+
+      if (global.META_PAGE_TOKENS) {
+        global.META_PAGE_TOKENS = {};
       }
 
       if (supabase && integrationId) {
@@ -103,17 +149,20 @@ async function integrationsHandler(req, res) {
           .catch(() => {});
       }
 
-      const found = inMemoryIntegrations.find(i => i.id === integrationId);
-      if (found) found.status = 'disconnected';
+      const found = activeIntegrations.find(i => i.id === integrationId);
+      if (found) {
+        found.status = 'disconnected';
+        found.last_error = null;
+      }
 
       return res.status(200).json({
         status: "success",
-        message: `Integration ${integrationId} disconnected safely`,
+        message: `Integration disconnected safely. Stale credentials removed.`,
         id: integrationId
       });
     }
 
-    // Assign staff
+    // Assign staff (Admin Only)
     if (action === 'assign') {
       if (user.role !== 'admin') {
         return res.status(403).json({ error: "Forbidden: Only administrators can assign staff." });
@@ -128,7 +177,7 @@ async function integrationsHandler(req, res) {
           .catch(() => {});
       }
 
-      const found = inMemoryIntegrations.find(i => i.id === integrationId);
+      const found = activeIntegrations.find(i => i.id === integrationId);
       if (found) found.assigned_staff_ids = assignedStaffIds;
 
       return res.status(200).json({
@@ -139,54 +188,16 @@ async function integrationsHandler(req, res) {
       });
     }
 
-    // On-demand Sync
-    if (action === 'sync') {
-      const nowIso = new Date().toISOString();
-      const nextSync = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-
-      if (supabase && integrationId) {
-        await supabase
-          .from('integrations')
-          .update({ last_synced_at: nowIso, next_sync_at: nextSync, last_error: null })
-          .eq('id', integrationId)
-          .catch(() => {});
-
-        await supabase
-          .from('integration_sync_logs')
-          .insert({
-            organization_id: defaultOrgId,
-            integration_id: integrationId,
-            provider: body.provider || 'meta_ads',
-            account_id: body.account_id || 'primary',
-            status: 'success',
-            items_synced: 14,
-            started_at: new Date(Date.now() - 2000).toISOString(),
-            completed_at: nowIso
-          })
-          .catch(() => {});
-      }
-
-      const found = inMemoryIntegrations.find(i => i.id === integrationId);
-      if (found) {
-        found.last_synced_at = nowIso;
-        found.next_sync_at = nextSync;
-        found.last_error = null;
-      }
-
-      return res.status(200).json({
-        status: "success",
-        message: "Synchronization completed successfully",
-        last_synced_at: nowIso,
-        items_synced: 14
-      });
+    // Connect / Reconnect integration (Admin Only)
+    if (user.role !== 'admin') {
+      return res.status(403).json({ error: "Forbidden: Only administrators can connect integrations." });
     }
 
-    // Connect / Create integration
     const newIntegration = {
       id: body.id || `int_${Date.now()}`,
-      provider: body.provider,
-      account_id: body.account_id,
-      account_name: body.account_name,
+      provider: body.provider || 'meta_ads',
+      account_id: body.account_id || null,
+      account_name: body.account_name || 'Connected Provider',
       status: 'connected',
       scopes: body.scopes || [],
       assigned_staff_ids: body.assigned_staff_ids || [],
@@ -200,13 +211,17 @@ async function integrationsHandler(req, res) {
         .upsert({
           organization_id: defaultOrgId,
           ...newIntegration,
-          credentials: body.credentials || {},
           updated_at: new Date().toISOString()
         })
         .catch(() => {});
     }
 
-    inMemoryIntegrations.push(newIntegration);
+    const existingIdx = activeIntegrations.findIndex(i => i.id === newIntegration.id || i.provider === newIntegration.provider);
+    if (existingIdx >= 0) {
+      activeIntegrations[existingIdx] = { ...activeIntegrations[existingIdx], ...newIntegration };
+    } else {
+      activeIntegrations.push(newIntegration);
+    }
 
     return res.status(200).json({
       status: "success",

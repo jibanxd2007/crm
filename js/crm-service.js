@@ -20,7 +20,8 @@
 
 class CRMService {
   constructor() {
-    this.storagePrefix = "metacrm_v4_clean_";
+    this.storagePrefix = "metacrm_v5_reset_";
+    this.sessionTokenKey = "metacrm_session_token_v2";
     this.leadsKey = this.storagePrefix + "leads";
     this.pagesKey = this.storagePrefix + "pages";
     this.staffKey = this.storagePrefix + "staff";
@@ -233,9 +234,28 @@ class CRMService {
       const saved = localStorage.getItem(this.staffKey);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && Array.isArray(parsed)) {
-          const filtered = parsed.filter(s => s.id !== 'user_a' && s.id !== 'user_b' && s.email !== 'rahul@metacrm.io');
-          if (filtered.length > 0) return filtered;
+        if (parsed && Array.isArray(parsed) && parsed.length > 0) {
+          // Strict deduplication & normalization: exactly the authorized unique emails
+          const authorizedMap = new Map();
+          for (const u of this.getDefaultStaff()) {
+            authorizedMap.set(u.email.toLowerCase(), u);
+          }
+          // Merge existing saved assignments or status
+          for (const s of parsed) {
+            const email = (s.email || '').toLowerCase().trim();
+            if (authorizedMap.has(email)) {
+              const base = authorizedMap.get(email);
+              authorizedMap.set(email, {
+                ...base,
+                ...s,
+                email: base.email, // preserve normalized email
+                role: email === 'admina@novaautos.co.nz' ? 'admin' : (s.role || base.role),
+                name: s.name || base.name,
+                displayName: s.displayName || s.name || base.displayName
+              });
+            }
+          }
+          return Array.from(authorizedMap.values());
         }
       }
     } catch (e) {}
@@ -243,7 +263,78 @@ class CRMService {
   }
 
   getDefaultStaff() {
-    return [];
+    return [
+      {
+        id: "00000000-0000-4001-a001-000000000001",
+        email: "admina@novaautos.co.nz",
+        name: "Joy",
+        displayName: "Joy",
+        role: "admin",
+        status: "setup_pending",
+        lastLogin: "Never",
+        assignedPageIds: ["*"]
+      },
+      {
+        id: "00000000-0000-4001-a002-000000000002",
+        email: "danielsamoa4u@yahoo.com",
+        name: "Dan",
+        displayName: "Dan",
+        role: "staff",
+        status: "setup_pending",
+        lastLogin: "Never",
+        assignedPageIds: []
+      },
+      {
+        id: "00000000-0000-4001-a003-000000000003",
+        email: "lemaki4u@yahoo.com",
+        name: "Maki",
+        displayName: "Maki",
+        role: "staff",
+        status: "setup_pending",
+        lastLogin: "Never",
+        assignedPageIds: []
+      },
+      {
+        id: "00000000-0000-4001-a004-000000000004",
+        email: "masimanovacars@yahoo.com",
+        name: "Seni",
+        displayName: "Seni",
+        role: "staff",
+        status: "setup_pending",
+        lastLogin: "Never",
+        assignedPageIds: []
+      },
+      {
+        id: "00000000-0000-4001-a005-000000000005",
+        email: "langinoavacars@yahoo.com",
+        name: "Tala",
+        displayName: "Tala",
+        role: "staff",
+        status: "setup_pending",
+        lastLogin: "Never",
+        assignedPageIds: []
+      },
+      {
+        id: "00000000-0000-4001-a006-000000000006",
+        email: "massihsales298@gmail.com",
+        name: "Massihsales298@gmail.com",
+        displayName: "Massihsales298@gmail.com",
+        role: "staff",
+        status: "setup_pending",
+        lastLogin: "Never",
+        assignedPageIds: []
+      },
+      {
+        id: "00000000-0000-4001-a007-000000000007",
+        email: "ania.okana@gmail.com",
+        name: "ania.okana@gmail.com",
+        displayName: "ania.okana@gmail.com",
+        role: "staff",
+        status: "setup_pending",
+        lastLogin: "Never",
+        assignedPageIds: []
+      }
+    ];
   }
 
   loadCampaigns() {
@@ -372,7 +463,9 @@ class CRMService {
   async fetchRemoteLeads() {
     try {
       const authUser = this.getCurrentUser();
+      const token = this.getSessionToken();
       const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       if (authUser && authUser.id) headers['X-User-Id'] = authUser.id;
       const res = await fetch('/api/leads', { headers }).catch(() => null);
       if (res && res.ok) {
@@ -397,7 +490,9 @@ class CRMService {
   async fetchRemotePages() {
     try {
       const authUser = this.getCurrentUser();
+      const token = this.getSessionToken();
       const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       if (authUser && authUser.id) headers['X-User-Id'] = authUser.id;
       const res = await fetch('/api/pages', { headers }).catch(() => null);
       if (res && res.ok) {
@@ -424,7 +519,9 @@ class CRMService {
   async fetchRemoteStaff() {
     try {
       const authUser = this.getCurrentUser();
+      const token = this.getSessionToken();
       const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       if (authUser && authUser.id) headers['X-User-Id'] = authUser.id;
       const res = await fetch('/api/staff', { headers }).catch(() => null);
       if (res && res.ok) {
@@ -436,7 +533,11 @@ class CRMService {
             displayName: s.full_name || s.name || s.email,
             email: s.email,
             role: s.role || 'staff',
-            assignedPageIds: s.assigned_pages || []
+            status: s.status || 'active',
+            lastLogin: s.lastLogin || 'Never',
+            setupLink: s.setupLink || null,
+            setupExpiresAt: s.setupExpiresAt || null,
+            assignedPageIds: s.assignedPages || s.assigned_pages || []
           }));
           this.saveStaff();
           this.notifyChange('staff_updated');
@@ -452,7 +553,9 @@ class CRMService {
   async fetchRemoteConversations() {
     try {
       const authUser = this.getCurrentUser();
+      const token = this.getSessionToken();
       const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       if (authUser && authUser.id) headers['X-User-Id'] = authUser.id;
       const res = await fetch('/api/messages', { headers }).catch(() => null);
       if (res && res.ok) {
@@ -734,51 +837,84 @@ class CRMService {
     return allowedPages.includes(conv.page_id);
   }
 
-  login(email, password = "") {
+  getSessionToken() {
+    try {
+      return localStorage.getItem('metacrm_session_token_v2') || '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  setSessionToken(token) {
+    try {
+      if (token) localStorage.setItem('metacrm_session_token_v2', token);
+      else localStorage.removeItem('metacrm_session_token_v2');
+    } catch (e) {}
+  }
+
+  async login(email, password = "") {
     const normalizedEmail = (email || "").trim().toLowerCase();
-    const user = this.staff.find(s => s.email.toLowerCase() === normalizedEmail);
-
-    if (!user) {
-      return { success: false, error: "Invalid credentials. Staff member not found." };
+    if (!normalizedEmail || !password) {
+      return { success: false, error: "Please enter both your work email and password." };
     }
 
-    if (user.status !== "active") {
-      return { success: false, error: "This staff account is currently deactivated." };
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalizedEmail, password })
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || data.status !== 'success') {
+        return {
+          success: false,
+          error: data.error || (res.status === 429 ? "Too many login attempts. Please wait a few minutes." : "Invalid email or password.")
+        };
+      }
+
+      this.setSessionToken(data.token);
+      this.currentUser = { ...data.user };
+      try {
+        localStorage.setItem(this.currentUserKey, JSON.stringify(this.currentUser));
+        localStorage.setItem('metacrm_authenticated', 'true');
+      } catch (e) {}
+
+      this.logAudit("USER_LOGIN", this.currentUser.email, "SUCCESS", `Logged in successfully as ${this.currentUser.role}.`);
+      this.notifyChange("auth_login", { user: this.currentUser });
+      return {
+        success: true,
+        user: this.currentUser,
+        redirectUrl: data.redirectUrl || (this.currentUser.role === "admin" ? "/#dashboard" : "/#dashboard")
+      };
+    } catch (err) {
+      // Fallback: check in-memory user store if server connection is unavailable
+      const localUser = this.staff.find(s => s.email.toLowerCase() === normalizedEmail);
+      if (localUser && localUser.status === 'setup_pending') {
+        return { success: false, error: "Account setup is pending. Please use your initial setup link to set your password." };
+      }
+      return { success: false, error: err.message || "Authentication failed. Please verify your connection." };
     }
-
-    this.currentUser = { ...user };
-    try {
-      localStorage.setItem(this.currentUserKey, JSON.stringify(this.currentUser));
-    } catch (e) {}
-
-    this.logAudit("USER_LOGIN", user.email, "SUCCESS", `Logged in successfully as ${user.role}.`);
-    this.notifyChange("auth_login", { user: this.currentUser });
-    return {
-      success: true,
-      user: this.currentUser,
-      redirectUrl: user.role === "admin" ? "/admin/dashboard" : "/staff/dashboard"
-    };
   }
 
-  switchUser(userId) {
-    const user = this.staff.find(s => s.id === userId);
-    if (!user) return false;
-
-    this.currentUser = { ...user };
-    try {
-      localStorage.setItem(this.currentUserKey, JSON.stringify(this.currentUser));
-    } catch (e) {}
-
-    this.logAudit("SWITCH_USER", user.displayName || user.name, "SUCCESS", `Switched active session to ${user.role} (${user.email}).`);
-    this.notifyChange("auth_switched", { user: this.currentUser });
-    return true;
-  }
-
-  logout() {
+  async logout() {
     const prev = this.currentUser ? this.currentUser.name : "User";
+    const token = this.getSessionToken();
+    try {
+      if (token) {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        }).catch(() => {});
+      }
+    } catch (e) {}
+
     this.currentUser = null;
+    this.setSessionToken('');
     try {
       localStorage.removeItem(this.currentUserKey);
+      localStorage.removeItem('metacrm_authenticated');
     } catch (e) {}
     this.logAudit("USER_LOGOUT", prev, "SUCCESS", "Logged out from MetaCRM.");
     this.notifyChange("auth_logout");

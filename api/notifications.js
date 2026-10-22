@@ -16,7 +16,7 @@ async function notificationsHandler(req, res) {
     return res.status(401).json({ error: "Unauthorized: Authentication credentials required" });
   }
 
-  const userId = (req.headers['x-user-id'] || req.headers['X-User-Id'] || '').toLowerCase();
+  const userId = (user && user.id) || (req.headers['x-user-id'] || req.headers['X-User-Id'] || '').toLowerCase();
 
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;

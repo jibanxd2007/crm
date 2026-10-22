@@ -1046,6 +1046,122 @@ while ($listener.IsListening) {
                 continue
             }
 
+            # /api/staff and /api/auth/*
+            if ($urlPath -eq "/api/staff" -or $urlPath.StartsWith("/api/auth/")) {
+                $canonicalStaff = @(
+                    @{ id = "00000000-0000-0000-0000-000000000001"; name = "Joy"; email = "admina@novaautos.co.nz"; role = "admin"; status = "active"; setup_token = $null; assigned_pages = @() },
+                    @{ id = "00000000-0000-0000-0000-000000000002"; name = "Dan"; email = "danielsamoa4u@yahoo.com"; role = "staff"; status = "pending_setup"; setup_token = "stp_dan_2026"; assigned_pages = @() },
+                    @{ id = "00000000-0000-0000-0000-000000000003"; name = "Maki"; email = "lemaki4u@yahoo.com"; role = "staff"; status = "pending_setup"; setup_token = "stp_maki_2026"; assigned_pages = @() },
+                    @{ id = "00000000-0000-0000-0000-000000000004"; name = "Seni"; email = "masimanovacars@yahoo.com"; role = "staff"; status = "pending_setup"; setup_token = "stp_seni_2026"; assigned_pages = @() },
+                    @{ id = "00000000-0000-0000-0000-000000000005"; name = "Tala"; email = "langinoavacars@yahoo.com"; role = "staff"; status = "pending_setup"; setup_token = "stp_tala_2026"; assigned_pages = @() },
+                    @{ id = "00000000-0000-0000-0000-000000000006"; name = "massihsales298@gmail.com"; email = "massihsales298@gmail.com"; role = "staff"; status = "pending_setup"; setup_token = "stp_massih_2026"; assigned_pages = @() },
+                    @{ id = "00000000-0000-0000-0000-000000000007"; name = "ania.okana@gmail.com"; email = "ania.okana@gmail.com"; role = "staff"; status = "pending_setup"; setup_token = "stp_ania_2026"; assigned_pages = @() }
+                )
+
+                if ($request.HttpMethod -eq "GET" -and $urlPath -eq "/api/staff") {
+                    Send-JsonResponse $response 200 @{
+                        status = "success";
+                        staff = $canonicalStaff;
+                        total = 7;
+                        admin = "admina@novaautos.co.nz"
+                    }
+                    continue
+                }
+
+                if ($request.HttpMethod -eq "POST" -or $urlPath.StartsWith("/api/auth/")) {
+                    $postBody = Read-RequestBody $request
+                    $bJson = if ($postBody) { try { $postBody | ConvertFrom-Json } catch { $null } } else { $null }
+                    $act = if ($bJson.action) { $bJson.action } else { $urlPath.Replace("/api/auth/", "") }
+
+                    if ($act -eq "login") {
+                        $inputEmail = if ($bJson.email) { $bJson.email.Trim().ToLower() } else { "" }
+                        $matched = $canonicalStaff | Where-Object { $_.email -eq $inputEmail }
+                        if ($matched) {
+                            $fakeToken = "st_ps_" + (Get-Random)
+                            Send-JsonResponse $response 200 @{
+                                success = $true;
+                                message = "Authenticated successfully";
+                                sessionToken = $fakeToken;
+                                user = $matched;
+                                redirectUrl = if ($matched.role -eq "admin") { "/#dashboard" } else { "/#dashboard" }
+                            }
+                            continue
+                        } else {
+                            Send-JsonResponse $response 401 @{ success = $false; error = "Invalid email or account does not exist." }
+                            continue
+                        }
+                    }
+
+                    if ($act -eq "setup-password" -or $act -eq "reset-password") {
+                        Send-JsonResponse $response 200 @{
+                            success = $true;
+                            message = "Password configured successfully";
+                            sessionToken = "st_ps_" + (Get-Random);
+                            user = $canonicalStaff[0]
+                        }
+                        continue
+                    }
+
+                    if ($act -eq "forgot-password") {
+                        $inputEmail = if ($bJson.email) { $bJson.email.Trim().ToLower() } else { "" }
+                        Send-JsonResponse $response 200 @{
+                            success = $true;
+                            message = "Password reset instructions prepared";
+                            resetLink = "http://localhost:3000/#reset-password?token=rst_demo_" + (Get-Random)
+                        }
+                        continue
+                    }
+
+                    if ($act -eq "logout") {
+                        Send-JsonResponse $response 200 @{ success = $true; message = "Logged out successfully" }
+                        continue
+                    }
+
+                    if ($act -eq "update-profile") {
+                        Send-JsonResponse $response 200 @{ success = $true; message = "Profile updated successfully" }
+                        continue
+                    }
+
+                    if ($act -eq "toggle-status") {
+                        Send-JsonResponse $response 200 @{ success = $true; message = "User status updated" }
+                        continue
+                    }
+
+                    if ($act -eq "admin-reset-password") {
+                        $tok = "stp_rst_" + (Get-Random)
+                        Send-JsonResponse $response 200 @{
+                            success = $true;
+                            setup_token = $tok;
+                            setupLink = "http://localhost:3000/#setup-password?token=" + $tok
+                        }
+                        continue
+                    }
+
+                    if ($act -eq "invite") {
+                        $tok = "stp_inv_" + (Get-Random)
+                        $newUser = @{
+                            id = [guid]::NewGuid().ToString();
+                            name = $bJson.name;
+                            email = $bJson.email.Trim().ToLower();
+                            role = if ($bJson.role) { $bJson.role } else { "staff" };
+                            status = "pending_setup";
+                            setup_token = $tok;
+                            assigned_pages = @()
+                        }
+                        Send-JsonResponse $response 201 @{
+                            success = $true;
+                            user = $newUser;
+                            setup_token = $tok;
+                            setupLink = "http://localhost:3000/#setup-password?token=" + $tok
+                        }
+                        continue
+                    }
+
+                    Send-JsonResponse $response 200 @{ success = $true; message = "Action processed" }
+                    continue
+                }
+            }
+
             # Fallback for unknown API routes
             Send-JsonResponse $response 200 @{ status = "ok"; message = "API request received on $urlPath" }
             continue

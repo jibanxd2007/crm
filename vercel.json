@@ -106,6 +106,34 @@
       "destination": "/api/notifications.js"
     },
     {
+      "source": "/api/auth/login",
+      "destination": "/api/staff.js?action=login"
+    },
+    {
+      "source": "/api/auth/logout",
+      "destination": "/api/staff.js?action=logout"
+    },
+    {
+      "source": "/api/auth/session",
+      "destination": "/api/staff.js?action=session"
+    },
+    {
+      "source": "/api/auth/setup-password",
+      "destination": "/api/staff.js?action=setup-password"
+    },
+    {
+      "source": "/api/auth/verify-setup-token",
+      "destination": "/api/staff.js?action=verify-setup-token"
+    },
+    {
+      "source": "/api/auth/forgot-password",
+      "destination": "/api/staff.js?action=forgot-password"
+    },
+    {
+      "source": "/api/auth/reset-password",
+      "destination": "/api/staff.js?action=reset-password"
+    },
+    {
       "source": "/api/auth/meta/url",
       "destination": "/api/meta.js?path=oauth"
     },

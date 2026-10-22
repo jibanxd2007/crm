@@ -127,6 +127,7 @@ CREATE TABLE IF NOT EXISTS public.instagram_accounts (
 -- ------------------------------------------------------------------------------
 -- 6. AD ACCOUNTS
 -- ------------------------------------------------------------------------------
+
 CREATE TABLE IF NOT EXISTS public.ad_accounts (
   id TEXT PRIMARY KEY, -- 'act_' || meta_ad_account_id
   organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE DEFAULT '00000000-0000-0000-0000-000000000001',

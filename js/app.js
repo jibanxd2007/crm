@@ -27,14 +27,7 @@ class MetaCRMApp {
     this.meta = window.metaService;
 
     // Load active user session from crmService
-    this.user = this.svc ? this.svc.getCurrentUser() : {
-      id: 'usr_admin',
-      name: 'Administrator',
-      displayName: 'Administrator',
-      email: 'admin@company.com',
-      role: 'admin',
-      assignedPageIds: []
-    };
+    this.user = this.svc ? this.svc.getCurrentUser() : null;
 
     // Active conversation in Inbox
     this.activeConvId = null;
@@ -416,12 +409,12 @@ class MetaCRMApp {
             </div>
             <kbd class="cmd-badge">Action</kbd>
           </div>
-          <div class="cmd-item" data-cmd="switch user" onclick="window.app.closeCommandPalette(); window.app.openUserSwitchModal();">
+          <div class="cmd-item" data-cmd="profile user account" onclick="window.app.closeCommandPalette(); window.app.openUserProfileModal();">
             <div class="cmd-item-left">
               <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-              <span>Switch User Role &amp; Session</span>
+              <span>My Profile &amp; Account Security</span>
             </div>
-            <kbd class="cmd-badge">RBAC</kbd>
+            <kbd class="cmd-badge">Auth</kbd>
           </div>
           <div class="cmd-item" data-cmd="sync accounts" onclick="window.app.closeCommandPalette(); window.app.syncConnections();">
             <div class="cmd-item-left">
@@ -597,14 +590,41 @@ class MetaCRMApp {
   _route() {
     this._checkUrlCallbacks();
 
-    let hash = window.location.hash.replace(/^#\/?/, '') || 'dashboard';
-    hash = hash.split('?')[0];
-    hash = hash.replace(/^(admin|staff)\//, '');
+    const fullHash = window.location.hash.replace(/^#\/?/, '') || 'dashboard';
+    const [rawHash, queryStr] = fullHash.split('?');
+    const hash = rawHash.replace(/^(admin|staff)\//, '');
 
-    // Check if user is logged out or visiting #login
+    // 1. Password Setup flow (#setup-password?token=...)
+    if (hash === 'setup-password') {
+      this.currentRoute = 'setup-password';
+      this.renderSetupPasswordScreen(queryStr);
+      return;
+    }
+
+    // 2. Password Reset flow (#reset-password?token=...)
+    if (hash === 'reset-password') {
+      this.currentRoute = 'reset-password';
+      this.renderResetPasswordScreen(queryStr);
+      return;
+    }
+
+    // 3. Login or Unauthenticated check
     if (hash === 'login' || !this.user) {
       this.currentRoute = 'login';
       this.renderAuthScreen();
+      return;
+    }
+
+    // 4. Admin-only Route Guard
+    const adminOnlyRoutes = ['staff', 'settings', 'connections', 'integrations', 'reports'];
+    const isAdmin = this.user && (this.user.role === 'admin' || this.user.role === 'super_admin');
+    if (adminOnlyRoutes.includes(hash) && !isAdmin) {
+      this.currentRoute = hash;
+      if (this.el.auth) this.el.auth.style.display = 'none';
+      if (this.el.appLayout) this.el.appLayout.style.display = 'flex';
+      this.toggleMobileSidebar(false);
+      this.renderSidebar();
+      this.renderAccessDeniedScreen(hash);
       return;
     }
 
@@ -625,7 +645,7 @@ class MetaCRMApp {
   }
 
   // ──────────────────────────────────────────────────────────
-  // Dedicated Login, Signup & Auth Management
+  // Dedicated Login, Setup & Auth Management (Email & Password)
   // ──────────────────────────────────────────────────────────
 
   renderAuthScreen() {
@@ -643,192 +663,446 @@ class MetaCRMApp {
               <circle cx="23" cy="16" r="3.2" fill="#10B981" />
               <defs>
                 <linearGradient id="auth-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stop-color="#6366F1" />
-                  <stop offset="100%" stop-color="#4338CA" />
+                  <stop offset="0%" stop-color="#202223" />
+                  <stop offset="100%" stop-color="#303030" />
                 </linearGradient>
               </defs>
             </svg>
           </div>
           <h2 class="auth-title">MetaCRM</h2>
-          <p class="auth-subtitle">Meta &amp; Instagram Multi-User Lead Management</p>
-        </div>
-
-        <div class="auth-tabs">
-          <button class="auth-tab-btn ${this.authTab === 'login' ? 'active' : ''}" onclick="window.app.switchAuthTab('login')">Sign In</button>
-          <button class="auth-tab-btn ${this.authTab === 'signup' ? 'active' : ''}" onclick="window.app.switchAuthTab('signup')">Create Account</button>
+          <p class="auth-subtitle">Production Lead &amp; Multi-Tenant Messaging Platform</p>
         </div>
 
         <div id="auth-feedback"></div>
 
-        ${this.authTab === 'login' ? `
-        <form onsubmit="event.preventDefault(); window.app.submitLogin();">
+        <form onsubmit="event.preventDefault(); window.app.submitLogin();" style="margin-top:14px;">
           <div style="margin-bottom:14px;">
-            <label class="settings-label">Work Email</label>
-            <input type="email" id="login-email" class="input" placeholder="admin@company.com" required autocomplete="username">
+            <label class="settings-label" for="login-email">Login Email</label>
+            <input type="email" id="login-email" class="input" placeholder="e.g. admina@novaautos.co.nz" required autocomplete="username">
           </div>
-          <div style="margin-bottom:8px;">
+          <div style="margin-bottom:12px;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-              <label class="settings-label" style="margin-bottom:0;">Password</label>
+              <label class="settings-label" for="login-password" style="margin-bottom:0;">Password</label>
               <a href="javascript:void(0)" onclick="window.app.openForgotPasswordModal()" class="link-small" style="font-size:11px;">Forgot password?</a>
             </div>
-            <input type="password" id="login-password" class="input" placeholder="••••••••" required autocomplete="current-password">
+            <div class="password-input-wrap">
+              <input type="password" id="login-password" class="input" placeholder="••••••••••••" required autocomplete="current-password">
+              <button type="button" id="toggle-login-pass-btn" class="password-toggle-btn" onclick="window.app.togglePasswordVisibility('login-password', 'toggle-login-pass-btn')" title="Toggle password visibility">
+                ${this._icon('eye', 16)}
+              </button>
+            </div>
           </div>
-          <button type="submit" id="login-submit-btn" class="btn btn-primary w-full" style="margin-top:16px;padding:10px;">
+          <button type="submit" id="login-submit-btn" class="btn btn-primary w-full" style="margin-top:16px;padding:10px;font-weight:600;">
             Sign In to MetaCRM
           </button>
-        </form>` : `
-        <form onsubmit="event.preventDefault(); window.app.submitSignup();">
-          <div style="margin-bottom:12px;">
-            <label class="settings-label">Full Name</label>
-            <input type="text" id="signup-name" class="input" placeholder="Alex Morgan" required>
-          </div>
-          <div style="margin-bottom:12px;">
-            <label class="settings-label">Work Email</label>
-            <input type="email" id="signup-email" class="input" placeholder="alex@company.com" required>
-          </div>
-          <div style="margin-bottom:12px;">
-            <label class="settings-label">Password</label>
-            <input type="password" id="signup-password" class="input" placeholder="At least 6 characters" minlength="6" required>
-          </div>
-          <div style="margin-bottom:14px;">
-            <label class="settings-label">Account Role</label>
-            <select id="signup-role" class="input">
-              <option value="admin">Administrator (Full Access to All Pages)</option>
-              <option value="staff">Sales Staff (Assigned Pages Only)</option>
-            </select>
-          </div>
-          <button type="submit" id="signup-submit-btn" class="btn btn-primary w-full" style="margin-top:6px;padding:10px;">
-            Create Account &amp; Start
-          </button>
-        </form>`}
+        </form>
 
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border-subtle);font-size:12px;color:var(--text-secondary);text-align:center;line-height:1.5;">
+          <span>First-time setup? </span>
+          <a href="#setup-password" class="link-small" style="font-weight:600;">Enter password setup token</a>
+        </div>
       </div>
     `;
   }
 
-  switchAuthTab(tab) {
-    this.authTab = tab;
-    this.renderAuthScreen();
+  togglePasswordVisibility(inputId, btnId) {
+    const input = document.getElementById(inputId);
+    const btn = document.getElementById(btnId);
+    if (!input) return;
+    if (input.type === 'password') {
+      input.type = 'text';
+      if (btn) btn.innerHTML = this._icon('eye-off', 16);
+    } else {
+      input.type = 'password';
+      if (btn) btn.innerHTML = this._icon('eye', 16);
+    }
   }
 
   async submitLogin() {
-    const email = (document.getElementById('login-email')?.value || '').trim();
+    const email = (document.getElementById('login-email')?.value || '').trim().toLowerCase();
     const pass = (document.getElementById('login-password')?.value || '').trim();
     const feedback = document.getElementById('auth-feedback');
     const submitBtn = document.getElementById('login-submit-btn');
 
     if (!email || !pass) {
-      if (feedback) feedback.innerHTML = '<div class="auth-error-banner">Please enter both your work email and password.</div>';
+      if (feedback) feedback.innerHTML = '<div class="auth-error-banner">Please enter both your login email and password.</div>';
       return;
     }
 
-    if (submitBtn) submitBtn.innerHTML = '<span class="spinner"></span> Verifying credentials…';
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="spinner"></span> Verifying credentials…';
+    }
 
     try {
-      // 1. Try Supabase Auth if connected
-      if (window.supabaseService && window.supabaseService.isLive) {
-        const { data, error } = await window.supabaseService.login(email, pass);
-        if (!error && data?.user) {
-          const authUser = {
-            id: data.user.id,
-            email: data.user.email,
-            name: data.user.user_metadata?.full_name || data.user.email.split('@')[0],
-            role: data.user.user_metadata?.role || 'admin',
-            assignedPageIds: []
-          };
-          this.user = authUser;
-          if (this.svc) {
-            this.svc.currentUser = authUser;
-            this.svc.saveAll();
-          }
-          try { localStorage.setItem('metacrm_authenticated', 'true'); } catch (e) {}
-          this.toast(`Welcome back, ${authUser.name}!`, 'success');
-          this.navigate('dashboard');
-          return;
-        }
-      }
-
-      // 2. Service-level login fallback
       if (this.svc) {
-        const res = this.svc.login(email, pass);
-        if (res.success) {
+        const res = await this.svc.login(email, pass);
+        if (res.success && res.user) {
           this.user = res.user;
           try { localStorage.setItem('metacrm_authenticated', 'true'); } catch (e) {}
-          this.toast(`Welcome back, ${(this.user.displayName || this.user.name).split(' ')[0]}!`, 'success');
+          this.toast(`Welcome back, ${this.user.displayName || this.user.name}!`, 'success');
           this.navigate('dashboard');
           return;
         } else {
-          if (submitBtn) submitBtn.innerHTML = 'Sign In to MetaCRM';
-          if (feedback) feedback.innerHTML = `<div class="auth-error-banner"><span>⚠️</span> ${res.error || 'Incorrect email or password. Please verify and try again.'}</div>`;
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = 'Sign In to MetaCRM';
+          }
+          if (feedback) {
+            feedback.innerHTML = `<div class="auth-error-banner"><span>⚠️</span> ${res.error || 'Invalid credentials or unconfigured account.'}</div>`;
+          }
         }
       }
     } catch (err) {
-      if (submitBtn) submitBtn.innerHTML = 'Sign In to MetaCRM';
-      if (feedback) feedback.innerHTML = `<div class="auth-error-banner"><span>⚠️</span> ${err.message || 'Authentication failed'}</div>`;
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = 'Sign In to MetaCRM';
+      }
+      if (feedback) feedback.innerHTML = `<div class="auth-error-banner"><span>⚠️</span> ${err.message || 'Authentication error occurred.'}</div>`;
     }
   }
 
-  submitSignup() {
-    const name = (document.getElementById('signup-name')?.value || '').trim();
-    const email = (document.getElementById('signup-email')?.value || '').trim();
-    const pass = (document.getElementById('signup-password')?.value || '').trim();
-    const role = document.getElementById('signup-role')?.value || 'admin';
-    const feedback = document.getElementById('auth-feedback');
-    const submitBtn = document.getElementById('signup-submit-btn');
+  renderSetupPasswordScreen(queryStr = '') {
+    if (this.el.appLayout) this.el.appLayout.style.display = 'none';
+    if (!this.el.auth) return;
 
-    if (!name || !email || !pass) {
-      if (feedback) feedback.innerHTML = '<div class="auth-error-banner">Please fill in all registration fields.</div>';
+    let initialToken = '';
+    if (queryStr) {
+      const match = queryStr.match(/token=([a-zA-Z0-9_\-]+)/);
+      if (match) initialToken = match[1];
+    }
+
+    this.el.auth.style.display = 'flex';
+    this.el.auth.innerHTML = `
+      <div class="auth-card">
+        <div class="auth-brand">
+          <div class="auth-brand-logo">
+            <div style="width:44px;height:44px;border-radius:10px;background:#202223;color:#fff;display:flex;align-items:center;justify-content:center;">
+              ${this._icon('lock', 22)}
+            </div>
+          </div>
+          <h2 class="auth-title">Initial Account Password Setup</h2>
+          <p class="auth-subtitle">Enter your secure setup token to create your password and activate your CRM account.</p>
+        </div>
+
+        <div id="setup-feedback"></div>
+
+        <form onsubmit="event.preventDefault(); window.app.submitSetupPassword();">
+          <div style="margin-bottom:14px;">
+            <label class="settings-label" for="setup-token">Setup Token</label>
+            <input type="text" id="setup-token" class="input" placeholder="e.g. stp_..." value="${escapeHtml(initialToken)}" required autocomplete="off">
+          </div>
+          <div style="margin-bottom:12px;">
+            <label class="settings-label" for="setup-password">Create Password (min. 6 characters)</label>
+            <div class="password-input-wrap">
+              <input type="password" id="setup-password" class="input" placeholder="••••••••••••" minlength="6" required autocomplete="new-password">
+              <button type="button" id="toggle-setup-pass-btn" class="password-toggle-btn" onclick="window.app.togglePasswordVisibility('setup-password', 'toggle-setup-pass-btn')">
+                ${this._icon('eye', 16)}
+              </button>
+            </div>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label class="settings-label" for="setup-confirm-password">Confirm Password</label>
+            <div class="password-input-wrap">
+              <input type="password" id="setup-confirm-password" class="input" placeholder="••••••••••••" minlength="6" required autocomplete="new-password">
+              <button type="button" id="toggle-setup-cpass-btn" class="password-toggle-btn" onclick="window.app.togglePasswordVisibility('setup-confirm-password', 'toggle-setup-cpass-btn')">
+                ${this._icon('eye', 16)}
+              </button>
+            </div>
+          </div>
+          <button type="submit" id="setup-submit-btn" class="btn btn-primary w-full" style="margin-top:14px;padding:10px;font-weight:600;">
+            Save Password &amp; Activate Account
+          </button>
+        </form>
+
+        <div style="margin-top:16px;text-align:center;">
+          <a href="#login" class="link-small">← Back to Sign In</a>
+        </div>
+      </div>
+    `;
+  }
+
+  async submitSetupPassword() {
+    const token = (document.getElementById('setup-token')?.value || '').trim();
+    const pass = (document.getElementById('setup-password')?.value || '').trim();
+    const cpass = (document.getElementById('setup-confirm-password')?.value || '').trim();
+    const feedback = document.getElementById('setup-feedback');
+    const submitBtn = document.getElementById('setup-submit-btn');
+
+    if (!token) {
+      if (feedback) feedback.innerHTML = '<div class="auth-error-banner">Please enter a valid setup token.</div>';
+      return;
+    }
+    if (pass.length < 6) {
+      if (feedback) feedback.innerHTML = '<div class="auth-error-banner">Password must be at least 6 characters long.</div>';
+      return;
+    }
+    if (pass !== cpass) {
+      if (feedback) feedback.innerHTML = '<div class="auth-error-banner">Passwords do not match. Please verify and retype.</div>';
       return;
     }
 
-    if (submitBtn) submitBtn.innerHTML = '<span class="spinner"></span> Creating account…';
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="spinner"></span> Activating account…';
+    }
 
-    setTimeout(() => {
-      const newUser = {
-        id: `usr_${Date.now()}`,
-        name: name,
-        displayName: name,
-        email: email,
-        role: role,
-        status: 'active',
-        assignedPageIds: role === 'admin' ? (this.svc ? this.svc.pages.map(p => p.id) : []) : []
-      };
+    try {
+      const res = await fetch('/api/auth/setup-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, password: pass })
+      });
+      const data = await res.json();
 
-      if (this.svc) {
-        this.svc.staff.push(newUser);
-        this.svc.saveAll();
-        this.svc.login(email);
-        this.user = this.svc.getCurrentUser();
+      if (res.ok && data.success) {
+        if (data.sessionToken && this.svc) {
+          this.svc.setSessionToken(data.sessionToken);
+          this.svc.currentUser = { ...data.user };
+          this.user = data.user;
+          if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
+        }
+        this.toast('✓ Password created successfully! Welcome to MetaCRM.', 'success');
+        this.navigate('dashboard');
+      } else {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = 'Save Password &amp; Activate Account';
+        }
+        if (feedback) feedback.innerHTML = `<div class="auth-error-banner"><span>⚠️</span> ${data.error || 'Failed to activate account.'}</div>`;
       }
+    } catch (err) {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = 'Save Password &amp; Activate Account';
+      }
+      if (feedback) feedback.innerHTML = `<div class="auth-error-banner"><span>⚠️</span> ${err.message || 'Error configuring password.'}</div>`;
+    }
+  }
 
-      try { localStorage.setItem('metacrm_authenticated', 'true'); } catch (e) {}
-      this.toast(`Account created! Welcome, ${name.split(' ')[0]}!`, 'success');
-      this.navigate('dashboard');
-    }, 400);
+  renderResetPasswordScreen(queryStr = '') {
+    if (this.el.appLayout) this.el.appLayout.style.display = 'none';
+    if (!this.el.auth) return;
+
+    let initialToken = '';
+    if (queryStr) {
+      const match = queryStr.match(/token=([a-zA-Z0-9_\-]+)/);
+      if (match) initialToken = match[1];
+    }
+
+    this.el.auth.style.display = 'flex';
+    this.el.auth.innerHTML = `
+      <div class="auth-card">
+        <div class="auth-brand">
+          <div class="auth-brand-logo">
+            <div style="width:44px;height:44px;border-radius:10px;background:#202223;color:#fff;display:flex;align-items:center;justify-content:center;">
+              ${this._icon('lock', 22)}
+            </div>
+          </div>
+          <h2 class="auth-title">Reset Your CRM Password</h2>
+          <p class="auth-subtitle">Enter your password reset token and choose a new secure password.</p>
+        </div>
+
+        <div id="reset-feedback"></div>
+
+        <form onsubmit="event.preventDefault(); window.app.submitResetPassword();">
+          <div style="margin-bottom:14px;">
+            <label class="settings-label" for="reset-token">Reset Token</label>
+            <input type="text" id="reset-token" class="input" placeholder="e.g. rst_..." value="${escapeHtml(initialToken)}" required autocomplete="off">
+          </div>
+          <div style="margin-bottom:12px;">
+            <label class="settings-label" for="new-password">New Password (min. 6 characters)</label>
+            <div class="password-input-wrap">
+              <input type="password" id="new-password" class="input" placeholder="••••••••••••" minlength="6" required autocomplete="new-password">
+              <button type="button" id="toggle-new-pass-btn" class="password-toggle-btn" onclick="window.app.togglePasswordVisibility('new-password', 'toggle-new-pass-btn')">
+                ${this._icon('eye', 16)}
+              </button>
+            </div>
+          </div>
+          <div style="margin-bottom:14px;">
+            <label class="settings-label" for="new-confirm-password">Confirm New Password</label>
+            <div class="password-input-wrap">
+              <input type="password" id="new-confirm-password" class="input" placeholder="••••••••••••" minlength="6" required autocomplete="new-password">
+              <button type="button" id="toggle-cnew-pass-btn" class="password-toggle-btn" onclick="window.app.togglePasswordVisibility('new-confirm-password', 'toggle-cnew-pass-btn')">
+                ${this._icon('eye', 16)}
+              </button>
+            </div>
+          </div>
+          <button type="submit" id="reset-submit-btn" class="btn btn-primary w-full" style="margin-top:14px;padding:10px;font-weight:600;">
+            Update Password &amp; Sign In
+          </button>
+        </form>
+
+        <div style="margin-top:16px;text-align:center;">
+          <a href="#login" class="link-small">← Back to Sign In</a>
+        </div>
+      </div>
+    `;
+  }
+
+  async submitResetPassword() {
+    const token = (document.getElementById('reset-token')?.value || '').trim();
+    const pass = (document.getElementById('new-password')?.value || '').trim();
+    const cpass = (document.getElementById('new-confirm-password')?.value || '').trim();
+    const feedback = document.getElementById('reset-feedback');
+    const submitBtn = document.getElementById('reset-submit-btn');
+
+    if (!token) {
+      if (feedback) feedback.innerHTML = '<div class="auth-error-banner">Please enter a valid reset token.</div>';
+      return;
+    }
+    if (pass.length < 6) {
+      if (feedback) feedback.innerHTML = '<div class="auth-error-banner">Password must be at least 6 characters long.</div>';
+      return;
+    }
+    if (pass !== cpass) {
+      if (feedback) feedback.innerHTML = '<div class="auth-error-banner">Passwords do not match. Please verify and retype.</div>';
+      return;
+    }
+
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="spinner"></span> Updating password…';
+    }
+
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token, password: pass })
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        if (data.sessionToken && this.svc) {
+          this.svc.setSessionToken(data.sessionToken);
+          this.svc.currentUser = { ...data.user };
+          this.user = data.user;
+          if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
+        }
+        this.toast('✓ Password updated successfully! Welcome back.', 'success');
+        this.navigate('dashboard');
+      } else {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = 'Update Password &amp; Sign In';
+        }
+        if (feedback) feedback.innerHTML = `<div class="auth-error-banner"><span>⚠️</span> ${data.error || 'Failed to update password.'}</div>`;
+      }
+    } catch (err) {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = 'Update Password &amp; Sign In';
+      }
+      if (feedback) feedback.innerHTML = `<div class="auth-error-banner"><span>⚠️</span> ${err.message || 'Error updating password.'}</div>`;
+    }
   }
 
   openForgotPasswordModal() {
-    this.el.mTitle.textContent = 'Reset Password';
+    this.el.mTitle.textContent = 'Forgot Password';
     this.el.mBody.innerHTML = `
-      <p class="text-xs text-gray mb-3">Enter the email associated with your MetaCRM account and we'll send a secure password reset link.</p>
-      <label class="settings-label">Work Email</label>
-      <input type="email" id="reset-email" class="input" placeholder="you@company.com" required value="${document.getElementById('login-email')?.value || ''}">
-      <div id="reset-msg" style="margin-top:10px;"></div>
+      <p class="text-xs text-gray mb-3">Enter the login email associated with your MetaCRM account to request a single-use password reset link.</p>
+      <label class="settings-label" for="reset-email">Work Email</label>
+      <input type="email" id="reset-email" class="input" placeholder="e.g. admina@novaautos.co.nz" required value="${escapeHtml(document.getElementById('login-email')?.value || '')}">
+      <div id="forgot-pass-msg" style="margin-top:12px;"></div>
     `;
-    this.el.mConfirm.textContent = 'Send Reset Link';
+    this.el.mConfirm.textContent = 'Request Reset Link';
     this.el.mConfirm.className = 'btn btn-primary';
-    this.el.mConfirm.onclick = () => {
-      const email = (document.getElementById('reset-email')?.value || '').trim();
+    this.el.mConfirm.onclick = async () => {
+      const email = (document.getElementById('reset-email')?.value || '').trim().toLowerCase();
+      const msgBox = document.getElementById('forgot-pass-msg');
       if (!email || !email.includes('@')) {
-        document.getElementById('reset-msg').innerHTML = '<div class="auth-error-banner">Please enter a valid email address.</div>';
+        if (msgBox) msgBox.innerHTML = '<div class="auth-error-banner">Please enter a valid email address.</div>';
         return;
       }
-      this.el.mConfirm.innerHTML = '<span class="spinner"></span> Sending…';
-      setTimeout(() => {
-        this.closeModal();
-        this.toast(`✓ Password reset instructions sent to ${email}. Check your inbox!`, 'success');
-      }, 500);
+      this.el.mConfirm.disabled = true;
+      this.el.mConfirm.innerHTML = '<span class="spinner"></span> Processing…';
+      try {
+        const res = await fetch('/api/auth/forgot-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          if (data.resetLink) {
+            msgBox.innerHTML = `
+              <div class="auth-success-banner">
+                <div><strong>Password reset generated:</strong></div>
+                <div style="font-size:11px;margin-top:4px;word-break:break-all;">${escapeHtml(data.resetLink)}</div>
+              </div>`;
+            this.el.mConfirm.textContent = 'Done';
+            this.el.mConfirm.disabled = false;
+            this.el.mConfirm.onclick = () => this.closeModal();
+          } else {
+            this.closeModal();
+            this.toast(data.message || 'Password reset link sent to your email.', 'success');
+          }
+        } else {
+          this.el.mConfirm.disabled = false;
+          this.el.mConfirm.textContent = 'Request Reset Link';
+          if (msgBox) msgBox.innerHTML = `<div class="auth-error-banner"><span>⚠️</span> ${data.error || 'Failed to process request.'}</div>`;
+        }
+      } catch (e) {
+        this.el.mConfirm.disabled = false;
+        this.el.mConfirm.textContent = 'Request Reset Link';
+        if (msgBox) msgBox.innerHTML = `<div class="auth-error-banner"><span>⚠️</span> ${e.message}</div>`;
+      }
     };
+    this.el.mOverlay.classList.add('open');
+  }
+
+  renderAccessDeniedScreen(route = '') {
+    this.el.title.textContent = 'Access Restricted';
+    this.el.actions.innerHTML = '';
+    this.el.content.innerHTML = `
+      <div class="access-denied-card">
+        <div class="access-denied-icon">${this._icon('lock', 32)}</div>
+        <h2 class="access-denied-title">Administrator Access Required</h2>
+        <p class="access-denied-desc">
+          The section <code>#${escapeHtml(route)}</code> is restricted to administrator accounts. As a staff member, your account is configured for assigned sales leads and client conversations.
+        </p>
+        <button class="btn btn-primary" onclick="window.app.navigate('dashboard')">
+          Return to Dashboard
+        </button>
+      </div>`;
+  }
+
+  openUserProfileModal() {
+    if (!this.user) {
+      this.navigate('login');
+      return;
+    }
+    const isAdmin = this.user.role === 'admin' || this.user.role === 'super_admin';
+    this.el.mTitle.textContent = 'User Profile & Security';
+    this.el.mBody.innerHTML = `
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--border-subtle);">
+        <div class="staff-avatar-sm" style="width:48px;height:48px;font-size:18px;background:${isAdmin ? 'var(--accent)' : '#10B981'}">
+          ${(this.user.displayName || this.user.name || this.user.email || 'U').charAt(0).toUpperCase()}
+        </div>
+        <div>
+          <strong style="font-size:16px;">${escapeHtml(this.user.displayName || this.user.name)}</strong>
+          <div class="text-xs text-gray">${escapeHtml(this.user.email)}</div>
+          <div style="margin-top:4px;">
+            <span class="badge ${isAdmin ? 'badge-indigo' : 'badge-green'}">${this._roleLabel(this.user.role)}</span>
+            <span class="badge badge-gray" style="margin-left:4px;">Active Session</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:8px 0;">
+          <span style="color:var(--text-secondary);">Account Role</span>
+          <strong>${this._roleLabel(this.user.role)}</strong>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:8px 0;border-top:1px solid var(--border-subtle);">
+          <span style="color:var(--text-secondary);">Assigned Pages</span>
+          <span class="text-xs">${isAdmin ? 'All Connected Pages' : ((this.user.assignedPageIds || []).length > 0 ? `${this.user.assignedPageIds.length} Pages` : 'No Pages Assigned')}</span>
+        </div>
+      </div>
+    `;
+    this.el.mConfirm.textContent = 'Close';
+    this.el.mConfirm.className = 'btn btn-secondary';
+    this.el.mConfirm.onclick = () => this.closeModal();
     this.el.mOverlay.classList.add('open');
   }
 
@@ -838,8 +1112,8 @@ class MetaCRMApp {
       message: 'Are you sure you want to sign out of MetaCRM?',
       confirmText: 'Sign Out',
       isDanger: false,
-      onConfirm: () => {
-        if (this.svc) this.svc.logout();
+      onConfirm: async () => {
+        if (this.svc) await this.svc.logout();
         this.user = null;
         try { localStorage.removeItem('metacrm_authenticated'); } catch (e) {}
         this.toast('You have been signed out.', 'info');
@@ -879,9 +1153,9 @@ class MetaCRMApp {
         title: 'MANAGEMENT',
         items: [
           { id: 'pipeline',     icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`, label: 'Pipeline', shortcut: '' },
-          { id: 'integrations', icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`, label: 'Integrations', shortcut: '' },
-          { id: 'connections',  icon: `<svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>`, label: 'Connect Facebook', shortcut: '' },
           ...(isAdmin ? [
+            { id: 'integrations', icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`, label: 'Integrations', shortcut: '' },
+            { id: 'connections',  icon: `<svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>`, label: 'Connect Facebook', shortcut: '' },
             { id: 'staff',      icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`, label: 'Team', shortcut: '' },
             { id: 'reports',    icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`, label: 'Reports', shortcut: '' },
           ] : [])
@@ -945,6 +1219,7 @@ class MetaCRMApp {
     html += `
       <div class="sidebar-spacer"></div>
       <div class="nav-bottom">
+        ${isAdmin ? `
         <a href="#settings" class="nav-item ${this.currentRoute === 'settings' ? 'active' : ''}">
           <div class="nav-item-left">
             <span class="nav-icon"><svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
@@ -953,14 +1228,14 @@ class MetaCRMApp {
           <div class="nav-item-right">
             <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
           </div>
-        </a>
-        <div class="user-profile-item" onclick="window.app.openUserSwitchModal()">
-          <div class="user-avatar" style="background:#202223;color:#FFFFFF;font-weight:600;">
-            ${(this.user.name || 'A').charAt(0).toUpperCase()}
+        </a>` : ''}
+        <div class="user-profile-item" onclick="window.app.openUserProfileModal()">
+          <div class="user-avatar" style="background:${isAdmin ? '#202223' : '#10B981'};color:#FFFFFF;font-weight:600;">
+            ${(this.user.displayName || this.user.name || this.user.email || 'U').charAt(0).toUpperCase()}
           </div>
           <div class="nav-text user-info">
-            <div class="user-name">${this.user.displayName || this.user.name}</div>
-            <div class="user-role">${this._roleLabel(this.user.role)} &bull; Switch</div>
+            <div class="user-name">${escapeHtml(this.user.displayName || this.user.name || this.user.email)}</div>
+            <div class="user-role">${this._roleLabel(this.user.role)}</div>
           </div>
         </div>
         <div class="nav-item" style="margin-top:2px;" onclick="window.app.logout()">
@@ -1085,7 +1360,12 @@ class MetaCRMApp {
       clipboard: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>`,
       clock: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
       inbox: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>`,
-      sparkles: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"/></svg>`
+      sparkles: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"/></svg>`,
+      eye: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`,
+      'eye-off': `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`,
+      copy: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`,
+      lock: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
+      shield: `<svg width="${s}" height="${s}" class="${className}" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`
     };
     return icons[name] || '';
   }
@@ -5612,52 +5892,251 @@ class MetaCRMApp {
   // STAFF & RBAC MANAGEMENT (Section 16)
   // ──────────────────────────────────────────────────────────
 
-  renderStaff() {
-    this.el.title.textContent = 'Staff Management & Page Permissions';
-    this.el.actions.innerHTML = `<button class="btn btn-primary" onclick="window.app.openAddStaffModal()">+ Add Staff Member</button>`;
+  async renderStaff() {
+    this.el.title.textContent = 'User Accounts & Access Management';
+    this.el.actions.innerHTML = `<button class="btn btn-primary" onclick="window.app.openAddStaffModal()">+ Invite User</button>`;
+
+    // Fetch authoritative staff accounts from server
+    if (this.svc) {
+      try {
+        const sessionToken = this.svc.getSessionToken();
+        const headers = {};
+        if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
+        else headers['x-user-id'] = (this.user && this.user.id) || 'admin';
+        const res = await fetch('/api/staff', { headers });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data.staff) && data.staff.length > 0) {
+            data.staff.forEach(remoteS => {
+              const localS = this.svc.staff.find(s => s.id === remoteS.id || s.email === remoteS.email);
+              if (localS) {
+                localS.setup_token = remoteS.setup_token || localS.setup_token;
+                localS.status = remoteS.status || localS.status;
+                localS.name = remoteS.name || localS.name;
+                localS.displayName = remoteS.displayName || remoteS.name || localS.displayName;
+              } else {
+                this.svc.staff.push(remoteS);
+              }
+            });
+            if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
+          }
+        }
+      } catch (e) {
+        console.warn('Could not refresh remote staff list:', e);
+      }
+    }
 
     const staff = this.svc ? (this.svc.staff || []) : [];
     const pages = this.svc ? this.svc.pages : [];
 
     this.el.content.innerHTML = `
+      <div style="margin-bottom:16px;background:#F8FAFC;border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:14px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div style="font-size:13px;color:var(--text-secondary);">
+          <strong style="color:var(--text-primary);display:block;margin-bottom:2px;">Production User Access Directory</strong>
+          Exactly ${staff.length} authorized accounts provisioned. Passwords must be configured before accessing CRM.
+        </div>
+        <span class="badge badge-indigo">${staff.filter(s => s.role === 'admin').length} Admin · ${staff.filter(s => s.role === 'staff').length} Staff</span>
+      </div>
+
       <div class="table-container">
         <table>
           <thead>
-            <tr><th>Staff Member</th><th>Role</th><th>Assigned Pages</th><th>Active Leads</th><th>Converted</th><th>Status</th><th>Actions</th></tr>
+            <tr>
+              <th>User Account</th>
+              <th>Role</th>
+              <th>Account Status</th>
+              <th>Assigned Facebook Pages</th>
+              <th>Actions</th>
+            </tr>
           </thead>
           <tbody>
             ${staff.length > 0 ? staff.map(s => {
-              const sLeads = (this.svc ? this.svc.leads : []).filter(l => l.assigned_staff_id === s.id || l.assignedStaffId === s.id);
-              const sWon = sLeads.filter(l => l.status === 'Won' || l.status === 'Converted');
+              const isAdminAccount = s.role === 'admin' || s.role === 'super_admin';
+              const isJoy = s.email === 'admina@novaautos.co.nz';
               const pageNames = (s.assignedPageIds || []).map(pid => this._pageName(pid)).join(', ');
+              const status = s.status || 'active';
               return `
                 <tr>
                   <td>
                     <div class="flex items-center gap-2">
-                      <div class="staff-avatar-sm" style="background:${s.role==='admin'?'var(--accent)':'#10B981'}">${(s.name||'?').charAt(0)}</div>
+                      <div class="staff-avatar-sm" style="background:${isAdminAccount ? 'var(--accent)' : '#10B981'}">
+                        ${(s.displayName || s.name || s.email || '?').charAt(0).toUpperCase()}
+                      </div>
                       <div>
-                        <strong>${s.name}</strong>
-                        <div class="text-xs text-gray">${s.email}</div>
+                        <strong>${escapeHtml(s.displayName || s.name || s.email)}</strong>
+                        <div class="text-xs text-gray">${escapeHtml(s.email)}</div>
                       </div>
                     </div>
                   </td>
                   <td>${this._roleBadge(s.role)}</td>
-                  <td class="text-xs">${pageNames || 'All Pages (Full Access)'}</td>
-                  <td class="font-semibold">${sLeads.length}</td>
-                  <td><span class="badge badge-green">${sWon.length}</span></td>
-                  <td><span class="badge ${s.status==='inactive'?'badge-gray':'badge-green'}">${s.status || 'Active'}</span></td>
+                  <td>
+                    ${status === 'pending_setup' ? '<span class="badge badge-orange">Pending Setup</span>' :
+                      status === 'inactive' ? '<span class="badge badge-gray">Inactive</span>' :
+                      '<span class="badge badge-green">Active</span>'}
+                  </td>
+                  <td class="text-xs">${isAdminAccount ? 'All Pages (Full Administrator Access)' : (pageNames || '<span class="text-gray">None Assigned</span>')}</td>
                   <td>
                     <div class="row-actions">
-                      <button class="btn btn-secondary btn-sm" onclick="window.app.openAssignPagesModal('${s.id}')">Assign Pages</button>
-                      <button class="btn btn-ghost btn-sm" onclick="window.app.switchUserDirect('${s.id}')">Switch</button>
-                      <button class="btn btn-ghost btn-sm text-red" style="color:var(--danger);" onclick="window.app.removeStaff('${s.id}')" title="Remove staff member">${this._icon('trash', 14)}</button>
+                      ${s.setup_token ? `
+                        <button class="btn btn-secondary btn-sm" onclick="window.app.copySetupLink('${s.setup_token}')" title="Copy single-use setup link">
+                          ${this._icon('copy', 13)} Copy Link
+                        </button>` : ''}
+                      <button class="btn btn-secondary btn-sm" onclick="window.app.openEditStaffProfileModal('${s.id}')">Edit</button>
+                      ${!isAdminAccount ? `
+                        <button class="btn btn-secondary btn-sm" onclick="window.app.openAssignPagesModal('${s.id}')">Pages</button>
+                      ` : ''}
+                      <button class="btn btn-ghost btn-sm" onclick="window.app.initiatePasswordReset('${s.id}')" title="Generate password reset link">Reset</button>
+                      ${!isJoy ? `
+                        <button class="btn btn-ghost btn-sm" onclick="window.app.toggleStaffStatus('${s.id}')" title="${status === 'inactive' ? 'Activate user' : 'Deactivate user'}">
+                          ${status === 'inactive' ? 'Activate' : 'Deactivate'}
+                        </button>
+                        <button class="btn btn-ghost btn-sm text-red" style="color:var(--danger);" onclick="window.app.removeStaff('${s.id}')" title="Remove account">
+                          ${this._icon('trash', 14)}
+                        </button>` : `
+                        <span class="text-xs text-gray" style="padding:4px 6px;" title="Sole administrator account protected from deletion or lockout">Protected</span>
+                      `}
                     </div>
                   </td>
                 </tr>`;
-            }).join('') : '<tr><td colspan="7" class="empty-cell" style="text-align:center;padding:24px;color:var(--text-muted);">No staff members configured. Click "+ Add Staff Member" to add a user.</td></tr>'}
+            }).join('') : '<tr><td colspan="5" class="empty-cell" style="text-align:center;padding:24px;color:var(--text-muted);">No accounts found.</td></tr>'}
           </tbody>
         </table>
       </div>`;
+  }
+
+  copySetupLink(token) {
+    const url = `${window.location.origin}${window.location.pathname}#setup-password?token=${token}`;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(() => {
+        this.toast('✓ Single-use setup link copied to clipboard!', 'success');
+      }).catch(() => {
+        prompt('Copy setup link:', url);
+      });
+    } else {
+      prompt('Copy setup link:', url);
+    }
+  }
+
+  openEditStaffProfileModal(staffId) {
+    const staff = this.svc ? this.svc.staff.find(s => s.id === staffId) : null;
+    if (!staff) return;
+    this.el.mTitle.textContent = `Edit Profile: ${staff.email}`;
+    this.el.mBody.innerHTML = `
+      <label class="settings-label">Full Name / Display Name</label>
+      <input type="text" id="edit-staff-name" class="input mb-3" value="${escapeHtml(staff.displayName || staff.name || '')}">
+      <label class="settings-label">Login Email</label>
+      <input type="email" class="input mb-3" value="${escapeHtml(staff.email)}" disabled style="background:#F1F5F9;cursor:not-allowed;">
+      <p class="text-xs text-gray">Login email cannot be modified to ensure identity consistency.</p>
+    `;
+    this.el.mConfirm.textContent = 'Save Changes';
+    this.el.mConfirm.className = 'btn btn-primary';
+    this.el.mConfirm.onclick = async () => {
+      const newName = (document.getElementById('edit-staff-name')?.value || '').trim();
+      if (!newName) {
+        this.toast('Please enter a display name', 'warning');
+        return;
+      }
+      try {
+        const sessionToken = this.svc ? this.svc.getSessionToken() : null;
+        const headers = { 'Content-Type': 'application/json' };
+        if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
+        else headers['x-user-id'] = (this.user && this.user.id) || 'admin';
+
+        const res = await fetch('/api/staff', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ action: 'update-profile', userId: staffId, name: newName })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          staff.name = newName;
+          staff.displayName = newName;
+          if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
+          this.closeModal();
+          this.toast('✓ User profile updated successfully!', 'success');
+          this.renderStaff();
+        } else {
+          this.toast(data.error || 'Failed to update profile', 'error');
+        }
+      } catch (e) {
+        this.toast(e.message, 'error');
+      }
+    };
+    this.el.mOverlay.classList.add('open');
+  }
+
+  async initiatePasswordReset(staffId) {
+    const staff = this.svc ? this.svc.staff.find(s => s.id === staffId) : null;
+    if (!staff) return;
+    try {
+      const sessionToken = this.svc ? this.svc.getSessionToken() : null;
+      const headers = { 'Content-Type': 'application/json' };
+      if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
+      else headers['x-user-id'] = (this.user && this.user.id) || 'admin';
+
+      const res = await fetch('/api/staff', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ action: 'admin-reset-password', userId: staffId })
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.setupLink) {
+        staff.setup_token = data.setup_token;
+        staff.status = 'pending_setup';
+        if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
+        this.renderStaff();
+        this.el.mTitle.textContent = 'Password Reset Link Generated';
+        this.el.mBody.innerHTML = `
+          <p class="text-xs text-gray mb-3">A secure, single-use password setup link was generated for <strong>${escapeHtml(staff.email)}</strong>:</p>
+          <div class="setup-token-box">
+            <span style="font-size:11px;">${escapeHtml(data.setupLink)}</span>
+            <button class="btn btn-primary btn-sm" onclick="window.app.copySetupLink('${data.setup_token}')">Copy</button>
+          </div>
+          <p class="text-xs text-gray mt-2">Send this link to the staff member so they can set their new password. The link expires in 48 hours.</p>
+        `;
+        this.el.mConfirm.textContent = 'Done';
+        this.el.mConfirm.className = 'btn btn-primary';
+        this.el.mConfirm.onclick = () => this.closeModal();
+        this.el.mOverlay.classList.add('open');
+      } else {
+        this.toast(data.error || 'Failed to generate password reset', 'error');
+      }
+    } catch (e) {
+      this.toast(e.message, 'error');
+    }
+  }
+
+  async toggleStaffStatus(staffId) {
+    const staff = this.svc ? this.svc.staff.find(s => s.id === staffId) : null;
+    if (!staff) return;
+    if (staff.email === 'admina@novaautos.co.nz') {
+      this.toast('Admin account cannot be deactivated.', 'warning');
+      return;
+    }
+    const nextStatus = staff.status === 'inactive' ? 'active' : 'inactive';
+    try {
+      const sessionToken = this.svc ? this.svc.getSessionToken() : null;
+      const headers = { 'Content-Type': 'application/json' };
+      if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
+      else headers['x-user-id'] = (this.user && this.user.id) || 'admin';
+
+      const res = await fetch('/api/staff', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ action: 'toggle-status', userId: staffId, status: nextStatus })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        staff.status = nextStatus;
+        if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
+        this.toast(`✓ User ${staff.name} is now ${nextStatus}.`, 'success');
+        this.renderStaff();
+      } else {
+        this.toast(data.error || 'Failed to update status', 'error');
+      }
+    } catch (e) {
+      this.toast(e.message, 'error');
+    }
   }
 
   openAssignPagesModal(staffId) {
@@ -5707,44 +6186,6 @@ class MetaCRMApp {
       this.renderStaff();
     };
     this.el.mOverlay.classList.add('open');
-  }
-
-  // ──────────────────────────────────────────────────────────
-  // USER SWITCHER & AUTH MODAL (Section 3 & 4)
-  // ──────────────────────────────────────────────────────────
-
-  openUserSwitchModal() {
-    const staff = this.svc ? this.svc.staff : [];
-
-    this.el.mTitle.textContent = 'Switch Active User Session';
-    this.el.mBody.innerHTML = `
-      <p class="text-xs text-gray mb-4">Select an active user profile to switch session context:</p>
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        ${staff.length > 0 ? staff.map(s => `
-          <div class="page-row" style="cursor:pointer;${s.id === this.user.id ? 'border-color:var(--accent);background:#EEF2FF;' : ''}" 
-               onclick="window.app.switchUserDirect('${s.id}')">
-            <div class="staff-avatar-sm" style="background:${s.role==='admin'?'var(--accent)':'#10B981'}">${(s.name||'?').charAt(0)}</div>
-            <div style="flex:1;">
-              <strong>${s.name}</strong>
-              <div class="text-xs text-gray">${this._roleLabel(s.role)} · Pages: ${(s.assignedPageIds||[]).map(pid => this._pageName(pid)).join(', ') || 'All Pages'}</div>
-            </div>
-            ${s.id === this.user.id ? '<span class="badge badge-indigo">Active</span>' : '<button class="btn btn-ghost btn-sm">Switch</button>'}
-          </div>`).join('') : '<div style="padding:16px;text-align:center;color:var(--text-muted);">No additional staff profiles available</div>'}
-      </div>`;
-
-    this.el.mConfirm.textContent = 'Close';
-    this.el.mConfirm.onclick = () => this.closeModal();
-    this.el.mOverlay.classList.add('open');
-  }
-
-  switchUserDirect(userId) {
-    if (this.svc && this.svc.switchUser(userId)) {
-      this.user = this.svc.getCurrentUser();
-      this.closeModal();
-      this.toast(`Session active: ${this.user.name} (${this._roleLabel(this.user.role)})`);
-      this.renderSidebar();
-      this._renderPage();
-    }
   }
 
   // ──────────────────────────────────────────────────────────
@@ -5990,28 +6431,29 @@ class MetaCRMApp {
   openAddStaffModal() {
     const pages = this.svc ? this.svc.pages : [];
 
-    this.el.mTitle.textContent = 'Add Staff Member';
+    this.el.mTitle.textContent = 'Invite New User';
     this.el.mBody.innerHTML = `
-      <label class="settings-label">Full Name *</label>
-      <input type="text" class="input mb-3" id="ns-name" placeholder="e.g. Ananya Roy">
-      <label class="settings-label">Work Email *</label>
-      <input type="email" class="input mb-3" id="ns-email" placeholder="ananya@company.com">
-      <label class="settings-label">Role</label>
+      <p class="text-xs text-gray mb-3">Add a new user to MetaCRM. A secure single-use password setup link will be generated for them to configure their own password.</p>
+      <label class="settings-label" for="ns-name">Full Name *</label>
+      <input type="text" class="input mb-3" id="ns-name" placeholder="e.g. Sales Specialist">
+      <label class="settings-label" for="ns-email">Work Email *</label>
+      <input type="email" class="input mb-3" id="ns-email" placeholder="user@company.com">
+      <label class="settings-label" for="ns-role">Account Role</label>
       <select class="input mb-3" id="ns-role">
         <option value="staff" selected>Sales Staff</option>
         <option value="admin">Administrator</option>
       </select>
-      <label class="settings-label">Assigned Facebook Page</label>
+      <label class="settings-label" for="ns-page">Assigned Facebook Page</label>
       <select class="input mb-2" id="ns-page">
         <option value="all">All Pages (Full Access)</option>
-        ${pages.map(p => `<option value="${p.id}">${p.name}</option>`).join('')}
+        ${pages.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}
       </select>`;
 
-    this.el.mConfirm.textContent = 'Add Staff Member';
+    this.el.mConfirm.textContent = 'Generate Invite';
     this.el.mConfirm.className = 'btn btn-primary';
-    this.el.mConfirm.onclick = () => {
+    this.el.mConfirm.onclick = async () => {
       const name = (document.getElementById('ns-name')?.value || '').trim();
-      const email = (document.getElementById('ns-email')?.value || '').trim();
+      const email = (document.getElementById('ns-email')?.value || '').trim().toLowerCase();
       const role = document.getElementById('ns-role')?.value || 'staff';
       const pageId = document.getElementById('ns-page')?.value || 'all';
 
@@ -6020,23 +6462,59 @@ class MetaCRMApp {
         return;
       }
 
-      if (this.svc) {
-        const newStaff = {
-          id: `usr_${Date.now()}`,
-          name,
-          displayName: name,
-          email,
-          role,
-          status: 'active',
-          assignedPageIds: pageId === 'all' ? pages.map(p => p.id) : [pageId]
-        };
-        this.svc.staff.push(newStaff);
-        if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
-      }
+      this.el.mConfirm.disabled = true;
+      this.el.mConfirm.innerHTML = '<span class="spinner"></span> Inviting…';
 
-      this.closeModal();
-      this.toast(`Staff member "${name}" added successfully! ✓`, 'success');
-      this.renderStaff();
+      try {
+        const sessionToken = this.svc ? this.svc.getSessionToken() : null;
+        const headers = { 'Content-Type': 'application/json' };
+        if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
+        else headers['x-user-id'] = (this.user && this.user.id) || 'admin';
+
+        const res = await fetch('/api/staff', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            action: 'invite',
+            name,
+            email,
+            role,
+            assignedPages: pageId === 'all' ? pages.map(p => p.id) : [pageId]
+          })
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          if (this.svc) {
+            const existingIdx = this.svc.staff.findIndex(s => s.id === data.user.id || s.email === data.user.email);
+            if (existingIdx >= 0) this.svc.staff[existingIdx] = data.user;
+            else this.svc.staff.push(data.user);
+            if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
+          }
+
+          this.renderStaff();
+          this.el.mTitle.textContent = 'Account Provisioned Successfully';
+          this.el.mBody.innerHTML = `
+            <p class="text-xs text-gray mb-3">Single-use setup link generated for <strong>${escapeHtml(email)}</strong>:</p>
+            <div class="setup-token-box">
+              <span style="font-size:11px;">${escapeHtml(data.setupLink)}</span>
+              <button class="btn btn-primary btn-sm" onclick="window.app.copySetupLink('${data.setup_token}')">Copy</button>
+            </div>
+            <p class="text-xs text-gray mt-2">Email delivery is not configured. Provide this setup link to the user directly so they can configure their password.</p>
+          `;
+          this.el.mConfirm.textContent = 'Done';
+          this.el.mConfirm.disabled = false;
+          this.el.mConfirm.onclick = () => this.closeModal();
+        } else {
+          this.el.mConfirm.disabled = false;
+          this.el.mConfirm.textContent = 'Generate Invite';
+          this.toast(data.error || 'Failed to create user account', 'error');
+        }
+      } catch (e) {
+        this.el.mConfirm.disabled = false;
+        this.el.mConfirm.textContent = 'Generate Invite';
+        this.toast(e.message, 'error');
+      }
     };
     this.el.mOverlay.classList.add('open');
   }
@@ -6044,21 +6522,34 @@ class MetaCRMApp {
   removeStaff(staffId) {
     const staff = this.svc ? this.svc.staff.find(s => s.id === staffId) : null;
     if (!staff) return;
-    if (staff.role === 'admin' && this.svc.staff.filter(s => s.role === 'admin').length <= 1) {
-      this.toast('Cannot remove the primary Administrator account.', 'warning');
+    if (staff.email === 'admina@novaautos.co.nz') {
+      this.toast('The sole Administrator account (Joy) cannot be deleted or locked out.', 'warning');
       return;
     }
     this.confirmDialog({
-      title: 'Remove Staff Member',
-      message: `Are you sure you want to remove "${staff.name}" (${staff.email})? Assigned leads will be reassigned to the administrator.`,
-      confirmText: 'Remove Staff',
+      title: 'Deactivate Account',
+      message: `Are you sure you want to remove access for "${staff.name}" (${staff.email})?`,
+      confirmText: 'Deactivate Account',
       isDanger: true,
-      onConfirm: () => {
+      onConfirm: async () => {
         if (this.svc) {
-          this.svc.staff = this.svc.staff.filter(s => s.id !== staffId);
+          staff.status = 'inactive';
           if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
         }
-        this.toast(`Staff member "${staff.name}" removed.`, 'info');
+        try {
+          const sessionToken = this.svc ? this.svc.getSessionToken() : null;
+          const headers = { 'Content-Type': 'application/json' };
+          if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
+          else headers['x-user-id'] = (this.user && this.user.id) || 'admin';
+
+          await fetch('/api/staff', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ action: 'toggle-status', userId: staffId, status: 'inactive' })
+          });
+        } catch (e) {}
+
+        this.toast(`Account for "${staff.name}" deactivated.`, 'info');
         this.renderStaff();
       }
     });
