@@ -6,6 +6,7 @@
 node_modules/
 .netlify/
 dist/
+dist-electron/
 build/
 public/
 

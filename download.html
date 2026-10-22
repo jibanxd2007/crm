@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Download MetaCRM for Windows — Nova Autos Desktop Client</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23202223'/%3E%3Cpath d='M8 23V9h3.6l4.4 7.2L20.4 9H24v14h-3.2v-8.8l-4.1 6.6h-1.4l-4.1-6.6V23H8z' fill='%23ffffff'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-base: #0B0D0F;
+      --bg-surface: #13171B;
+      --bg-card: rgba(22, 27, 34, 0.75);
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-accent: rgba(255, 106, 0, 0.35);
+      --accent-orange: #FF6A00;
+      --accent-gradient: linear-gradient(135deg, #FF6A00 0%, #EE0979 100%);
+      --text-primary: #FFFFFF;
+      --text-secondary: #9BA3AF;
+      --text-muted: #5D6675;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg-base);
+      color: var(--text-primary);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* Ambient Lighting */
+    .ambient-glow {
+      position: fixed;
+      width: 600px;
+      height: 600px;
+      border-radius: 50%;
+      filter: blur(140px);
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.18;
+    }
+    .glow-1 { top: -100px; left: 20%; background: #FF6A00; }
+    .glow-2 { bottom: 10%; right: 10%; background: #EE0979; }
+
+    /* Top Navigation */
+    header {
+      position: relative;
+      z-index: 10;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px 24px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-primary);
+    }
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(255, 106, 0, 0.15);
+    }
+    .brand-name {
+      font-family: 'Outfit', sans-serif;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .brand-tag {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      background: rgba(255, 106, 0, 0.12);
+      color: var(--accent-orange);
+      border-radius: 999px;
+      border: 1px solid rgba(255, 106, 0, 0.25);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .btn-portal {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+      background: rgba(255, 255, 255, 0.03);
+      transition: all 0.2s ease;
+    }
+    .btn-portal:hover {
+      color: var(--text-primary);
+      border-color: rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    /* Main Container */
+    main {
+      position: relative;
+      z-index: 5;
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 60px 24px 100px;
+    }
+
+    /* Hero Section */
+    .hero {
+      text-align: center;
+      margin-bottom: 70px;
+    }
+    .release-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-subtle);
+      padding: 6px 16px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #34D399;
+      margin-bottom: 24px;
+    }
+    .release-badge::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #34D399;
+      box-shadow: 0 0 10px #34D399;
+    }
+
+    .hero-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 54px;
+      font-weight: 800;
+      line-height: 1.12;
+      letter-spacing: -0.03em;
+      margin-bottom: 20px;
+      background: linear-gradient(180deg, #FFFFFF 30%, #A5B0C2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero-subtitle {
+      font-size: 18px;
+      line-height: 1.6;
+      color: var(--text-secondary);
+      max-width: 680px;
+      margin: 0 auto 36px;
+    }
+
+    /* CTA Buttons */
+    .cta-group {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .btn-download-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--accent-gradient);
+      color: #FFFFFF;
+      text-decoration: none;
+      font-size: 16px;
+      font-weight: 700;
+      padding: 16px 36px;
+      border-radius: var(--radius-md);
+      box-shadow: 0 12px 30px rgba(255, 106, 0, 0.35);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .btn-download-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 16px 36px rgba(255, 106, 0, 0.45);
+    }
+    .btn-download-portable {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      text-decoration: none;
+      font-size: 15px;
+      font-weight: 600;
+      padding: 16px 28px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-subtle);
+      transition: all 0.2s ease;
+    }
+    .btn-download-portable:hover {
+      border-color: rgba(255, 255, 255, 0.25);
+      background: #181D23;
+    }
+
+    .system-reqs {
+      font-size: 13px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .req-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Features Grid */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 20px;
+      margin-bottom: 70px;
+    }
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 28px;
+      backdrop-filter: blur(16px);
+      transition: border-color 0.2s ease;
+    }
+    .feature-card:hover {
+      border-color: var(--border-accent);
+    }
+    .feature-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: rgba(255, 106, 0, 0.1);
+      border: 1px solid rgba(255, 106, 0, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent-orange);
+      margin-bottom: 18px;
+    }
+    .feature-title {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: var(--text-primary);
+    }
+    .feature-desc {
+      font-size: 14px;
+      line-height: 1.55;
+      color: var(--text-secondary);
+    }
+
+    /* Installation Steps */
+    .steps-section {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 40px;
+      margin-bottom: 70px;
+    }
+    .section-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 26px;
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+    .section-desc {
+      font-size: 15px;
+      color: var(--text-secondary);
+      margin-bottom: 32px;
+    }
+    .steps-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 24px;
+    }
+    .step-item {
+      position: relative;
+    }
+    .step-number {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--accent-gradient);
+      color: #FFF;
+      font-weight: 800;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 14px;
+    }
+    .step-name {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .step-text {
+      font-size: 13px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    /* Integrity & Checksums */
+    .integrity-card {
+      background: #0E1114;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 28px;
+      margin-bottom: 50px;
+    }
+    .integrity-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .integrity-title {
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .checksum-box {
+      background: #07080A;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: var(--radius-sm);
+      padding: 14px 18px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: #34D399;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      overflow-x: auto;
+    }
+    .copy-btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: none;
+      color: var(--text-primary);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    .copy-btn:hover { background: rgba(255, 255, 255, 0.16); }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border-subtle);
+      padding: 36px 24px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    footer a {
+      color: var(--text-secondary);
+      text-decoration: none;
+    }
+    footer a:hover { color: var(--accent-orange); }
+
+    @media (max-width: 768px) {
+      .hero-title { font-size: 38px; }
+      .cta-group { flex-direction: column; }
+      .btn-download-primary, .btn-download-portable { width: 100%; justify-content: center; }
+      .steps-section { padding: 24px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="ambient-glow glow-1"></div>
+  <div class="ambient-glow glow-2"></div>
+
+  <!-- Header -->
+  <header>
+    <a href="/" class="brand">
+      <div class="brand-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14.5c-2.48 0-4.5-2.02-4.5-4.5S8.52 7.5 11 7.5c1.42 0 2.68.66 3.5 1.69.82-1.03 2.08-1.69 3.5-1.69 2.48 0 4.5 2.02 4.5 4.5s-2.02 4.5-4.5 4.5c-1.42 0-2.68-.66-3.5-1.69-.82 1.03-2.08 1.69-3.5 1.69z" fill="#FF6A00" opacity="0.25"/>
+          <path d="M16.5 9c-1.66 0-3 1.34-3 3 0 .74.27 1.42.72 1.95L12 16.14l-2.22-2.19c.45-.53.72-1.21.72-1.95 0-1.66-1.34-3-3-3s-3 1.34-3 3 1.34 3 3 3c.74 0 1.42-.27 1.95-.72L12 16.86l2.55-2.58c.53.45 1.21.72 1.95.72 1.66 0 3-1.34 3-3s-1.34-3-3-3zm-9 4.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm9 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" fill="#FF6A00"/>
+        </svg>
+      </div>
+      <div>
+        <span class="brand-name">MetaCRM</span>
+        <span class="brand-tag">Nova Autos</span>
+      </div>
+    </a>
+    <div class="nav-actions">
+      <a href="/#login" class="btn-portal">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+          <polyline points="15 3 21 3 21 9"/>
+          <line x1="10" y1="14" x2="21" y2="3"/>
+        </svg>
+        Launch Web App
+      </a>
+    </div>
+  </header>
+
+  <!-- Main Hero -->
+  <main>
+    <section class="hero">
+      <div class="release-badge">Windows Production Release v2.0.0 Stable</div>
+      <h1 class="hero-title">MetaCRM for Windows</h1>
+      <p class="hero-subtitle">
+        High-performance native desktop client for Nova Autos. Instant access to real-time Facebook & Instagram leads, customer conversations, and team messaging with zero browser overhead.
+      </p>
+
+      <div class="cta-group">
+        <a id="btn-installer" href="https://github.com/jibanxd2007/crm/releases/download/v2.0.0/MetaCRM-Setup-2.0.0.exe" class="btn-download-primary">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Download for Windows (.exe)
+        </a>
+
+        <a id="btn-portable" href="https://github.com/jibanxd2007/crm/releases/download/v2.0.0/MetaCRM-Portable-2.0.0.exe" class="btn-download-portable">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
+            <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+          </svg>
+          Download Portable Edition
+        </a>
+      </div>
+
+      <div class="system-reqs">
+        <div class="req-item">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          <span>Windows 10 / 11 (64-bit)</span>
+        </div>
+        <div class="req-item">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          <span>Size: ~85 MB</span>
+        </div>
+        <div class="req-item">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          <span>Centralized Cloud Backend Sync</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features Showcase -->
+    <section class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+        </div>
+        <h3 class="feature-title">Native Desktop Alerts</h3>
+        <p class="feature-desc">Receive instant Windows toast notifications for new inbound leads and customer inquiries even when minimized.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+        </div>
+        <h3 class="feature-title">Zero Browser Clutter</h3>
+        <p class="feature-desc">Runs as an isolated application with no browser tabs, developer address bars, or memory overhead.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </div>
+        <h3 class="feature-title">Windows DPAPI Security</h3>
+        <p class="feature-desc">Authentication sessions are encrypted at the operating system level using Windows Credential DPAPI safeguards.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"/>
+            <polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+        </div>
+        <h3 class="feature-title">Live Production Data</h3>
+        <p class="feature-desc">All desktop instances synchronize directly with the centralized Nova Autos database and Meta integration gateway.</p>
+      </div>
+    </section>
+
+    <!-- Installation Steps -->
+    <section class="steps-section">
+      <h2 class="section-title">Quick Installation Walkthrough</h2>
+      <p class="section-desc">Get up and running in less than 60 seconds with no developer setup or command-line tools required.</p>
+
+      <div class="steps-list">
+        <div class="step-item">
+          <div class="step-number">1</div>
+          <div class="step-name">Download Installer</div>
+          <p class="step-text">Click the Download for Windows button above to save the <code>MetaCRM-Setup-2.0.0.exe</code> package.</p>
+        </div>
+        <div class="step-item">
+          <div class="step-number">2</div>
+          <div class="step-name">Run Setup Wizard</div>
+          <p class="step-text">Double-click the installer and follow the standard wizard. It creates Start Menu and desktop shortcuts automatically.</p>
+        </div>
+        <div class="step-item">
+          <div class="step-number">3</div>
+          <div class="step-name">Sign In & Go</div>
+          <p class="step-text">Launch MetaCRM and log in with your authorized email and password. Your assigned leads and permissions load instantly.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Integrity & Checksums -->
+    <section class="integrity-card">
+      <div class="integrity-header">
+        <span class="integrity-title">Verified Binary SHA-256 Checksums</span>
+        <span style="font-size:12px; color:var(--text-muted);">Verified Build: Release v2.0.0 (x64)</span>
+      </div>
+      <div class="checksum-box" style="margin-bottom: 10px;">
+        <span id="checksum-setup">MetaCRM-Setup-2.0.0.exe: c1e00275ca39307c5d4abc584992c95cfcc486257597eddb415c634404bf41e1</span>
+        <button class="copy-btn" onclick="navigator.clipboard.writeText('c1e00275ca39307c5d4abc584992c95cfcc486257597eddb415c634404bf41e1'); this.innerText='Copied!'">Copy SHA-256</button>
+      </div>
+      <div class="checksum-box">
+        <span id="checksum-portable">MetaCRM-Portable-2.0.0.exe: cef53327d16c02b42b49db7413f28b2b88217309963d63d7f65ec51e6b32f474</span>
+        <button class="copy-btn" onclick="navigator.clipboard.writeText('cef53327d16c02b42b49db7413f28b2b88217309963d63d7f65ec51e6b32f474'); this.innerText='Copied!'">Copy SHA-256</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <p>MetaCRM Desktop Edition • Copyright &copy; 2026 Nova Autos • Connected to Centralized Production Cloud Infrastructure</p>
+  </footer>
+
+</body>
+</html>

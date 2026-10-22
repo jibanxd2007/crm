@@ -28,6 +28,7 @@ fs.mkdirSync('public', { recursive: true });
 
 // Copy static frontend assets into public/
 copyFileIfExists('index.html', path.join('public', 'index.html'));
+copyFileIfExists('download.html', path.join('public', 'download.html'));
 copyFileIfExists('favicon.ico', path.join('public', 'favicon.ico'));
 copyFileIfExists('robots.txt', path.join('public', 'robots.txt'));
 copyDir('css', path.join('public', 'css'));

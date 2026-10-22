@@ -3,13 +3,58 @@
   "version": "2.0.0",
   "private": true,
   "description": "Production Meta Lead + Messaging CRM on Vercel (6-Page Multi-Tenant)",
+  "main": "electron/main.js",
   "scripts": {
-    "build": "node build.js"
+    "build": "node build.js",
+    "desktop:start": "electron .",
+    "desktop:build": "node build.js && electron-builder --win --x64",
+    "desktop:portable": "node build.js && electron-builder --win portable --x64",
+    "desktop:dist": "node build.js && electron-builder --win nsis portable --x64"
+  },
+  "build": {
+    "appId": "nz.co.novaautos.metacrm",
+    "productName": "MetaCRM",
+    "copyright": "Copyright © 2026 Nova Autos",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "electron/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "electron/assets/icon.ico",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MetaCRM",
+      "uninstallDisplayName": "MetaCRM (Nova Autos)"
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}.${ext}"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "jibanxd2007",
+      "repo": "crm"
+    }
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.45.4",
     "@supabase/ssr": "^0.5.2",
+    "@supabase/supabase-js": "^2.45.4",
     "lucide-react": "^0.453.0"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.15.3"
+  }
 }

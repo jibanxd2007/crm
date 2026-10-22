@@ -92,6 +92,12 @@
           </div>
         </div>
 
+        <!-- Desktop App Download Button -->
+        <a href="download.html" target="_blank" class="topbar-desktop-download-link" title="Download MetaCRM Desktop for Windows" style="display:inline-flex; align-items:center; gap:6px; color:#FF6A00; text-decoration:none; font-size:12px; font-weight:700; padding:6px 12px; border-radius:8px; background:rgba(255,106,0,0.1); border:1px solid rgba(255,106,0,0.28); transition:all 0.2s ease;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>Get Windows App</span>
+        </a>
+
         <!-- Currency Selector Indicator -->
         <div class="topbar-currency-wrap">
           <select id="topbar-currency-select" class="topbar-currency-select" onchange="window.app.setCurrency(this.value)" title="Change CRM Display Currency">
@@ -141,6 +147,9 @@
 
   <!-- Toast -->
   <div id="toast-container"></div>
+
+  <!-- Desktop Bridge (Centralized Cloud API Routing & Native Capabilities) -->
+  <script src="js/desktop-bridge.js?v=20261022-v1"></script>
 
   <!-- Supabase JS Client Library -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
