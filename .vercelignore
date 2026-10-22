@@ -1,0 +1,13 @@
+# Desktop build artifacts (large binaries)
+dist-electron/
+*.exe
+*.blockmap
+
+# Dependencies & Build artifacts
+node_modules/
+.git/
+.tools/
+scratch/
+tests/
+supabase/tests/
+*.log
