@@ -63,8 +63,13 @@ async function withRetry(fn, maxRetries = 3, baseDelayMs = 200) {
       return await fn();
     } catch (err) {
       lastErr = err;
+      const status = err.status || err.statusCode || (err.response && err.response.status);
+      if (status && status >= 400 && status < 500 && status !== 429) {
+        break; // Permanent failure: stop immediately without wasteful retry
+      }
       if (attempt < maxRetries) {
-        await new Promise(r => setTimeout(r, baseDelayMs * Math.pow(2, attempt - 1)));
+        const delay = (baseDelayMs * Math.pow(2, attempt - 1)) + Math.floor(Math.random() * 50);
+        await new Promise(r => setTimeout(r, delay));
       }
     }
   }
@@ -127,6 +132,54 @@ async function zernioUnifiedHandler(req, res) {
         hasSupabase: !!getSupabaseAdmin(),
         timestamp: new Date().toISOString()
       }
+    });
+  }
+
+  // 0.5 RECOVERY OF FAILED WEBHOOKS (Criterion 3: Safe queuing & recovery)
+  if (path === 'recover-failed-webhooks' || url.includes('/recover-failed-webhooks')) {
+    res.setHeader('Content-Type', 'application/json');
+    global.RECOVERABLE_FAILED_WEBHOOKS = global.RECOVERABLE_FAILED_WEBHOOKS || [];
+    const queue = [...global.RECOVERABLE_FAILED_WEBHOOKS];
+    const supabase = getSupabaseAdmin();
+    let recoveredCount = 0;
+    const remainingQueue = [];
+
+    if (supabase && queue.length > 0) {
+      for (const item of queue) {
+        try {
+          const payload = item.payload || {};
+          const msgText = payload.message?.text || (typeof payload.message === 'string' ? payload.message : (payload.text || ''));
+          const richMsg = {
+            conversation_id: item.dbConvId,
+            meta_mid: item.mid,
+            external_id: item.mid,
+            sender_type: 'customer',
+            sender_name: payload.sender?.name || 'Contact',
+            text: msgText || '[Message]',
+            message_text: msgText || '[Message]',
+            direction: 'inbound',
+            status: 'sent',
+            created_at: payload.timestamp || item.failedAt
+          };
+          const { error } = await safeDbUpsert(supabase, 'messages', richMsg, 'meta_mid');
+          if (!error) {
+            recoveredCount++;
+          } else {
+            remainingQueue.push(item);
+          }
+        } catch (e) {
+          remainingQueue.push(item);
+        }
+      }
+      global.RECOVERABLE_FAILED_WEBHOOKS = remainingQueue;
+    }
+
+    return res.status(200).json({
+      status: "success",
+      totalInQueue: queue.length,
+      recoveredCount,
+      remainingInQueue: global.RECOVERABLE_FAILED_WEBHOOKS.length,
+      timestamp: new Date().toISOString()
     });
   }
 
@@ -808,7 +861,7 @@ async function zernioUnifiedHandler(req, res) {
 
     if (req.method === 'POST') {
       SYNC_DIAGNOSTICS.webhooksReceived++;
-      const webhookSecret = process.env.ZERNIO_WEBHOOK_SECRET || process.env.META_APP_SECRET || 'zernio_webhook_secret_default';
+      const webhookSecret = process.env.ZERNIO_WEBHOOK_SECRET || '';
 
       // Read the raw stream FIRST, before anything touches req.body
       let rawBodyBuffer;
@@ -831,7 +884,7 @@ async function zernioUnifiedHandler(req, res) {
         req.headers['x-signature'] || 
         req.headers['x-late-signature'];
 
-      // Enforce HMAC signature check when signature is provided or in production with configured secret
+      // Enforce HMAC signature check when signature is provided or in production with configured Zernio secret
       if (sigHeader || (process.env.NODE_ENV === 'production' && process.env.ZERNIO_WEBHOOK_SECRET)) {
         if (!sigHeader) {
           recordDiagnosticError('webhook_missing_signature', new Error('Missing signature header'));
@@ -963,12 +1016,26 @@ async function zernioUnifiedHandler(req, res) {
                 created_at: msgTime
               };
 
-              let { data: upsertData, error: msgErr } = await safeDbUpsert(supabase, 'messages', richMsg, 'id');
+              let { data: upsertData, error: msgErr, isDuplicate } = await safeDbUpsert(supabase, 'messages', richMsg, 'meta_mid');
 
-              if (!upsertData || upsertData.length === 0) {
+              if (isDuplicate || !upsertData || upsertData.length === 0) {
                 SYNC_DIAGNOSTICS.duplicatesIgnored++;
               } else {
                 SYNC_DIAGNOSTICS.incomingPersisted++;
+
+                // 3. Create exactly ONE logical notification idempotently per incoming message
+                const notifId = toDeterministicUuid(`notif_mid_${externalMid}`);
+                const notifRecord = {
+                  id: notifId,
+                  organization_id: '00000000-0000-0000-0000-000000000001',
+                  user_id: payload.assignedTo || payload.assigned_to || '00000000-0000-4001-a001-000000000001',
+                  title: `New message from ${senderName}`,
+                  message: msgText || (rawAtt ? '📎 Attachment' : 'Direct message'),
+                  type: 'new_message',
+                  read: false,
+                  created_at: msgTime
+                };
+                await safeDbUpsert(supabase, 'notifications', notifRecord, 'id').catch(() => {});
               }
             });
 
@@ -988,11 +1055,25 @@ async function zernioUnifiedHandler(req, res) {
           } catch (mErr) {
             recordDiagnosticError('webhook_message_ingest', mErr);
             console.warn('[Zernio Message Ingest Warning]:', mErr.message);
+
+            // Criterion 3: Safely queue unpersisted webhook for retry & recovery
+            global.RECOVERABLE_FAILED_WEBHOOKS = global.RECOVERABLE_FAILED_WEBHOOKS || [];
+            global.RECOVERABLE_FAILED_WEBHOOKS.unshift({
+              mid: String(externalMid),
+              rawConvId,
+              dbConvId,
+              payload,
+              error: mErr.message,
+              failedAt: new Date().toISOString()
+            });
+            if (global.RECOVERABLE_FAILED_WEBHOOKS.length > 500) global.RECOVERABLE_FAILED_WEBHOOKS.pop();
+
             // Delivery acknowledgment with diagnostic tracking to prevent provider webhook disablement
             SYNC_DIAGNOSTICS.webhooksProcessed++;
             return res.status(200).json({
               status: 'success',
               processed: true,
+              queuedForRecovery: true,
               warning: mErr.message,
               type: 'message',
               conversation_id: rawConvId,

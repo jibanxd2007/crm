@@ -38,6 +38,13 @@ async function metaCampaignsUnifiedHandler(req, res) {
   const token = process.env.META_SYSTEM_USER_ACCESS_TOKEN || process.env.META_ACCESS_TOKEN;
   const supabase = getSupabaseAdmin();
 
+  // 1. Mandatory Authentication Check
+  const { resolveUser } = require('../_utils/index.js');
+  const user = resolveUser(req.headers);
+  if (!user) {
+    return res.status(401).json({ error: "Unauthorized: Valid authentication required." });
+  }
+
   // --------------------------------------------------------------------------
   // A. ASSETS MODE (/api/meta/assets)
   // --------------------------------------------------------------------------
@@ -180,36 +187,43 @@ async function metaCampaignsUnifiedHandler(req, res) {
   // C. ROI MODE (/api/meta/roi)
   // --------------------------------------------------------------------------
   if (action === 'roi' || url.includes('/roi')) {
-    const { resolveUser } = require('../_utils/index.js');
-    const user = resolveUser(req.headers);
-    if (!user) {
-      return res.status(401).json({ error: "Unauthorized: Authentication required" });
-    }
-
-    const allSampleRecords = [
-      { pageId: "page_01", campaignId: "camp_01", spend: 45000.0, leads: 45, cpl: 1000.0 },
-      { pageId: "page_02", campaignId: "camp_02", spend: 32000.0, leads: 20, cpl: 1600.0 }
-    ];
-
     let records = [];
-    if (user.role === 'admin' || user.pages.includes('*')) {
-      records = allSampleRecords;
-    } else {
-      records = allSampleRecords.filter(r => user.pages.includes(r.pageId));
+    if (supabase) {
+      try {
+        let insQuery = supabase.from('ad_insights').select('*');
+        if (user.role !== 'admin' && !user.pages.includes('*')) {
+          insQuery = insQuery.in('page_id', user.pages);
+        }
+        const { data: dbInsights } = await insQuery;
+        if (Array.isArray(dbInsights) && dbInsights.length > 0) {
+          records = dbInsights.map(r => ({
+            pageId: r.page_id,
+            campaignId: r.campaign_id,
+            spend: parseFloat(r.spend || 0),
+            leads: parseInt(r.leads || 0, 10),
+            cpl: parseInt(r.leads || 0, 10) > 0 ? (parseFloat(r.spend || 0) / parseInt(r.leads || 0, 10)) : null
+          }));
+        }
+      } catch (err) {
+        console.warn("[ROI DB Fetch Warning]:", err.message);
+      }
     }
 
-    const totalSpend = records.reduce((sum, r) => sum + r.spend, 0);
-    const totalLeads = records.reduce((sum, r) => sum + r.leads, 0);
+    const totalSpend = records.reduce((sum, r) => sum + (r.spend || 0), 0);
+    const totalLeads = records.reduce((sum, r) => sum + (r.leads || 0), 0);
 
     return res.status(200).json({
       status: "success",
       userRole: user.role,
       accessiblePages: user.pages,
       records: records,
+      hasData: records.length > 0,
       summary: {
         totalSpend,
         totalLeads,
-        blendedCpl: totalLeads > 0 ? totalSpend / totalLeads : 0
+        cpl: totalLeads > 0 ? (totalSpend / totalLeads) : 0,
+        cpa: 0,
+        blendedCpl: totalLeads > 0 ? (totalSpend / totalLeads) : 0
       }
     });
   }

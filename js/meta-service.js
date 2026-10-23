@@ -42,9 +42,8 @@ class MetaService {
 
     return (typeof window !== "undefined" && window.INITIAL_META_CONFIG) || {
       appId: "",
-      appSecret: "",
-      apiVersion: "v20.0",
-      redirectUri: typeof window !== "undefined" ? `${window.location.origin}/api/auth/meta/callback` : "",
+      apiVersion: "v24.0",
+      redirectUri: typeof window !== "undefined" ? `${window.location.origin}/api/meta/callback` : "",
       webhookEndpoint: "/api/webhooks/meta",
       verifyToken: "",
       autoSyncIntervalMinutes: 15,

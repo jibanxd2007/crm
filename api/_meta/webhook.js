@@ -39,11 +39,7 @@ async function metaWebhookHandler(req, res) {
     const token = query['hub.verify_token'];
     const challenge = query['hub.challenge'];
 
-    if (!verifyToken) {
-      return res.status(500).json({ error: "META_VERIFY_TOKEN is not configured on the server." });
-    }
-
-    if (mode === 'subscribe' && token === verifyToken) {
+    if (mode === 'subscribe' && verifyToken && token === verifyToken) {
       res.setHeader('Content-Type', 'text/plain');
       return res.status(200).send(challenge);
     }
@@ -53,19 +49,33 @@ async function metaWebhookHandler(req, res) {
 
   // Handle Meta Webhook Event (POST)
   if (req.method === 'POST') {
-    if (!appSecret) {
-      return res.status(500).json({ error: "META_APP_SECRET is not configured on the server." });
+    const signatureHeader = req.headers['x-hub-signature-256'] || req.headers['X-Hub-Signature-256'];
+    if (!signatureHeader) {
+      return res.status(401).json({ error: "Unauthorized: Missing Meta X-Hub-Signature-256 header." });
     }
 
-    const signatureHeader = req.headers['x-hub-signature-256'] || req.headers['X-Hub-Signature-256'];
+    if (!appSecret) {
+      return res.status(401).json({ error: "Unauthorized: Webhook verification secret not configured on server." });
+    }
+
     const rawBody = req.rawBody || (typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {}));
     const isValid = verifyMetaSignature(rawBody, signatureHeader, appSecret);
 
     if (!isValid) {
-      return res.status(401).json({ error: "Unauthorized: Invalid or missing Meta X-Hub-Signature-256." });
+      return res.status(401).json({ error: "Unauthorized: Invalid Meta X-Hub-Signature-256." });
     }
 
-    const payload = (typeof req.body === 'object') ? req.body : JSON.parse(rawBody || '{}');
+    let payload;
+    try {
+      payload = (typeof req.body === 'object' && req.body !== null) ? req.body : JSON.parse(rawBody || '{}');
+    } catch (parseErr) {
+      return res.status(400).json({ error: "Bad Request: Malformed JSON payload" });
+    }
+
+    if (!payload || !payload.object || !payload.entry || !Array.isArray(payload.entry) || payload.entry.length === 0) {
+      return res.status(400).json({ error: "Bad Request: Invalid Meta webhook structure (missing object or entry)" });
+    }
+
     const eventId = payload.entry && payload.entry[0] ? payload.entry[0].id : `evt_${Date.now()}`;
     const pageId = payload.entry && payload.entry[0] ? payload.entry[0].id : 'page_01';
 
@@ -74,6 +84,8 @@ async function metaWebhookHandler(req, res) {
     let processedMsgs = 0;
     let processedLeads = 0;
     let duplicateIgnored = false;
+    let lastLeadId = null;
+    let lastAttribution = null;
 
     for (const entry of entries) {
       const entryPageId = entry.id || pageId;
@@ -89,6 +101,15 @@ async function metaWebhookHandler(req, res) {
           const adsetId = leadVal.adgroup_id || leadVal.adset_id;
           const campaignId = leadVal.campaign_id;
           const createdTime = leadVal.created_time ? new Date(leadVal.created_time * 1000).toISOString() : new Date().toISOString();
+
+          lastLeadId = leadgenId;
+          lastAttribution = {
+            page_id: leadVal.page_id || entryPageId,
+            form_id: formId,
+            ad_id: adId,
+            adset_id: adsetId,
+            campaign_id: campaignId
+          };
 
           if (isDuplicateEvent(`lead_${leadgenId}`)) {
             duplicateIgnored = true;
@@ -233,11 +254,18 @@ async function metaWebhookHandler(req, res) {
                       let buffer = null;
                       let contentType = 'application/octet-stream';
                       if (typeof fetch === 'function') {
-                        const dlRes = await fetch(cdnUrl);
-                        if (dlRes.ok) {
-                          contentType = dlRes.headers.get('content-type') || contentType;
-                          const ab = await dlRes.arrayBuffer();
-                          buffer = Buffer.from(ab);
+                        const controller = new AbortController();
+                        const to = setTimeout(() => { try { controller.abort(); } catch (e) {} }, 1800);
+                        try {
+                          const dlRes = await fetch(cdnUrl, { signal: controller.signal });
+                          clearTimeout(to);
+                          if (dlRes.ok) {
+                            contentType = dlRes.headers.get('content-type') || contentType;
+                            const ab = await dlRes.arrayBuffer();
+                            buffer = Buffer.from(ab);
+                          }
+                        } catch (fErr) {
+                          clearTimeout(to);
                         }
                       }
 
@@ -289,7 +317,7 @@ async function metaWebhookHandler(req, res) {
               // conversation last_message, last_message_at, and unread_count without double-counting.
               await supabase
                 .from('messages')
-                .insert({
+                .upsert({
                   conversation_id: convId,
                   sender_type: 'customer',
                   sender_name: 'Customer',
@@ -298,10 +326,10 @@ async function metaWebhookHandler(req, res) {
                   attachments: storedAttachments,
                   attachment_url: primaryAttachmentPath,
                   attachment_storage_path: storedAttachments[0]?.storage_path || null,
-                  meta_mid: mid,
+                  meta_mid: String(mid),
                   is_read: false,
                   created_at: msgTimestamp
-                });
+                }, { onConflict: 'meta_mid', ignoreDuplicates: true });
             }
           } catch (dbErr) {
             console.warn("[Webhook DB Ingest Warning]:", dbErr.message);
@@ -313,7 +341,10 @@ async function metaWebhookHandler(req, res) {
     return res.status(200).json({
       status: "success",
       processed: true,
+      duplicate: duplicateIgnored,
       duplicateIgnored,
+      leadId: lastLeadId,
+      attribution: lastAttribution,
       messagesProcessed: processedMsgs,
       leadsProcessed: processedLeads,
       eventId: eventId,

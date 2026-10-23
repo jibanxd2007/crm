@@ -37,6 +37,24 @@ function setCachedResponse(clientMsgId, response) {
   }
 }
 
+// In-memory cache for attachment signed URLs (50 min TTL) to achieve <1s P95 thread loads
+const SIGNED_URL_CACHE = new Map();
+function getCachedSignedUrl(path) {
+  if (!path) return null;
+  const item = SIGNED_URL_CACHE.get(path);
+  if (item && item.expiresAt > Date.now()) return item.url;
+  if (item) SIGNED_URL_CACHE.delete(path);
+  return null;
+}
+function setCachedSignedUrl(path, url) {
+  if (!path || !url) return;
+  SIGNED_URL_CACHE.set(path, { url, expiresAt: Date.now() + 50 * 60 * 1000 });
+  if (SIGNED_URL_CACHE.size > 2000) {
+    const oldest = SIGNED_URL_CACHE.keys().next().value;
+    SIGNED_URL_CACHE.delete(oldest);
+  }
+}
+
 function getSupabaseAdmin() {
   if (!createClient) return null;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
@@ -85,11 +103,45 @@ async function messagesHandler(req, res) {
         requestedPage
       });
     }
-    if (requestedConv && user.convs && user.convs.length > 0 && !user.convs.includes(requestedConv)) {
-      return res.status(403).json({
-        error: "Forbidden: Cannot access messages for unassigned conversation",
-        requestedConv
-      });
+    if (requestedConv) {
+      if (user.convs && user.convs.length > 0) {
+        if (!user.convs.includes(requestedConv) && !user.convs.includes(toDeterministicUuid(requestedConv))) {
+          return res.status(403).json({
+            error: "Forbidden: Cannot access messages for unassigned conversation",
+            requestedConv
+          });
+        }
+      } else {
+        if (!user.pages || user.pages.length === 0) {
+          return res.status(403).json({
+            error: "Forbidden: Staff member has no assigned pages",
+            requestedConv
+          });
+        }
+        if (supabase) {
+          try {
+            const dbConvId = toDeterministicUuid(requestedConv);
+            const { data: convCheck } = await supabase
+              .from('conversations')
+              .select('id, page_id, account_id')
+              .or(`id.eq.${requestedConv},id.eq.${dbConvId}`)
+              .maybeSingle();
+
+            const convPage = convCheck?.page_id || convCheck?.account_id;
+            if (!convPage || !user.pages.includes(convPage)) {
+              return res.status(403).json({
+                error: "Forbidden: Cannot access messages for conversation on unassigned page",
+                requestedConv
+              });
+            }
+          } catch (chkErr) {
+            return res.status(403).json({
+              error: "Forbidden: Cannot verify conversation permissions",
+              requestedConv
+            });
+          }
+        }
+      }
     }
   }
 
@@ -239,10 +291,44 @@ async function messagesHandler(req, res) {
       return res.status(200).json(cached);
     }
 
-    if (targetPage && user.role !== 'admin' && !user.pages.includes('*') && !user.pages.includes(targetPage)) {
-      return res.status(403).json({
-        error: "Forbidden: Cannot send messages through unauthorized page"
-      });
+    if (user.role !== 'admin' && !user.pages.includes('*')) {
+      if (targetPage && !user.pages.includes(targetPage)) {
+        return res.status(403).json({
+          error: "Forbidden: Cannot send messages through unauthorized page"
+        });
+      }
+      const convIdCheck = body.conversationId || body.conversation_id || body.convId;
+      if (convIdCheck) {
+        const normConvId = toDeterministicUuid(convIdCheck);
+        if (user.convs && user.convs.length > 0 && !user.convs.includes(convIdCheck) && !user.convs.includes(normConvId)) {
+          return res.status(403).json({
+            error: "Forbidden: Cannot send messages to unassigned conversation"
+          });
+        }
+        if (supabase) {
+          try {
+            const { data: convCheck } = await supabase
+              .from('conversations')
+              .select('id, page_id, assigned_to')
+              .eq('id', normConvId)
+              .maybeSingle();
+            if (convCheck) {
+              if (convCheck.page_id && !user.pages.includes(convCheck.page_id)) {
+                return res.status(403).json({
+                  error: "Forbidden: Cannot send messages to conversation on unassigned page"
+                });
+              }
+              if (convCheck.assigned_to && convCheck.assigned_to !== user.id && (!convCheck.page_id || !user.pages.includes(convCheck.page_id))) {
+                return res.status(403).json({
+                  error: "Forbidden: Cannot send messages to conversation assigned to another staff member"
+                });
+              }
+            }
+          } catch (cAuthErr) {
+            console.warn('[Outbound Auth Check Warning]:', cAuthErr.message);
+          }
+        }
+      }
     }
 
     // Resolve Page Access Token
@@ -569,47 +655,95 @@ async function messagesHandler(req, res) {
 
       if (requestedConv) {
         const dbConvId = toDeterministicUuid(requestedConv);
-        // Fetch thread messages in chronological order
-        const { data: threadMsgs, error: threadErr } = await supabase
+
+        // Security check for staff: ensure conversation belongs to assigned page
+        if (user.role !== 'admin' && !user.pages.includes('*')) {
+          if (user.convs && user.convs.length > 0 && !user.convs.includes(requestedConv) && !user.convs.includes(dbConvId)) {
+            return res.status(403).json({ error: "Forbidden: Cannot access messages for unassigned conversation" });
+          }
+          const { data: convCheck } = await supabase
+            .from('conversations')
+            .select('id, page_id')
+            .eq('id', dbConvId)
+            .maybeSingle();
+
+          if (convCheck && convCheck.page_id && !user.pages.includes(convCheck.page_id)) {
+            return res.status(403).json({ error: "Forbidden: Cannot access conversation for unassigned page" });
+          }
+        }
+
+        // Fetch thread messages: default to recent messages with stable tie-breaking
+        const orderParam = req.query?.order || 'desc';
+        let msgQuery = supabase
           .from('messages')
           .select('*')
-          .eq('conversation_id', dbConvId)
-          .order('created_at', { ascending: true })
-          .range(offset, offset + limit - 1);
+          .eq('conversation_id', dbConvId);
 
-        if (!threadErr && threadMsgs && threadMsgs.length > 0) {
-          // Resolve 1-hour signed URLs on read only (NEVER stored in the database)
-          for (const msg of threadMsgs) {
-            let storagePath = msg.attachment_storage_path || extractStoragePath(msg.attachment_url);
-            let attachments = Array.isArray(msg.attachments) ? [...msg.attachments] : [];
+        if (orderParam === 'asc') {
+          msgQuery = msgQuery.order('created_at', { ascending: true }).order('id', { ascending: true });
+        } else {
+          msgQuery = msgQuery.order('created_at', { ascending: false }).order('id', { ascending: false });
+        }
 
-            if (!storagePath && attachments.length > 0) {
-              const firstAtt = attachments[0];
-              storagePath = firstAtt?.storagePath || firstAtt?.storage_path || extractStoragePath(firstAtt?.url || firstAtt?.payload?.url);
-            }
+        const { data: rawMsgs, error: threadErr } = await msgQuery.range(offset, offset + limit - 1);
+        if (!threadErr && Array.isArray(rawMsgs)) {
+          let threadMsgs = [...rawMsgs];
+          if (threadMsgs.length > 0 && orderParam !== 'asc') {
+            threadMsgs.reverse();
+          }
 
-            if (storagePath && storagePath !== 'EXPIRED') {
-              try {
-                const { data: signData, error: signErr } = await supabase.storage
-                  .from('message-attachments')
-                  .createSignedUrl(storagePath, 3600);
+          if (threadMsgs.length > 0) {
+            // Concurrently resolve signed URLs using parallel execution and cache for P95 < 1s latency
+            const signPromises = threadMsgs.map(async (msg) => {
+              let storagePath = msg.attachment_storage_path || extractStoragePath(msg.attachment_url);
+              let attachments = Array.isArray(msg.attachments) ? [...msg.attachments] : [];
 
-                if (!signErr && signData?.signedUrl) {
-                  msg.attachment_url = signData.signedUrl;
+              if (!storagePath && attachments.length > 0) {
+                const firstAtt = attachments[0];
+                storagePath = firstAtt?.storagePath || firstAtt?.storage_path || extractStoragePath(firstAtt?.url || firstAtt?.payload?.url);
+              }
+
+              if (storagePath && storagePath !== 'EXPIRED') {
+                const cachedUrl = getCachedSignedUrl(storagePath);
+                if (cachedUrl) {
+                  msg.attachment_url = cachedUrl;
                   if (attachments.length > 0) {
                     attachments[0] = {
                       ...attachments[0],
-                      url: signData.signedUrl,
-                      signedUrl: signData.signedUrl,
+                      url: cachedUrl,
+                      signedUrl: cachedUrl,
                       storage_path: storagePath
                     };
                     msg.attachments = attachments;
                   }
+                  return;
                 }
-              } catch (sErr) {}
-            } else if (storagePath === 'EXPIRED') {
-              msg.attachment_unavailable = true;
-            }
+
+                try {
+                  const { data: signData, error: signErr } = await supabase.storage
+                    .from('message-attachments')
+                    .createSignedUrl(storagePath, 3600);
+
+                  if (!signErr && signData?.signedUrl) {
+                    setCachedSignedUrl(storagePath, signData.signedUrl);
+                    msg.attachment_url = signData.signedUrl;
+                    if (attachments.length > 0) {
+                      attachments[0] = {
+                        ...attachments[0],
+                        url: signData.signedUrl,
+                        signedUrl: signData.signedUrl,
+                        storage_path: storagePath
+                      };
+                      msg.attachments = attachments;
+                    }
+                  }
+                } catch (sErr) {}
+              } else if (storagePath === 'EXPIRED') {
+                msg.attachment_unavailable = true;
+              }
+            });
+
+            await Promise.all(signPromises);
           }
 
           return res.status(200).json({
@@ -654,18 +788,28 @@ async function messagesHandler(req, res) {
         if (requestedPage) {
           convQuery = convQuery.eq('page_id', requestedPage);
         } else if (user.role !== 'admin' && !user.pages.includes('*')) {
+          if (!user.pages || user.pages.length === 0) {
+            return res.status(200).json({
+              status: "success",
+              authorized: true,
+              userRole: user.role,
+              conversations: [],
+              data: [],
+              pagination: { limit, offset, total: 0 }
+            });
+          }
           convQuery = convQuery.in('page_id', user.pages);
         }
 
         const { data: convData, count: totalCount, error: convErr } = await convQuery;
-        if (!convErr && convData && convData.length > 0) {
+        if (!convErr && Array.isArray(convData)) {
           return res.status(200).json({
             status: "success",
             authorized: true,
             userRole: user.role,
             conversations: convData,
             data: convData,
-            pagination: { limit, offset, total: totalCount || convData.length }
+            pagination: { limit, offset, total: totalCount !== null ? totalCount : convData.length }
           });
         }
       }

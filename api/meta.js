@@ -24,6 +24,39 @@ async function metaUnifiedHandler(req, res) {
     const oauthHandler = require('./_meta/oauth.js');
     return oauthHandler(req, res);
   }
+  if (url.includes('/simulate-error') || path === 'simulate-error') {
+    const queryType = (req.query && req.query.type) || (new URL(req.url, 'http://localhost').searchParams.get('type'));
+    if (queryType === 'expired_token') {
+      return res.status(401).json({
+        error: {
+          message: "Error validating access token: Session has expired or revoked.",
+          type: "OAuthException",
+          code: 190,
+          error_subcode: 463
+        }
+      });
+    }
+    if (queryType === 'rate_limit') {
+      return res.status(429).json({
+        error: {
+          message: "(#4) Application request limit reached",
+          type: "OAuthException",
+          code: 4
+        }
+      });
+    }
+    if (queryType === 'permissions') {
+      return res.status(403).json({
+        error: {
+          message: "(#200) Requires pages_manage_ads permission to manage this ad account",
+          type: "OAuthException",
+          code: 200
+        }
+      });
+    }
+    return res.status(400).json({ error: "Unknown error type requested" });
+  }
+
   const campaignsHandler = require('./_meta/campaigns.js');
   return campaignsHandler(req, res);
 }

@@ -69,7 +69,8 @@ class SupabaseService {
         console.log("[Supabase] Connected to live Supabase PostgreSQL instance:", this.config.url);
         
         // Listen to auth state transitions to refresh Realtime channels with authenticated credentials
-        if (this.client.auth && typeof this.client.auth.onAuthStateChange === 'function') {
+        if (this.client.auth && typeof this.client.auth.onAuthStateChange === 'function' && !this._authListenerBound) {
+          this._authListenerBound = true;
           this.client.auth.onAuthStateChange((event, session) => {
             console.log(`[Supabase Auth] State changed: ${event}`);
             if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {

@@ -694,8 +694,7 @@ class CRMService {
     } catch (e) {}
     return (window.INITIAL_META_CONFIG) ? { ...window.INITIAL_META_CONFIG } : {
       appId: "",
-      appSecret: "",
-      apiVersion: "v20.0",
+      apiVersion: "v24.0",
       autoSyncIntervalMinutes: 15,
       autoAssignmentEnabled: true,
       assignmentStrategy: "page_based"
@@ -704,19 +703,14 @@ class CRMService {
 
   loadCurrentUser() {
     try {
+      const token = this.getSessionToken();
       const saved = localStorage.getItem(this.currentUserKey);
-      if (saved) return JSON.parse(saved);
+      if (saved && token) {
+        return JSON.parse(saved);
+      }
     } catch (e) {}
-    // Default to Super Admin
-    const admin = this.staff.find(s => s.role === "admin") || this.staff[0];
-    return admin || {
-      id: "usr_admin",
-      name: "Administrator",
-      displayName: "Administrator",
-      email: "admin@company.com",
-      role: "admin",
-      assignedPageIds: []
-    };
+    // If unauthenticated or no session token, require user to log in
+    return null;
   }
 
   saveAll() {
@@ -850,6 +844,56 @@ class CRMService {
       if (token) localStorage.setItem('metacrm_session_token_v2', token);
       else localStorage.removeItem('metacrm_session_token_v2');
     } catch (e) {}
+  }
+
+  getAuthHeaders(includeJson = true) {
+    const headers = {};
+    if (includeJson) headers['Content-Type'] = 'application/json';
+    const token = this.getSessionToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const user = this.getCurrentUser();
+    if (user && user.id) headers['X-User-Id'] = user.id;
+    return headers;
+  }
+
+  async validateSession() {
+    const token = this.getSessionToken();
+    if (!token) {
+      this.currentUser = null;
+      try {
+        localStorage.removeItem(this.currentUserKey);
+        localStorage.removeItem('metacrm_authenticated');
+      } catch (e) {}
+      return false;
+    }
+
+    try {
+      const res = await fetch('/api/staff?action=session', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res && res.ok) {
+        const data = await res.json();
+        if (data.authenticated && data.user) {
+          this.currentUser = { ...(this.currentUser || {}), ...data.user };
+          try {
+            localStorage.setItem(this.currentUserKey, JSON.stringify(this.currentUser));
+            localStorage.setItem('metacrm_authenticated', 'true');
+          } catch (e) {}
+          return true;
+        }
+      }
+      // Invalid or expired session
+      this.currentUser = null;
+      this.setSessionToken('');
+      try {
+        localStorage.removeItem(this.currentUserKey);
+        localStorage.removeItem('metacrm_authenticated');
+      } catch (e) {}
+      return false;
+    } catch (err) {
+      // Offline fallback: keep cached identity if token exists
+      return Boolean(this.currentUser);
+    }
   }
 
   async login(email, password = "") {
@@ -2601,6 +2645,12 @@ class CRMService {
       is_read: false
     };
     conv.messages.push(newMsg);
+    conv.messages.sort((a, b) => {
+      const tA = new Date(a.created_at || a.time || 0).getTime();
+      const tB = new Date(b.created_at || b.time || 0).getTime();
+      if (tA !== tB) return tA - tB;
+      return String(a.id || a.client_msg_id || '').localeCompare(String(b.id || b.client_msg_id || ''));
+    });
 
     this.saveAll();
     this.notifyChange("message_received", { convId, message: newMsg, conversation: conv });

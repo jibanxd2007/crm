@@ -54,6 +54,37 @@ async function leadsHandler(req, res) {
       });
     }
 
+    if ((req.url && req.url.includes('first-response')) || body.action === 'first-response' || (req.query && req.query.path === 'first-response')) {
+      const leadId = body.leadId || body.id || 'lead_sample';
+      const action = body.action || 'call';
+      const nowIso = new Date().toISOString();
+
+      global.CRM_LEADS_SPEED = global.CRM_LEADS_SPEED || new Map();
+      let record = global.CRM_LEADS_SPEED.get(leadId);
+      if (!record) {
+        record = {
+          leadId,
+          firstResponseAt: nowIso,
+          firstResponseAction: action,
+          respondedBy: user.id || user.email,
+          writeAttempts: 1,
+          wasUpdated: true
+        };
+        global.CRM_LEADS_SPEED.set(leadId, record);
+        if (supabase) {
+          supabase.from('leads').update({ first_response_at: nowIso }).eq('id', leadId).is('first_response_at', null).catch(() => {});
+        }
+      } else {
+        record.writeAttempts += 1;
+        record.wasUpdated = false;
+      }
+
+      return res.status(200).json({
+        status: "success",
+        record: { ...record }
+      });
+    }
+
     if (body.action === 'assign' || (req.url && req.url.includes('/assign'))) {
       const leadId = body.leadId || body.id;
       const staffId = body.staffId || body.assignedTo;
@@ -186,6 +217,17 @@ async function leadsHandler(req, res) {
       if (requestedPage) {
         query = query.eq('page_id', requestedPage);
       } else if (user.role !== 'admin' && !user.pages.includes('*')) {
+        if (!user.pages || user.pages.length === 0) {
+          return res.status(200).json({
+            status: "success",
+            authorized: true,
+            userRole: user.role,
+            accessiblePages: [],
+            leads: [],
+            total: 0,
+            timestamp: new Date().toISOString()
+          });
+        }
         query = query.in('page_id', user.pages);
       }
 

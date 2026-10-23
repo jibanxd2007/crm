@@ -187,6 +187,20 @@ class MetaCRMApp {
       if (layout) layout.classList.add('sidebar-collapsed');
     }
     this._checkUrlCallbacks();
+
+    // Verify session validity with backend on boot
+    if (this.svc && typeof this.svc.validateSession === 'function') {
+      this.svc.validateSession().then((isValid) => {
+        if (!isValid && !['login', 'setup-password', 'reset-password'].includes(this.currentRoute)) {
+          this.user = null;
+          this.renderAuthScreen();
+        } else if (isValid && !this.user) {
+          this.user = this.svc.getCurrentUser();
+          this._route();
+        }
+      });
+    }
+
     this.syncZernioAccounts(false);
     // Server data wins over localStorage on load: fetch authoritative conversations immediately
     if (this.svc && this.svc.fetchRemoteConversations) {
@@ -4257,8 +4271,11 @@ class MetaCRMApp {
 
       // 1. Fetch from Supabase via unified /api/messages with accountId and external_id
       try {
+        const authHeaders = (this.svc && typeof this.svc.getAuthHeaders === 'function')
+          ? this.svc.getAuthHeaders(false)
+          : { 'X-User-Id': (this.user && this.user.id) || 'admin' };
         const dbRes = await fetch(`/api/messages?conversation_id=${encodeURIComponent(conv.id)}&accountId=${encodeURIComponent(accountId)}&external_id=${encodeURIComponent(externalId)}`, {
-          headers: { 'X-User-Id': (this.user && this.user.id) || 'admin' },
+          headers: authHeaders,
           signal: ac.signal
         });
         if (dbRes.ok) {
@@ -4311,11 +4328,12 @@ class MetaCRMApp {
           };
         });
 
-        // Sort messages chronologically
+        // Sort messages chronologically with deterministic tie-breaking
         conv.messages.sort((a, b) => {
           const tA = new Date(a.created_at || a.time || 0).getTime();
           const tB = new Date(b.created_at || b.time || 0).getTime();
-          return tA - tB;
+          if (tA !== tB) return tA - tB;
+          return String(a.id || a.client_msg_id || '').localeCompare(String(b.id || b.client_msg_id || ''));
         });
 
         const newest = conv.messages[conv.messages.length - 1];
@@ -4744,7 +4762,8 @@ class MetaCRMApp {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-User-Id': (this.user && this.user.id) || 'admin'
+            'X-User-Id': (this.user && this.user.id) || 'admin',
+            ...(this.svc && typeof this.svc.getAuthHeaders === 'function' ? this.svc.getAuthHeaders() : {})
           },
           body: JSON.stringify({
             conversation_id: activeConv.id,
@@ -4779,7 +4798,10 @@ class MetaCRMApp {
       if (!data || (!res.ok && res.status === 404)) {
         const zernioRes = await fetch(`/api/zernio?path=inbox-messages&conversationId=${encodeURIComponent(externalId)}&accountId=${encodeURIComponent(accountId)}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(this.svc && typeof this.svc.getAuthHeaders === 'function' ? this.svc.getAuthHeaders() : {})
+          },
           body: JSON.stringify({
             accountId: accountId,
             message: text,
@@ -4968,10 +4990,19 @@ class MetaCRMApp {
     };
 
     targetConv.messages.push(formattedMsg);
-    targetConv.last_message_at = nowIso;
+    // Maintain strict chronological ordering with deterministic tie-breaking on ID
+    targetConv.messages.sort((a, b) => {
+      const tA = new Date(a.created_at || a.time || 0).getTime();
+      const tB = new Date(b.created_at || b.time || 0).getTime();
+      if (tA !== tB) return tA - tB;
+      return String(a.id || a.client_msg_id || '').localeCompare(String(b.id || b.client_msg_id || ''));
+    });
+
+    const newestMsg = targetConv.messages[targetConv.messages.length - 1];
+    targetConv.last_message_at = newestMsg ? newestMsg.created_at : nowIso;
     targetConv.time = 'Just now';
-    targetConv.preview = isIncoming ? resolvedText : ('You: ' + resolvedText);
-    targetConv.last_message = resolvedText;
+    targetConv.preview = newestMsg ? (newestMsg.incoming ? newestMsg.text : ('You: ' + newestMsg.text)) : resolvedText;
+    targetConv.last_message = newestMsg ? newestMsg.text : resolvedText;
 
     const isActive = targetConv && (
       String(this.activeConvId) === String(targetConv.id) ||
@@ -4999,6 +5030,7 @@ class MetaCRMApp {
         if (emptyState) emptyState.remove();
 
         const msgDiv = document.createElement('div');
+        msgDiv.setAttribute('data-timestamp', String(new Date(nowIso).getTime()));
         if (isIncoming) {
           const initials = this._getContactInitials(targetConv.name);
           const color = this._getAvatarColor(targetConv.name);
@@ -5027,8 +5059,23 @@ class MetaCRMApp {
             <span class="msg-time">${formattedMsg.time} <span class="msg-status-check">✓✓</span></span>
           `;
         }
-        thread.appendChild(msgDiv);
-        this._scrollThreadToBottom(false);
+
+        // Handle chronological positioning for out-of-order & late arrivals
+        const existingNodes = thread.querySelectorAll('.msg[data-timestamp]');
+        let inserted = false;
+        const currentMsgTs = new Date(nowIso).getTime();
+        for (const node of existingNodes) {
+          const nodeTs = parseInt(node.getAttribute('data-timestamp'), 10);
+          if (nodeTs > currentMsgTs) {
+            thread.insertBefore(msgDiv, node);
+            inserted = true;
+            break;
+          }
+        }
+        if (!inserted) {
+          thread.appendChild(msgDiv);
+          this._scrollThreadToBottom(false);
+        }
       }
     } else if (isIncoming) {
       this.toast(`New message from ${targetConv.name}: "${formattedMsg.text.substring(0, 35)}…"`, 'info');
@@ -5108,6 +5155,8 @@ class MetaCRMApp {
   }
 
   async catchUpInbox() {
+    if (this._isCatchingUp) return;
+    this._isCatchingUp = true;
     try {
       if (this.fetchRealInstagramConversations) {
         await this.fetchRealInstagramConversations();
@@ -5120,6 +5169,8 @@ class MetaCRMApp {
       }
     } catch (e) {
       console.warn('[Inbox catch-up warning]:', e);
+    } finally {
+      this._isCatchingUp = false;
     }
   }
 
