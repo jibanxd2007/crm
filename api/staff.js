@@ -492,10 +492,14 @@ async function staffHandler(req, res) {
         }
         dbUpdates.updated_at = new Date().toISOString();
 
-        await supabase
-          .from('users')
-          .update(dbUpdates)
-          .eq('email', email);
+        let dbQuery = supabase.from('users').update(dbUpdates);
+        if (targetUser && targetUser.id) dbQuery = dbQuery.eq('id', targetUser.id);
+        else dbQuery = dbQuery.eq('email', email);
+
+        const { error: dbUpErr } = await dbQuery;
+        if (dbUpErr) {
+          console.warn('[Staff Supabase Update Error]:', dbUpErr.message);
+        }
 
         // Also synchronize page_members RBAC memberships
         if (newPages && targetUser && targetUser.id) {
@@ -585,7 +589,9 @@ async function staffHandler(req, res) {
           const u = getUserByEmail(dbu.email);
           if (u) {
             if (dbu.assigned_pages && Array.isArray(dbu.assigned_pages)) {
-              u.assignedPages = dbu.assigned_pages;
+              if (dbu.assigned_pages.length > 0 || !u.assignedPages || u.assignedPages.length === 0) {
+                u.assignedPages = dbu.assigned_pages;
+              }
             }
             if (dbu.status) u.status = dbu.status;
             if (dbu.last_login_at) u.lastLoginAt = dbu.last_login_at;
