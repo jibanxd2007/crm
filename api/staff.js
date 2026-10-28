@@ -431,7 +431,35 @@ async function staffHandler(req, res) {
     const newName = body.name ? String(body.name).trim() : null;
     const newPages = Array.isArray(body.assignedPages) ? body.assignedPages : (Array.isArray(body.assignedPageIds) ? body.assignedPageIds : null);
 
-    const targetUser = getUserByEmail(email);
+    let targetUser = email ? getUserByEmail(email) : (userId ? getUserById(userId) : null);
+    if (!targetUser && userId) {
+      for (const u of getAllUsers(true)) {
+        if (u.id === userId || String(u.id).toLowerCase() === String(userId).toLowerCase()) {
+          targetUser = u;
+          email = u.email;
+          break;
+        }
+      }
+    }
+
+    // Supabase DB query fallback if not in memory
+    const supabase = getSupabaseAdmin();
+    if (!targetUser && supabase && (email || userId)) {
+      try {
+        let q = supabase.from('users').select('id, email, name, role, assigned_pages');
+        if (email) q = q.eq('email', email);
+        else if (userId) q = q.eq('id', userId);
+        const { data: dbU } = await q.maybeSingle();
+        if (dbU) {
+          targetUser = { id: dbU.id, email: dbU.email, name: dbU.name, role: dbU.role, assignedPages: dbU.assigned_pages || [] };
+          email = dbU.email;
+          updateUser(email, targetUser);
+        }
+      } catch (e) {
+        console.warn('[Staff Lookup Warning]:', e.message);
+      }
+    }
+
     if (!targetUser) {
       return res.status(404).json({ error: "User not found." });
     }
@@ -452,7 +480,6 @@ async function staffHandler(req, res) {
     updateUser(email, updates);
 
     // Persist to Supabase if configured
-    const supabase = getSupabaseAdmin();
     if (supabase) {
       try {
         const dbUpdates = {};
