@@ -1,4 +1,21 @@
-const { httpsRequest, createVercelHandler } = require('../_utils/index.js');
+const { httpsRequest, createVercelHandler, toDeterministicUuid } = require('../_utils/index.js');
+let createClient = null;
+try {
+  createClient = require('@supabase/supabase-js').createClient;
+} catch (e) {}
+
+function getSupabaseAdmin() {
+  if (!createClient) return null;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !serviceKey) return null;
+  return createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+}
+
+if (!global.CRM_REGISTERED_PAGES) global.CRM_REGISTERED_PAGES = new Map();
+if (!global.META_PAGE_TOKENS) global.META_PAGE_TOKENS = {};
 
 async function metaOAuthUnifiedHandler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -70,13 +87,82 @@ async function metaOAuthUnifiedHandler(req, res) {
       return res.redirect(`/#connections?meta_auth=error&msg=${encodeURIComponent(errorMsg)}`);
     }
 
+    const adminUserId = '00000000-0000-4001-a001-000000000001';
+    const supabase = getSupabaseAdmin();
+
     // Zernio OAuth Redirect Handling (Both Facebook and Instagram)
     if (query.connected) {
       const isIg = query.connected === 'instagram' || query.channel === 'instagram';
       const rawName = query.username || query.page_name || '';
       const pageName = rawName ? (isIg && !rawName.startsWith('@') ? `@${rawName}` : rawName) : (isIg ? 'Instagram Business Account' : 'Facebook Business Page');
-      const pageId = query.accountId || query.page_id || `page_${Date.now()}`;
-      return res.redirect(`/#connections?meta_auth=success&page_name=${encodeURIComponent(pageName)}&page_id=${encodeURIComponent(pageId)}&provider=zernio&channel=${isIg ? 'instagram' : 'facebook'}`);
+      const pageId = String(query.accountId || query.page_id || `page_${Date.now()}`);
+      const channel = isIg ? 'instagram' : 'facebook';
+
+      const pageDbId = toDeterministicUuid(`zernio_page_${pageId}`);
+      const connId = toDeterministicUuid(`zernio_conn_${pageId}`);
+
+      if (supabase) {
+        try {
+          await supabase
+            .from('meta_connections')
+            .upsert({
+              id: connId,
+              user_id: adminUserId,
+              facebook_user_id: pageId,
+              facebook_name: pageName,
+              access_token: 'zernio_managed_gateway_token',
+              status: 'connected',
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id,facebook_user_id' });
+
+          await supabase
+            .from('facebook_pages')
+            .upsert({
+              id: pageDbId,
+              user_id: adminUserId,
+              meta_connection_id: connId,
+              page_id: pageId,
+              page_name: pageName,
+              page_username: isIg ? pageName : null,
+              is_active: true,
+              connected_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id,page_id' });
+
+          await supabase
+            .from('page_members')
+            .upsert({
+              id: toDeterministicUuid(`pm_${pageDbId}_${adminUserId}`),
+              page_id: pageDbId,
+              user_id: adminUserId,
+              role: 'owner'
+            }, { onConflict: 'page_id,user_id' });
+        } catch (dbErr) {
+          console.warn('[Zernio DB Save Warning]:', dbErr.message);
+        }
+      }
+
+      global.CRM_REGISTERED_PAGES.set(pageId, {
+        id: pageId,
+        page_id: pageId,
+        dbId: pageDbId,
+        name: pageName,
+        platform: channel,
+        channel: channel,
+        is_active: true,
+        connected_at: new Date().toISOString()
+      });
+
+      const pagesPayload = [{
+        id: pageId,
+        page_id: pageId,
+        name: pageName,
+        platform: channel,
+        channel: channel,
+        is_active: true
+      }];
+
+      return res.redirect(`/#connections?meta_auth=success&page_name=${encodeURIComponent(pageName)}&page_id=${encodeURIComponent(pageId)}&provider=zernio&channel=${channel}&pages_count=1&pages_data=${encodeURIComponent(JSON.stringify(pagesPayload))}`);
     }
 
     if (!code) {
@@ -121,7 +207,6 @@ async function metaOAuthUnifiedHandler(req, res) {
 
       // 4. Auto-subscribe each Page to webhooks & store page tokens securely
       const subscribedPages = [];
-      if (!global.META_PAGE_TOKENS) global.META_PAGE_TOKENS = {};
 
       for (const page of pagesList) {
         global.META_PAGE_TOKENS[page.id] = {
@@ -138,11 +223,16 @@ async function metaOAuthUnifiedHandler(req, res) {
           console.warn(`[Meta Webhooks] Subscription warning for page ${page.name}:`, subErr.message);
         }
 
+        const isIg = Boolean(page.instagram_business_account);
         subscribedPages.push({
-          id: page.id,
+          id: String(page.id),
+          page_id: String(page.id),
           name: page.name,
           category: page.category || 'Business',
+          platform: isIg ? 'instagram' : 'facebook',
+          channel: isIg ? 'instagram' : 'facebook',
           picture: page.picture?.data?.url || null,
+          is_active: true,
           instagram: page.instagram_business_account ? {
             id: page.instagram_business_account.id,
             username: page.instagram_business_account.username
@@ -150,30 +240,65 @@ async function metaOAuthUnifiedHandler(req, res) {
         });
       }
 
+      const primaryPage = subscribedPages[0];
+      const connId = toDeterministicUuid(`meta_conn_${primaryPage.id}`);
+
       // 5. Persist to Supabase if configured
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-      const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (supabaseUrl && serviceRoleKey) {
+      if (supabase) {
         try {
-          const cleanSupabaseUrl = supabaseUrl.replace(/\/$/, '');
+          await supabase
+            .from('meta_connections')
+            .upsert({
+              id: connId,
+              user_id: adminUserId,
+              facebook_user_id: String(primaryPage.id),
+              facebook_name: primaryPage.name,
+              access_token: userToken,
+              status: 'connected',
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id,facebook_user_id' });
+
           for (const page of pagesList) {
-            const upsertUrl = `${cleanSupabaseUrl}/rest/v1/facebook_pages`;
-            await httpsRequest(upsertUrl, {
-              method: 'POST',
-              headers: {
-                'apikey': serviceRoleKey,
-                'Authorization': `Bearer ${serviceRoleKey}`,
-                'Content-Type': 'application/json',
-                'Prefer': 'resolution=merge-duplicates'
-              },
-              body: {
-                page_id: page.id,
-                page_name: page.name,
-                page_access_token: page.access_token,
-                instagram_business_account_id: page.instagram_business_account?.id || null,
+            const pageDbId = toDeterministicUuid(`fb_page_${page.id}`);
+            const pageUsername = page.category || (page.instagram_business_account ? page.instagram_business_account.username : null);
+            const pagePicture = page.picture?.data?.url || null;
+
+            await supabase
+              .from('facebook_pages')
+              .upsert({
+                id: pageDbId,
+                user_id: adminUserId,
+                meta_connection_id: connId,
+                page_id: String(page.id),
+                page_name: String(page.name),
+                page_username: pageUsername,
+                page_picture: pagePicture,
+                page_access_token: page.access_token || null,
                 is_active: true,
+                connected_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
-              }
+              }, { onConflict: 'user_id,page_id' });
+
+            await supabase
+              .from('page_members')
+              .upsert({
+                id: toDeterministicUuid(`pm_${pageDbId}_${adminUserId}`),
+                page_id: pageDbId,
+                user_id: adminUserId,
+                role: 'owner'
+              }, { onConflict: 'page_id,user_id' });
+
+            global.CRM_REGISTERED_PAGES.set(String(page.id), {
+              id: String(page.id),
+              page_id: String(page.id),
+              dbId: pageDbId,
+              name: page.name,
+              username: pageUsername,
+              picture: pagePicture,
+              platform: (page.name || '').toLowerCase().includes('insta') ? 'instagram' : 'facebook',
+              channel: (page.name || '').toLowerCase().includes('insta') ? 'instagram' : 'facebook',
+              is_active: true,
+              connected_at: new Date().toISOString()
             });
           }
         } catch (dbErr) {
@@ -181,11 +306,23 @@ async function metaOAuthUnifiedHandler(req, res) {
         }
       }
 
-      const primaryPage = subscribedPages[0];
+      for (const page of subscribedPages) {
+        global.CRM_REGISTERED_PAGES.set(page.id, {
+          id: page.id,
+          page_id: page.id,
+          name: page.name,
+          platform: page.platform,
+          channel: page.channel,
+          is_active: true,
+          connected_at: new Date().toISOString()
+        });
+      }
+
       const encodedName = encodeURIComponent(primaryPage.name);
       const encodedId = encodeURIComponent(primaryPage.id);
+      const pagesDataParam = encodeURIComponent(JSON.stringify(subscribedPages));
 
-      return res.redirect(`/#connections?meta_auth=success&page_name=${encodedName}&page_id=${encodedId}&pages_count=${subscribedPages.length}`);
+      return res.redirect(`/#connections?meta_auth=success&page_name=${encodedName}&page_id=${encodedId}&pages_count=${subscribedPages.length}&pages_data=${pagesDataParam}`);
 
     } catch (err) {
       console.error("[Meta OAuth Callback Error]:", err.message);

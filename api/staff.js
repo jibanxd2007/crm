@@ -14,6 +14,7 @@ const {
   checkRateLimit,
   resetRateLimit,
   resolveUser,
+  toDeterministicUuid,
   createVercelHandler
 } = require('./_utils/index.js');
 
@@ -428,7 +429,7 @@ async function staffHandler(req, res) {
     }
 
     const newName = body.name ? String(body.name).trim() : null;
-    const newPages = Array.isArray(body.assignedPages) ? body.assignedPages : null;
+    const newPages = Array.isArray(body.assignedPages) ? body.assignedPages : (Array.isArray(body.assignedPageIds) ? body.assignedPageIds : null);
 
     const targetUser = getUserByEmail(email);
     if (!targetUser) {
@@ -441,17 +442,79 @@ async function staffHandler(req, res) {
       updates.displayName = newName;
     }
     if (newPages) {
-      if (email === 'admina@novaautos.co.nz') updates.assignedPages = ['*'];
-      else updates.assignedPages = newPages;
+      if (email === 'admina@novaautos.co.nz') {
+        updates.assignedPages = ['*'];
+      } else {
+        updates.assignedPages = newPages;
+      }
     }
 
     updateUser(email, updates);
 
+    // Persist to Supabase if configured
+    const supabase = getSupabaseAdmin();
+    if (supabase) {
+      try {
+        const dbUpdates = {};
+        if (newName) {
+          dbUpdates.name = newName;
+          dbUpdates.full_name = newName;
+        }
+        if (newPages) {
+          dbUpdates.assigned_pages = (email === 'admina@novaautos.co.nz') ? ['*'] : newPages;
+        }
+        dbUpdates.updated_at = new Date().toISOString();
+
+        await supabase
+          .from('users')
+          .update(dbUpdates)
+          .eq('email', email);
+
+        // Also synchronize page_members RBAC memberships
+        if (newPages && targetUser && targetUser.id) {
+          const { data: dbPages } = await supabase
+            .from('facebook_pages')
+            .select('id, page_id');
+
+          if (Array.isArray(dbPages)) {
+            // Clear prior memberships
+            await supabase
+              .from('page_members')
+              .delete()
+              .eq('user_id', targetUser.id);
+
+            // Re-insert designated memberships
+            for (const pid of newPages) {
+              const matched = dbPages.find(p => p.id === pid || p.page_id === pid);
+              if (matched && matched.id) {
+                await supabase
+                  .from('page_members')
+                  .upsert({
+                    id: toDeterministicUuid(`pm_${matched.id}_${targetUser.id}`),
+                    page_id: matched.id,
+                    user_id: targetUser.id,
+                    role: targetUser.role === 'admin' ? 'owner' : 'agent'
+                  }, { onConflict: 'page_id,user_id' });
+              }
+            }
+          }
+        }
+      } catch (dbErr) {
+        console.warn('[Staff Supabase Update Warning]:', dbErr.message);
+      }
+    }
+
     return res.status(200).json({
       success: true,
       status: "success",
-      message: "Profile updated successfully.",
-      user: { email, name: updates.name || targetUser.name, assignedPages: targetUser.assignedPages }
+      message: "Profile and page assignments updated successfully.",
+      user: {
+        id: targetUser.id,
+        email,
+        name: updates.name || targetUser.name,
+        assignedPages: targetUser.assignedPages,
+        assignedPageIds: targetUser.assignedPages
+      }
     });
   }
 
@@ -482,8 +545,35 @@ async function staffHandler(req, res) {
   }
 
   // 12. GET: STAFF DIRECTORY LISTING
+  // Sync latest persisted database attributes if Supabase is connected
+  const supabase = getSupabaseAdmin();
+  if (supabase) {
+    try {
+      const { data: dbUsers } = await supabase
+        .from('users')
+        .select('id, email, name, full_name, role, status, assigned_pages, last_login_at');
+
+      if (Array.isArray(dbUsers) && dbUsers.length > 0) {
+        for (const dbu of dbUsers) {
+          const u = getUserByEmail(dbu.email);
+          if (u) {
+            if (dbu.assigned_pages && Array.isArray(dbu.assigned_pages)) {
+              u.assignedPages = dbu.assigned_pages;
+            }
+            if (dbu.status) u.status = dbu.status;
+            if (dbu.last_login_at) u.lastLoginAt = dbu.last_login_at;
+            if (dbu.name || dbu.full_name) u.name = dbu.name || dbu.full_name;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Staff Directory DB Sync Warning]:', e.message);
+    }
+  }
+
   const allUsers = getAllUsers(false); // sanitized
   const staffList = allUsers.map(u => {
+    const pages = u.assignedPages || [];
     const item = {
       id: u.id,
       name: u.name,
@@ -492,7 +582,9 @@ async function staffHandler(req, res) {
       role: u.role,
       status: u.status,
       lastLogin: u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : 'Never',
-      assignedPages: u.assignedPages || []
+      assignedPages: pages,
+      assignedPageIds: pages,
+      assigned_pages: pages
     };
 
     // If admin is requesting and account setup is pending, include setup link

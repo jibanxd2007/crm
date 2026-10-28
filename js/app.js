@@ -523,48 +523,118 @@ class MetaCRMApp {
   }
 
   _checkUrlCallbacks() {
+    if (this._isHandlingMetaCallback) return;
     const search = window.location.search || '';
     const hash = window.location.hash || '';
     const fullUrl = search + hash;
 
     if (fullUrl.includes('meta_auth=success') || fullUrl.includes('connected=true') || fullUrl.includes('connected=facebook') || fullUrl.includes('connected=instagram')) {
-      const pageNameMatch = fullUrl.match(/page_name=([^&]+)/);
-      const pageIdMatch = fullUrl.match(/page_id=([^&]+)/);
-      const usernameMatch = fullUrl.match(/username=([^&]+)/);
-      const isIg = fullUrl.includes('channel=instagram') || fullUrl.includes('connected=instagram') || (usernameMatch && fullUrl.includes('instagram'));
-      const rawName = pageNameMatch ? decodeURIComponent(pageNameMatch[1]) : (usernameMatch ? decodeURIComponent(usernameMatch[1]) : (isIg ? 'Instagram Account' : 'Facebook Page'));
-      const pageName = isIg && !rawName.startsWith('@') ? `@${rawName}` : rawName;
-      const pageId = pageIdMatch ? decodeURIComponent(pageIdMatch[1]) : `page_${Date.now()}`;
-      const channel = isIg ? 'instagram' : 'facebook';
-      const color = isIg ? '#E1306C' : '#1877F2';
+      this._isHandlingMetaCallback = true;
+      try {
+        const pagesDataMatch = fullUrl.match(/pages_data=([^&]+)/);
+        const pageNameMatch = fullUrl.match(/page_name=([^&]+)/);
+        const pageIdMatch = fullUrl.match(/page_id=([^&]+)/);
+        const usernameMatch = fullUrl.match(/username=([^&]+)/);
+        const isIg = fullUrl.includes('channel=instagram') || fullUrl.includes('connected=instagram') || (usernameMatch && fullUrl.includes('instagram'));
 
-      // Register connected page/account in CRM state
-      if (this.svc) {
-        if (!this.svc.pages) this.svc.pages = [];
-        const existing = this.svc.pages.find(p => p.id === pageId || p.page_id === pageId);
-        if (!existing) {
-          this.svc.pages.push({
+        let incomingPages = [];
+        if (pagesDataMatch) {
+          try {
+            const parsed = JSON.parse(decodeURIComponent(pagesDataMatch[1]));
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              incomingPages = parsed;
+            }
+          } catch (e) {
+            console.warn('Could not parse pages_data JSON:', e);
+          }
+        }
+
+        if (incomingPages.length === 0) {
+          const rawName = pageNameMatch ? decodeURIComponent(pageNameMatch[1]) : (usernameMatch ? decodeURIComponent(usernameMatch[1]) : (isIg ? 'Instagram Account' : 'Facebook Page'));
+          const pageName = isIg && !rawName.startsWith('@') ? `@${rawName}` : rawName;
+          const pageId = pageIdMatch ? decodeURIComponent(pageIdMatch[1]) : `page_${Date.now()}`;
+          const channel = isIg ? 'instagram' : 'facebook';
+          const color = isIg ? '#E1306C' : '#1877F2';
+
+          incomingPages.push({
             id: pageId,
             page_id: pageId,
             name: pageName,
             channel: channel,
             color: color,
-            provider: 'zernio',
+            provider: fullUrl.includes('provider=zernio') ? 'zernio' : 'meta',
+            is_active: true,
             connected_at: new Date().toISOString()
           });
+        }
+
+        // Register connected page/account in CRM state
+        if (this.svc) {
+          if (!this.svc.pages) this.svc.pages = [];
+          incomingPages.forEach(p => {
+            const pId = p.page_id || p.id;
+            const existingIdx = this.svc.pages.findIndex(x => x.id === pId || x.page_id === pId || (p.id && x.id === p.id));
+            const pageRecord = {
+              id: p.id || pId,
+              page_id: pId,
+              name: p.name || p.page_name,
+              channel: p.channel || (p.name && p.name.startsWith('@') ? 'instagram' : 'facebook'),
+              color: p.color || (p.channel === 'instagram' ? '#E1306C' : '#1877F2'),
+              provider: p.provider || 'meta',
+              is_active: true,
+              connected_at: p.connected_at || new Date().toISOString()
+            };
+
+            if (existingIdx >= 0) {
+              this.svc.pages[existingIdx] = { ...this.svc.pages[existingIdx], ...pageRecord };
+            } else {
+              this.svc.pages.push(pageRecord);
+            }
+          });
+
           if (this.svc._saveToStorage) this.svc._saveToStorage();
           else if (this.svc.saveAll) this.svc.saveAll();
-        }
-      }
 
-      this.metaConnectionState = 'connected';
-      try { localStorage.setItem('metacrm_meta_conn_state', 'connected'); } catch (e) {}
-      this.toast(`✅ "${pageName}" is connected! Leads & messages will now appear automatically.`, 'success');
-      
-      if (window.history && window.history.replaceState) {
-        window.history.replaceState({}, document.title, window.location.pathname + '#connections');
+          // Sync to server database in background
+          const sessionToken = this.svc.getSessionToken ? this.svc.getSessionToken() : null;
+          const headers = { 'Content-Type': 'application/json' };
+          if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
+          else headers['x-user-id'] = (this.user && this.user.id) || 'admin';
+
+          fetch('/api/pages', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ action: 'connect', pages: incomingPages })
+          }).catch(err => console.warn('Background page persistence warning:', err));
+        }
+
+        this.metaConnectionState = 'connected';
+        try { localStorage.setItem('metacrm_meta_conn_state', 'connected'); } catch (e) {}
+
+        const primaryName = incomingPages[0]?.name || 'Meta Page';
+        const countMsg = incomingPages.length > 1 ? `${incomingPages.length} Pages` : `"${primaryName}"`;
+        this.toast(`✅ ${countMsg} connected successfully! Leads & messages will now appear automatically.`, 'success');
+
+        if (window.history && window.history.replaceState) {
+          window.history.replaceState({}, document.title, window.location.pathname + '#connections');
+        }
+
+        // Notify state subscribers to trigger immediate reactive UI rendering
+        if (this.svc && typeof this.svc.notifyChange === 'function') {
+          this.svc.notifyChange('pages_updated', { pages: this.svc.pages });
+        }
+
+        // Render current view immediately without requiring a browser refresh
+        this.renderSidebar();
+        this.renderNotifications();
+        if (this.currentRoute === 'connections' || window.location.hash.includes('connections')) {
+          this.renderConnections();
+        } else if (this.currentRoute === 'dashboard') {
+          this.renderDashboard();
+        }
+      } finally {
+        setTimeout(() => { this._isHandlingMetaCallback = false; }, 500);
       }
-      this.renderSidebar();
     } else if (fullUrl.includes('meta_auth=no_pages')) {
       this.metaConnectionState = 'not_connected';
       try { localStorage.setItem('metacrm_meta_conn_state', 'not_connected'); } catch (e) {}
@@ -572,6 +642,8 @@ class MetaCRMApp {
       if (window.history && window.history.replaceState) {
         window.history.replaceState({}, document.title, window.location.pathname + '#connections');
       }
+      this.renderSidebar();
+      if (this.currentRoute === 'connections') this.renderConnections();
     } else if (fullUrl.includes('meta_auth=error')) {
       const msgMatch = fullUrl.match(/msg=([^&]+)/);
       const msg = msgMatch ? decodeURIComponent(msgMatch[1]) : 'Permissions declined or window closed';
@@ -581,6 +653,8 @@ class MetaCRMApp {
       if (window.history && window.history.replaceState) {
         window.history.replaceState({}, document.title, window.location.pathname + '#connections');
       }
+      this.renderSidebar();
+      if (this.currentRoute === 'connections') this.renderConnections();
     } else if (fullUrl.includes('email_auth=success')) {
       const emailMatch = fullUrl.match(/email=([^&]+)/);
       const email = emailMatch ? decodeURIComponent(emailMatch[1]) : 'Email Account';
@@ -5364,23 +5438,42 @@ class MetaCRMApp {
         </div>
         <div>
           ${pages.map(p => {
-            const isIg = p.channel === 'instagram' || p.name.startsWith('@');
+            const isIg = p.channel === 'instagram' || (p.name && p.name.startsWith('@'));
+            const pageIdStr = p.page_id || p.id;
+            const allStaff = this.svc && this.svc.staff ? this.svc.staff : [];
+            const assignedStaff = allStaff.filter(s => {
+              if (s.role === 'admin' || s.role === 'super_admin') return false;
+              const sPages = s.assignedPageIds || s.assignedPages || [];
+              return sPages.includes(p.id) || sPages.includes(p.page_id) || sPages.includes(pageIdStr);
+            });
+
             return `
-            <div class="simple-page-item">
+            <div class="simple-page-item" style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border-subtle);gap:16px;flex-wrap:wrap;">
               <div style="display:flex;align-items:center;gap:14px;">
-                <div style="width:36px;height:36px;border-radius:8px;${isIg ? 'background:#303030' : 'background:#1877F2'};color:#fff;display:flex;align-items:center;justify-content:center;">
-                  ${isIg ? this._icon('instagram', 18) : this._icon('facebook', 18)}
+                <div style="width:40px;height:40px;border-radius:10px;${isIg ? 'background:#303030' : 'background:#1877F2'};color:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                  ${isIg ? this._icon('instagram', 20) : this._icon('facebook', 20)}
                 </div>
                 <div>
-                  <strong style="font-size:15px;color:var(--text-primary);">${p.name}</strong>
-                  <div class="text-xs text-gray" style="margin-top:2px;">
-                    ${isIg ? 'Instagram Business Account · Direct Messages Active' : 'Facebook Page · Messenger & Lead Ads Active'}
+                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                    <strong style="font-size:15px;color:var(--text-primary);">${escapeHtml(p.name)}</strong>
+                    <span class="badge badge-gray text-xs" style="font-family:monospace;font-size:11px;padding:2px 6px;">ID: ${escapeHtml(pageIdStr)}</span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap;">
+                    <span class="text-xs text-gray">
+                      ${isIg ? 'Instagram Business Account · Direct Messages Active' : 'Facebook Page · Messenger &amp; Lead Ads Active'}
+                    </span>
+                    <span style="color:var(--border);">•</span>
+                    ${assignedStaff.length > 0
+                      ? `<span class="badge badge-indigo text-xs" style="padding:2px 6px;">Assigned: ${assignedStaff.map(s => escapeHtml(s.displayName || s.name)).join(', ')}</span>`
+                      : `<span class="badge badge-gray text-xs" style="color:var(--text-muted);padding:2px 6px;">Assigned to: All Staff (Unrestricted)</span>`
+                    }
                   </div>
                 </div>
               </div>
-              <div style="display:flex;align-items:center;gap:10px;">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
                 <span class="badge badge-green"><span class="status-dot green"></span> Receiving leads &amp; messages</span>
-                <button class="btn btn-ghost btn-sm text-red" style="color:var(--danger);" onclick="window.app.disconnectPage('${p.id}')">Disconnect</button>
+                <button class="btn btn-secondary btn-sm" onclick="window.app.openAssignStaffToPageModal('${p.id || p.page_id}')">Assign Staff</button>
+                <button class="btn btn-ghost btn-sm text-red" style="color:var(--danger);" onclick="window.app.disconnectPage('${p.id || p.page_id}')">Disconnect</button>
               </div>
             </div>`;
           }).join('')}
@@ -5390,7 +5483,7 @@ class MetaCRMApp {
   }
 
   syncPage(pageId) {
-    const page = (this.svc && this.svc.pages) ? this.svc.pages.find(p => p.id === pageId) : null;
+    const page = (this.svc && this.svc.pages) ? this.svc.pages.find(p => p.id === pageId || p.page_id === pageId) : null;
     const name = page ? page.name : pageId;
     this.toast(`Syncing leads and messages for "${name}"…`, 'info');
     setTimeout(() => {
@@ -5400,20 +5493,39 @@ class MetaCRMApp {
   }
 
   disconnectPage(pageId) {
-    const page = (this.svc && this.svc.pages) ? this.svc.pages.find(p => p.id === pageId) : null;
+    const page = (this.svc && this.svc.pages) ? this.svc.pages.find(p => p.id === pageId || p.page_id === pageId) : null;
     const name = page ? page.name : pageId;
+    const targetPageId = (page && page.page_id) || pageId;
     this.confirmDialog({
       title: 'Disconnect Facebook Page',
       message: `Are you sure you want to disconnect "${name}"? Existing leads will remain safe in your CRM.`,
       confirmText: 'Disconnect Page',
       isDanger: true,
-      onConfirm: () => {
+      onConfirm: async () => {
+        try {
+          const sessionToken = this.svc ? this.svc.getSessionToken() : null;
+          const headers = { 'Content-Type': 'application/json' };
+          if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
+          else headers['x-user-id'] = (this.user && this.user.id) || 'admin';
+
+          await fetch('/api/pages', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ action: 'disconnect', page_id: targetPageId })
+          });
+        } catch (e) {
+          console.warn('Failed to notify server of disconnect:', e);
+        }
+
         if (this.svc) {
-          this.svc.pages = this.svc.pages.filter(p => p.id !== pageId);
+          this.svc.pages = this.svc.pages.filter(p => p.id !== pageId && p.page_id !== pageId && p.id !== targetPageId && p.page_id !== targetPageId);
           if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
           if (this.svc.pages.length === 0) {
             this.metaConnectionState = 'not_connected';
             try { localStorage.setItem('metacrm_meta_conn_state', 'not_connected'); } catch (e) {}
+          }
+          if (typeof this.svc.notifyChange === 'function') {
+            this.svc.notifyChange('pages_updated', { pages: this.svc.pages });
           }
         }
         this.toast(`Page "${name}" disconnected.`, 'info');
@@ -5504,12 +5616,18 @@ class MetaCRMApp {
 
       await this.syncZernioAccounts(false);
 
+      if (this.svc && typeof this.svc.fetchRemotePages === 'function') {
+        await this.svc.fetchRemotePages();
+      }
+
       if (this.svc._saveToStorage) this.svc._saveToStorage();
       this.toast('✓ All Meta & Zernio connections synchronized!', 'success');
     } catch (e) {
       this.toast('Connections check complete.', 'info');
     }
+    this.renderSidebar();
     this.renderConnections();
+    if (this.currentRoute === 'dashboard') this.renderDashboard();
   }
 
   async syncZernioAccounts(notify = false) {
@@ -5647,6 +5765,13 @@ class MetaCRMApp {
   }
 
   async connectFacebookOAuth() {
+    if (this._isConnectingOAuth) {
+      this.toast('Facebook connection is already processing. Please wait…', 'info');
+      return;
+    }
+    this._isConnectingOAuth = true;
+    const resetTimer = setTimeout(() => { this._isConnectingOAuth = false; }, 15000);
+
     const btnText = document.getElementById('connect-fb-btn-text');
     const heroBtn = document.getElementById('btn-main-connect-fb');
     if (btnText) btnText.innerHTML = '<span class="spinner"></span> Connecting Facebook…';
@@ -5673,6 +5798,8 @@ class MetaCRMApp {
 
       throw new Error((zData && zData.error) || (data && data.error) || 'Please configure ZERNIO_API_KEY in Vercel.');
     } catch (err) {
+      clearTimeout(resetTimer);
+      this._isConnectingOAuth = false;
       console.error('[Facebook Connect Error]:', err);
       if (btnText) btnText.innerHTML = 'Connect Facebook Page';
       if (heroBtn) heroBtn.disabled = false;
@@ -5681,6 +5808,13 @@ class MetaCRMApp {
   }
 
   async connectInstagramOAuth() {
+    if (this._isConnectingOAuth) {
+      this.toast('Instagram connection is already processing. Please wait…', 'info');
+      return;
+    }
+    this._isConnectingOAuth = true;
+    const resetTimer = setTimeout(() => { this._isConnectingOAuth = false; }, 15000);
+
     const btnText = document.getElementById('connect-ig-btn-text');
     const heroBtn = document.getElementById('btn-main-connect-ig');
     if (btnText) btnText.innerHTML = '<span class="spinner"></span> Connecting Instagram…';
@@ -5697,11 +5831,80 @@ class MetaCRMApp {
       }
       throw new Error((zData && zData.error) || 'Please ensure ZERNIO_API_KEY is configured in Vercel.');
     } catch (err) {
+      clearTimeout(resetTimer);
+      this._isConnectingOAuth = false;
       console.error('[Instagram Connect Error]:', err);
       if (btnText) btnText.innerHTML = 'Connect Instagram Account';
       if (heroBtn) heroBtn.disabled = false;
       this.toast(`Couldn't connect Instagram: ${err.message}`, 'error');
     }
+  }
+
+  openAssignStaffToPageModal(pageId) {
+    if (!this.svc) return;
+    const page = (this.svc.pages || []).find(p => p.id === pageId || p.page_id === pageId);
+    const pageName = page ? page.name : pageId;
+    const staffList = (this.svc.staff || []).filter(s => s.role !== 'admin' && s.role !== 'super_admin');
+
+    this.el.mTitle.textContent = `Assign Staff: ${pageName}`;
+    this.el.mBody.innerHTML = `
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px;line-height:1.4;">
+        Select which team members have access to handle inquiries and leads from <strong>${escapeHtml(pageName)}</strong>. Administrators automatically retain access to all pages.
+      </p>
+      <div style="display:flex;flex-direction:column;gap:8px;max-height:280px;overflow-y:auto;padding:4px 0;">
+        ${staffList.length > 0 ? staffList.map(s => {
+          const sPages = s.assignedPageIds || s.assignedPages || [];
+          const isAssigned = sPages.includes(pageId) || (page && (sPages.includes(page.id) || sPages.includes(page.page_id)));
+          return `
+          <label style="display:flex;align-items:center;gap:12px;font-size:13px;cursor:pointer;padding:8px 12px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--bg-surface);">
+            <input type="checkbox" class="page-assign-staff-cb" value="${s.id}" ${isAssigned ? 'checked' : ''}>
+            <div style="flex:1;">
+              <strong style="color:var(--text-primary);display:block;">${escapeHtml(s.displayName || s.name)}</strong>
+              <div class="text-xs text-gray">${escapeHtml(s.email)}</div>
+            </div>
+            <span class="badge ${isAssigned ? 'badge-green' : 'badge-gray'} text-xs">${isAssigned ? 'Assigned' : 'Unassigned'}</span>
+          </label>`;
+        }).join('') : '<div class="text-xs text-gray" style="padding:16px;text-align:center;">No staff accounts provisioned.</div>'}
+      </div>
+    `;
+
+    this.el.mConfirm.textContent = 'Save Assignments';
+    this.el.mConfirm.className = 'btn btn-primary';
+    this.el.mConfirm.onclick = async () => {
+      const confirmBtn = this.el.mConfirm;
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = '<span class="spinner"></span> Saving assignments…';
+
+      try {
+        const checkedStaffIds = Array.from(document.querySelectorAll('.page-assign-staff-cb:checked')).map(cb => cb.value);
+        for (const s of staffList) {
+          const sPages = new Set(s.assignedPageIds || s.assignedPages || []);
+          const shouldHave = checkedStaffIds.includes(s.id);
+          const had = sPages.has(pageId) || (page && (sPages.has(page.id) || sPages.has(page.page_id)));
+
+          if (shouldHave && !had) {
+            sPages.add(pageId);
+            if (page && page.page_id) sPages.add(page.page_id);
+            if (page && page.id) sPages.add(page.id);
+            await this.svc.updateStaffAssignedPages(s.id, Array.from(sPages));
+          } else if (!shouldHave && had) {
+            sPages.delete(pageId);
+            if (page && page.page_id) sPages.delete(page.page_id);
+            if (page && page.id) sPages.delete(page.id);
+            await this.svc.updateStaffAssignedPages(s.id, Array.from(sPages));
+          }
+        }
+        this.closeModal();
+        this.toast(`Staff assignments updated for "${pageName}" ✓`, 'success');
+        this.renderConnections();
+        this.renderSidebar();
+      } catch (err) {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Save Assignments';
+        this.toast(`Failed to save staff assignments: ${err.message}`, 'error');
+      }
+    };
+    this.el.mOverlay.classList.add('open');
   }
 
   async testLiveZernioPing() {
@@ -6051,13 +6254,20 @@ class MetaCRMApp {
           if (data && Array.isArray(data.staff) && data.staff.length > 0) {
             data.staff.forEach(remoteS => {
               const localS = this.svc.staff.find(s => s.id === remoteS.id || s.email === remoteS.email);
+              const remoteAssigned = remoteS.assignedPageIds || remoteS.assignedPages || remoteS.assigned_pages || [];
               if (localS) {
                 localS.setup_token = remoteS.setup_token || localS.setup_token;
                 localS.status = remoteS.status || localS.status;
                 localS.name = remoteS.name || localS.name;
                 localS.displayName = remoteS.displayName || remoteS.name || localS.displayName;
+                localS.assignedPageIds = remoteAssigned;
+                localS.assignedPages = remoteAssigned;
               } else {
-                this.svc.staff.push(remoteS);
+                this.svc.staff.push({
+                  ...remoteS,
+                  assignedPageIds: remoteAssigned,
+                  assignedPages: remoteAssigned
+                });
               }
             });
             if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
@@ -6095,7 +6305,8 @@ class MetaCRMApp {
             ${staff.length > 0 ? staff.map(s => {
               const isAdminAccount = s.role === 'admin' || s.role === 'super_admin';
               const isJoy = s.email === 'admina@novaautos.co.nz';
-              const pageNames = (s.assignedPageIds || []).map(pid => this._pageName(pid)).join(', ');
+              const assignedIds = s.assignedPageIds || s.assignedPages || [];
+              const pageNames = assignedIds.map(pid => this._pageName(pid)).filter(Boolean).join(', ');
               const status = s.status || 'active';
               return `
                 <tr>
@@ -6285,6 +6496,7 @@ class MetaCRMApp {
     const staff = this.svc ? this.svc.staff.find(s => s.id === staffId) : null;
     if (!staff) return;
     const pages = this.svc ? (this.svc.pages || []) : [];
+    const staffAssigned = staff.assignedPageIds || staff.assignedPages || [];
 
     this.el.mTitle.textContent = `Assign Facebook Pages: ${staff.name}`;
     this.el.mBody.innerHTML = `
@@ -6293,39 +6505,58 @@ class MetaCRMApp {
       </p>
       <div style="display:flex;flex-direction:column;gap:10px;max-height:260px;overflow-y:auto;padding:4px 0;">
         <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;padding:6px 8px;border-radius:4px;background:#F8FAFC;">
-          <input type="checkbox" id="ap-all" ${(!staff.assignedPageIds || staff.assignedPageIds.length === 0 || staff.assignedPageIds.length === pages.length) ? 'checked' : ''} 
+          <input type="checkbox" id="ap-all" ${(!staffAssigned || staffAssigned.length === 0 || staffAssigned.length >= pages.length) ? 'checked' : ''} 
                  onchange="document.querySelectorAll('.ap-page-cb').forEach(cb => cb.checked = this.checked)">
           <strong>All Pages (Full Access)</strong>
         </label>
         <hr style="border:none;border-top:1px solid var(--border);margin:4px 0;">
-        ${pages.length > 0 ? pages.map(p => `
+        ${pages.length > 0 ? pages.map(p => {
+          const isChecked = staffAssigned && (staffAssigned.includes(p.id) || staffAssigned.includes(p.page_id));
+          return `
           <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;padding:4px 8px;">
-            <input type="checkbox" class="ap-page-cb" value="${p.id}" ${(staff.assignedPageIds && staff.assignedPageIds.includes(p.id)) ? 'checked' : ''}
+            <input type="checkbox" class="ap-page-cb" value="${p.id || p.page_id}" ${isChecked ? 'checked' : ''}
                    onchange="if(!this.checked) document.getElementById('ap-all').checked = false;">
             <span>${escapeHtml(p.name)}</span>
-          </label>
-        `).join('') : '<div class="text-xs text-gray">No connected Facebook Pages yet. Connect a Page first.</div>'}
+            <span class="badge badge-gray text-xs" style="font-family:monospace;margin-left:auto;">ID: ${p.page_id || p.id}</span>
+          </label>`;
+        }).join('') : '<div class="text-xs text-gray">No connected Facebook Pages yet. Connect a Page first.</div>'}
       </div>
     `;
 
     this.el.mConfirm.textContent = 'Save Page Assignments';
     this.el.mConfirm.className = 'btn btn-primary';
-    this.el.mConfirm.onclick = () => {
+    this.el.mConfirm.onclick = async () => {
+      const confirmBtn = this.el.mConfirm;
+      confirmBtn.disabled = true;
+      confirmBtn.innerHTML = '<span class="spinner"></span> Saving assignments…';
+
       const isAll = document.getElementById('ap-all')?.checked;
       let selectedIds = [];
       if (isAll) {
-        selectedIds = pages.map(p => p.id);
+        selectedIds = pages.map(p => p.id || p.page_id);
       } else {
-        document.querySelectorAll('.ap-page-cb:checked').forEach(cb => selectedIds.push(cb.value));
+        document.querySelectorAll('.ap-page-cb:checked').forEach(cb => {
+          if (cb.value && !selectedIds.includes(cb.value)) selectedIds.push(cb.value);
+        });
       }
-      staff.assignedPageIds = selectedIds;
-      if (this.svc) {
-        if (this.svc._saveToStorage) this.svc._saveToStorage();
-        else if (this.svc.saveAll) this.svc.saveAll();
+
+      try {
+        if (this.svc && typeof this.svc.updateStaffAssignedPages === 'function') {
+          await this.svc.updateStaffAssignedPages(staff.id, selectedIds);
+        } else {
+          staff.assignedPageIds = selectedIds;
+          staff.assignedPages = selectedIds;
+          if (this.svc && this.svc._saveToStorage) this.svc._saveToStorage();
+        }
+        this.closeModal();
+        this.toast(`Page assignments saved for "${staff.name}" ✓`, 'success');
+        this.renderStaff();
+        this.renderSidebar();
+      } catch (err) {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Save Page Assignments';
+        this.toast(`Failed to save page assignments: ${err.message}`, 'error');
       }
-      this.closeModal();
-      this.toast(`Page assignments saved for "${staff.name}" ✓`, 'success');
-      this.renderStaff();
     };
     this.el.mOverlay.classList.add('open');
   }
@@ -6703,11 +6934,13 @@ class MetaCRMApp {
 
   _getAccessiblePages() {
     if (!this.svc || !this.svc.pages) return [];
+    if (!this.user) return this.svc.pages;
     if (this.user.role === 'admin' || this.user.role === 'super_admin') {
       return this.svc.pages;
     }
-    const assignedIds = this.user.assignedPageIds || [];
-    return this.svc.pages.filter(p => assignedIds.includes(p.id));
+    const assignedIds = this.user.assignedPageIds || this.user.assignedPages || [];
+    if (!Array.isArray(assignedIds) || assignedIds.length === 0) return [];
+    return this.svc.pages.filter(p => assignedIds.includes(p.id) || assignedIds.includes(p.page_id));
   }
 
   _getISTDate(dateInput = null) {
@@ -6806,7 +7039,7 @@ class MetaCRMApp {
 
   _pageName(pageId) {
     if (!pageId || !this.svc || !this.svc.pages) return '';
-    const p = this.svc.pages.find(pg => pg.id === pageId);
+    const p = this.svc.pages.find(pg => pg.id === pageId || pg.page_id === pageId);
     return p ? p.name : pageId;
   }
 

@@ -498,13 +498,37 @@ class CRMService {
       if (res && res.ok) {
         const data = await res.json();
         if (data && Array.isArray(data.pages)) {
-          this.pages = data.pages.map(p => ({
-            id: p.id,
-            meta_page_id: p.page_id,
-            name: p.page_name || p.name,
-            platform: p.platform || 'facebook',
-            status: p.is_active ? 'connected' : 'disconnected'
-          }));
+          if (data.pages.length > 0) {
+            const serverPages = data.pages.map(p => {
+              const pid = String(p.id || p.page_id || '');
+              const pName = p.page_name || p.name || 'Connected Page';
+              const isIg = (p.platform === 'instagram') || pName.toLowerCase().includes('insta');
+              return {
+                id: pid,
+                page_id: pid,
+                meta_page_id: pid,
+                dbId: p.dbId || pid,
+                name: pName,
+                username: p.username || (isIg ? pName : null),
+                picture: p.picture || null,
+                platform: isIg ? 'instagram' : 'facebook',
+                channel: isIg ? 'instagram' : 'facebook',
+                color: isIg ? '#E1306C' : '#1877F2',
+                status: (p.is_active === false) ? 'disconnected' : 'connected',
+                is_active: p.is_active !== false,
+                connected_at: p.connectedAt || p.connected_at || new Date().toISOString()
+              };
+            });
+
+            serverPages.forEach(sp => {
+              const idx = this.pages.findIndex(lp => lp.id === sp.id || lp.page_id === sp.id);
+              if (idx >= 0) {
+                this.pages[idx] = { ...this.pages[idx], ...sp };
+              } else {
+                this.pages.push(sp);
+              }
+            });
+          }
           this.savePages();
           this.notifyChange('pages_updated');
           return this.pages;
@@ -3073,13 +3097,44 @@ class CRMService {
     return [...this.staff];
   }
 
-  updateStaffAssignedPages(staffId, newPageIds) {
+  async updateStaffAssignedPages(staffId, newPageIds) {
     if (!this.isAdmin()) return { success: false, error: "Only admins can reassign pages." };
     const staffMember = this.staff.find(s => s.id === staffId);
     if (!staffMember) return { success: false, error: "Staff member not found." };
 
+    const previousPages = [...(staffMember.assignedPageIds || [])];
     staffMember.assignedPageIds = [...newPageIds];
+    staffMember.assignedPages = [...newPageIds];
     this.saveAll();
+
+    try {
+      const token = this.getSessionToken();
+      const headers = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      else headers['x-user-id'] = (this.currentUser && this.currentUser.id) || 'admin';
+
+      const res = await fetch('/api/staff', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          action: 'update-profile',
+          userId: staffMember.id,
+          email: staffMember.email,
+          assignedPages: newPageIds
+        })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        // Revert on failure
+        staffMember.assignedPageIds = previousPages;
+        staffMember.assignedPages = previousPages;
+        this.saveAll();
+        return { success: false, error: data.error || 'Server rejected page assignment update.' };
+      }
+    } catch (e) {
+      console.warn('[CRMService] updateStaffAssignedPages network note:', e.message);
+    }
+
     this.logAudit("STAFF_PAGES_UPDATED", staffMember.name, "SUCCESS", `Assigned to: ${newPageIds.join(", ")}`);
     this.notifyChange("staff_updated", { staffId, staff: staffMember });
     return { success: true, staff: staffMember };
