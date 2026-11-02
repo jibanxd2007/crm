@@ -3306,14 +3306,20 @@ class MetaCRMApp {
         });
 
     // Helper to test if a conversation belongs to a given page ID
+    const normalizePageId = (id) => {
+      const s = String(id || '').trim();
+      if (s === '6acd4daed19284a3227d7870') return '1342542735606057';
+      if (s === '6accd8b0d52dc43d8bf6034c') return '1330954980099743';
+      if (s === '6aca1c00e12ba0b652e62f45') return '29279331294986321';
+      return s;
+    };
     const convMatchesPage = (c, pageId) => {
       if (!pageId || pageId === 'all') return true;
-      const pid = String(pageId);
-      const cp = String(c.page_id || c.accountId || c.pageId || '');
-      if (cp === pid) return true;
-      if (pid === '29279331294986321' && cp === '6accd8b0d52dc43d8bf6034c') return true;
-      if (pid === '6accd8b0d52dc43d8bf6034c' && cp === '29279331294986321') return true;
-      return false;
+      const targetNorm = normalizePageId(pageId);
+      const cNorm1 = normalizePageId(c.page_id);
+      const cNorm2 = normalizePageId(c.accountId);
+      const cNorm3 = normalizePageId(c.pageId);
+      return targetNorm === cNorm1 || targetNorm === cNorm2 || targetNorm === cNorm3;
     };
 
     // Calculate per-page metrics for quick-switcher chips and dropdown
@@ -3331,29 +3337,19 @@ class MetaCRMApp {
       };
     });
 
-    // Top action bar with ultra-fast page switcher dropdown alongside refresh & sync
+    // Clean, unified top action bar (eliminates duplicate page dropdown from topbar)
     this.el.actions.innerHTML = `
-      <div class="inbox-header-page-control" title="Instant Page Filter (Alt+0 for All, Alt+1..9 for specific pages)">
-        <label for="inbox-header-page-select">
-          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
-          <span>Page:</span>
-        </label>
-        <select class="inbox-page-select" id="inbox-header-page-select" onchange="window.app.setInboxPageFilter(this.value)">
-          <option value="all" ${this.selectedInboxPage === 'all' ? 'selected' : ''}>🌐 All Pages (${allPagesTotalCount}${allPagesUnreadCount > 0 ? ` · ${allPagesUnreadCount} unread` : ''})</option>
-          ${pageMetrics.map(pm => `
-            <option value="${pm.page.id}" ${String(this.selectedInboxPage) === String(pm.page.id) ? 'selected' : ''}>
-              ${pm.page.channel === 'instagram' || (pm.page.name && pm.page.name.startsWith('@')) ? '📸' : '📄'} ${escapeHtml(pm.page.name)} (${pm.total}${pm.unread > 0 ? ` · ${pm.unread} new` : ''})
-            </option>
-          `).join('')}
-        </select>
+      <div class="inbox-topbar-meta-status" title="Connected Meta Facebook Pages &amp; Instagram Accounts">
+        <span class="status-live-pulse"></span>
+        <span>4 Accounts Live</span>
       </div>
-      <button class="btn btn-dark btn-sm btn-inbox-refresh" id="btn-inbox-refresh" onclick="window.app.refreshRealInbox()">
+      <button class="topbar-pill-btn" id="btn-inbox-refresh" onclick="window.app.refreshRealInbox()" title="Fetch newest messages from Meta">
         <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-        <span>Refresh Inbox</span>
+        <span>Refresh</span>
       </button>
-      <button class="btn btn-outline btn-sm btn-inbox-sync" id="btn-inbox-sync" onclick="window.app.syncConnections()">
+      <button class="topbar-pill-btn" id="btn-inbox-sync" onclick="window.app.syncConnections()" title="Re-sync connected Meta accounts">
         <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
-        <span>Sync Accounts</span>
+        <span>Sync</span>
       </button>`;
 
     // Ensure content wrapper has inbox-view-container for viewport-fit layout
@@ -3426,7 +3422,11 @@ class MetaCRMApp {
       setTimeout(() => this.fetchRealConversationMessages(activeConv), 50);
     }
     const matchingLead = (this.svc && activeConv) ? this.svc.leads.find(l => l.name === activeConv.name || (activeConv.phone && l.phone === activeConv.phone)) : null;
-    const messages = activeConv ? (activeConv.messages || (activeConv.preview ? [{ text: activeConv.preview, incoming: true, time: activeConv.time }] : [])) : [];
+    const messages = activeConv
+      ? ((Array.isArray(activeConv.messages) && activeConv.messages.length > 0)
+          ? activeConv.messages
+          : (activeConv.preview ? [{ id: 'msg_preview_' + activeConv.id, text: activeConv.preview, incoming: true, time: activeConv.time || '12:22 PM' }] : []))
+      : [];
     const isIgActive = activeConv ? (activeConv.channel && activeConv.channel.toLowerCase().includes('insta')) : (activeTab === 'instagram');
 
     const activeInitials = activeConv ? this._getContactInitials(activeConv.name) : '?';
@@ -3605,12 +3605,15 @@ class MetaCRMApp {
               <div class="inbox-conv-item ${isCurrentActive ? 'active' : ''}" data-conv-id="${c.id}" data-search-text="${escapeHtml(searchText)}" onclick="window.app.selectInboxConv('${c.id}')">
                 <div class="conv-avatar" style="background-color:${color.bg};color:${color.text};">
                   ${initials}
+                  <span class="conv-platform-badge ${isIg ? 'badge-ig-dot' : 'badge-fb-dot'}" title="${isIg ? 'Instagram Direct' : 'Facebook Messenger'}">
+                    ${isIg ? `<svg width="8" height="8" viewBox="0 0 24 24" fill="#FFFFFF"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>` : `<svg width="8" height="8" viewBox="0 0 24 24" fill="#FFFFFF"><path d="M12 2C6.477 2 2 6.145 2 11.258c0 2.91 1.455 5.518 3.735 7.21V22l3.415-1.874c.907.251 1.865.387 2.85.387 5.523 0 10-4.145 10-9.258C22 6.145 17.523 2 12 2zm1.054 12.433l-2.585-2.756-5.044 2.756 5.549-5.89 2.651 2.756 4.978-2.756-5.549 5.89z"/></svg>`}
+                  </span>
                 </div>
                 <div class="conv-info">
                   <div class="conv-name-row">
                     <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1;">
                       <span class="conv-name text-truncate">${escapeHtml(c.name)}</span>
-                      ${isUnread ? `<span class="conv-unread-dot" title="Unread"></span>` : ''}
+                      ${isUnread ? `<span class="conv-unread-dot" title="Unread message"></span>` : ''}
                     </div>
                     <div style="display:flex;align-items:center;gap:4px;">
                       <span class="conv-time">${displayTime}</span>
@@ -3619,14 +3622,11 @@ class MetaCRMApp {
                   </div>
                   <div class="conv-preview ${isUnread ? 'is-unread' : ''}">${escapeHtml(c.preview || 'No messages yet')}</div>
                   <div class="conv-channel-row">
-                    <span class="conv-channel-pill ${isIg ? 'pill-ig' : 'pill-fb'}">
-                      ${isIg ? `<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg> Instagram` : (isWa ? '🟢 WhatsApp' : `<svg width="12" height="12" fill="#1877F2" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.145 2 11.258c0 2.91 1.455 5.518 3.735 7.21V22l3.415-1.874c.907.251 1.865.387 2.85.387 5.523 0 10-4.145 10-9.258C22 6.145 17.523 2 12 2zm1.054 12.433l-2.585-2.756-5.044 2.756 5.549-5.89 2.651 2.756 4.978-2.756-5.549 5.89z"/></svg> Messenger`)}
+                    <span class="conv-attribution-pill ${isIg ? 'ig' : 'fb'}" title="Page: ${escapeHtml(convPageName)}">
+                      <span class="attribution-dot">${isIg ? '📸' : '📄'}</span>
+                      <span class="attribution-name text-truncate">${escapeHtml(convPageName)}</span>
                     </span>
-                    <span class="conv-page-pill" title="Page: ${escapeHtml(convPageName)}">
-                      <span class="conv-page-pill-icon">${isIg ? '📸' : '📄'}</span>
-                      <span class="conv-page-pill-text text-truncate">${escapeHtml(convPageName)}</span>
-                    </span>
-                    ${itemLead ? `<span class="conv-lead-pill">${escapeHtml(itemLead.status || 'Lead')}</span>` : `<span class="conv-lead-pill">New Lead</span>`}
+                    <span class="conv-lead-pill">${escapeHtml(itemLead?.status || 'New Lead')}</span>
                     ${(c.unread || 0) > 0 ? `<span class="conv-unread-count-bubble">${c.unread}</span>` : ''}
                   </div>
                 </div>
@@ -3759,6 +3759,20 @@ class MetaCRMApp {
               `}
             </div>
 
+            <!-- Quick Reply Chips -->
+            <div class="composer-quick-replies" id="composer-quick-replies">
+              <span style="font-size:11px;font-weight:600;color:var(--text-muted);display:flex;align-items:center;padding:0 4px;">⚡ Quick:</span>
+              <button class="composer-quick-chip" type="button" onclick="window.app.insertSavedReply('Hello! Thanks for reaching out to Nova Autos. How can our team help you today?')">
+                <span>👋 Hello! How can we help?</span>
+              </button>
+              <button class="composer-quick-chip" type="button" onclick="window.app.insertSavedReply('Hi! Yes, this vehicle is currently on our lot in Auckland and available for a test drive. Would Saturday suit you?')">
+                <span>🚗 Available for test drive</span>
+              </button>
+              <button class="composer-quick-chip" type="button" onclick="window.app.insertSavedReply('We offer zero-deposit and low-deposit weekly finance starting from $85/week with fast approval.')">
+                <span>💰 Finance options</span>
+              </button>
+            </div>
+
             <div class="inbox-composer" ondragover="event.preventDefault(); this.classList.add('drag-over');" ondragleave="this.classList.remove('drag-over');" ondrop="window.app.handleComposerDrop(event)">
               <input type="file" id="inbox-file-input" style="display:none;" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt" onchange="window.app.handleFileSelected(event)">
               <div id="inbox-attachment-preview-bar" style="display:none;padding:8px 14px;background:#F8FAFC;border-bottom:1px solid var(--border);align-items:center;gap:10px;"></div>
@@ -3767,7 +3781,7 @@ class MetaCRMApp {
                 <button class="btn-composer-attach" onclick="window.app.handleAttachmentClick()" title="Attach photo, video or document (max 25MB)" type="button">
                   <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                 </button>
-                <textarea class="inbox-msg-textarea" id="inbox-msg-input" placeholder="Type a reply..." rows="1" onkeydown="window.app.handleComposerKeydown(event)" oninput="window.app.handleComposerInput(this)" onpaste="window.app.handleComposerPaste(event)"></textarea>
+                <textarea class="inbox-msg-textarea" id="inbox-msg-input" placeholder="Type a reply to ${escapeHtml(activeConv.name)} (Enter to send, Shift+Enter for newline)..." rows="1" onkeydown="window.app.handleComposerKeydown(event)" oninput="window.app.handleComposerInput(this)" onpaste="window.app.handleComposerPaste(event)"></textarea>
                 <button class="btn-composer-emoji" type="button" onclick="window.app.insertEmoji('😊')" title="Insert emoji">
                   <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
                 </button>
@@ -3810,20 +3824,22 @@ class MetaCRMApp {
                   <span class="idetail-lead-pill">${matchingLead ? escapeHtml(matchingLead.status || 'Lead') : 'New Lead'}</span>
                 </div>
                 
-                <button class="btn-meta-action" onclick="window.app.openMetaConversation('${activeConv.id}')">
-                  <svg width="15" height="15" fill="#1877F2" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.145 2 11.258c0 2.91 1.455 5.518 3.735 7.21V22l3.415-1.874c.907.251 1.865.387 2.85.387 5.523 0 10-4.145 10-9.258C22 6.145 17.523 2 12 2zm1.054 12.433l-2.585-2.756-5.044 2.756 5.549-5.89 2.651 2.756 4.978-2.756-5.549 5.89z"/></svg>
-                  <span>Message in Meta</span>
-                </button>
-                ${matchingLead ? `
-                  <button class="btn-create-lead-action" onclick="window.app.openLeadDrawer('${matchingLead.id}')">
-                    <span>Open Full CRM Profile →</span>
+                <div style="display:flex;gap:8px;width:100%;margin-top:10px;">
+                  <button class="btn-meta-action" onclick="window.app.openMetaConversation('${activeConv.id}')" style="flex:1;">
+                    <svg width="14" height="14" fill="#1877F2" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.145 2 11.258c0 2.91 1.455 5.518 3.735 7.21V22l3.415-1.874c.907.251 1.865.387 2.85.387 5.523 0 10-4.145 10-9.258C22 6.145 17.523 2 12 2zm1.054 12.433l-2.585-2.756-5.044 2.756 5.549-5.89 2.651 2.756 4.978-2.756-5.549 5.89z"/></svg>
+                    <span>Message in Meta</span>
                   </button>
-                ` : `
-                  <button class="btn-create-lead-action" onclick="window.app.createLeadFromConv('${escapeHtml(activeConv.name)}', '${activeConv.page_id}')">
-                    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                    <span>+ Create Lead in CRM</span>
-                  </button>
-                `}
+                  ${matchingLead ? `
+                    <button class="btn-create-lead-action" onclick="window.app.openLeadDrawer('${matchingLead.id}')" style="flex:1;">
+                      <span>Open Lead →</span>
+                    </button>
+                  ` : `
+                    <button class="btn-create-lead-action" onclick="window.app.createLeadFromConv('${escapeHtml(activeConv.name)}', '${activeConv.page_id}')" style="flex:1;">
+                      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                      <span>Create CRM Lead</span>
+                    </button>
+                  `}
+                </div>
               </div>
 
               <!-- ACCOUNT INFORMATION -->
@@ -3836,20 +3852,14 @@ class MetaCRMApp {
                   </span>
                 </div>
                 <div class="idetail-row">
-                  <span class="idetail-label">Account ID</span>
-                  <span class="idetail-value text-truncate" style="max-width:160px;" title="${escapeHtml(activeConv.accountId || activeConv.page_id || 'fb_123456789012345')}">
-                    ${escapeHtml(activeConv.accountId ? `fb_${activeConv.accountId.substring(0, 15)}` : (activeConv.page_id ? `fb_${activeConv.page_id.substring(0, 15)}` : 'fb_123456789012345'))}
-                  </span>
-                </div>
-                <div class="idetail-row">
-                  <span class="idetail-label">Channel Fb ID</span>
-                  <span class="idetail-value text-truncate" style="max-width:160px;">
-                    ${escapeHtml(activeConv.channelFbId || activeConv.sender_id || '100012345678901')}
+                  <span class="idetail-label">Connected Page</span>
+                  <span class="idetail-value text-truncate" style="max-width:160px;" title="${escapeHtml(activePageName)}">
+                    ${isIgActive ? '📸' : '📄'} ${escapeHtml(activePageName)}
                   </span>
                 </div>
                 <div class="idetail-row">
                   <span class="idetail-label">Lead Activity</span>
-                  <span class="idetail-value"><span class="status-dot-green"></span> Active (${activeConv.time || '2h ago'})</span>
+                  <span class="idetail-value"><span class="status-dot-green"></span> Active recently</span>
                 </div>
               </div>
 
@@ -3945,14 +3955,20 @@ class MetaCRMApp {
           return !cPage || userPages.includes(cPage);
         });
 
+    const normalizePageId = (id) => {
+      const s = String(id || '').trim();
+      if (s === '6acd4daed19284a3227d7870') return '1342542735606057';
+      if (s === '6accd8b0d52dc43d8bf6034c') return '1330954980099743';
+      if (s === '6aca1c00e12ba0b652e62f45') return '29279331294986321';
+      return s;
+    };
     const convMatchesPage = (c, pId) => {
       if (!pId || pId === 'all') return true;
-      const pid = String(pId);
-      const cp = String(c.page_id || c.accountId || c.pageId || '');
-      if (cp === pid) return true;
-      if (pid === '29279331294986321' && cp === '6accd8b0d52dc43d8bf6034c') return true;
-      if (pid === '6accd8b0d52dc43d8bf6034c' && cp === '29279331294986321') return true;
-      return false;
+      const targetNorm = normalizePageId(pId);
+      const cNorm1 = normalizePageId(c.page_id);
+      const cNorm2 = normalizePageId(c.accountId);
+      const cNorm3 = normalizePageId(c.pageId);
+      return targetNorm === cNorm1 || targetNorm === cNorm2 || targetNorm === cNorm3;
     };
 
     let matching = accessibleConvs.filter(c => !c.is_archived);
@@ -4699,7 +4715,20 @@ class MetaCRMApp {
           else if (this.svc.saveAll) this.svc.saveAll();
         }
       } else {
-        if (!conv.messages) conv.messages = [];
+        if (!conv.messages || conv.messages.length === 0) {
+          if (conv.preview && conv.preview.trim()) {
+            conv.messages = [{
+              id: 'msg_preview_' + conv.id,
+              text: conv.preview,
+              incoming: true,
+              created_at: conv.last_message_at || new Date().toISOString(),
+              status: 'delivered',
+              time: conv.time || 'Today'
+            }];
+          } else {
+            conv.messages = [];
+          }
+        }
       }
 
       if (this.activeConvId === conv.id) {
@@ -7341,20 +7370,37 @@ class MetaCRMApp {
   }
 
   _pageName(pageId) {
-    if (!pageId) return 'Main Page';
+    if (!pageId) return 'Nova auto nz';
+    const cleanId = String(pageId).trim();
     const pages = (this._getAccessiblePages ? this._getAccessiblePages() : (this.svc ? this.svc.pages : [])) || [];
-    const p = pages.find(pg => String(pg.id) === String(pageId) || String(pg.page_id) === String(pageId) || String(pg.accountId) === String(pageId) || String(pg.account_id) === String(pageId));
-    if (p) return p.name;
+    const p = pages.find(pg => 
+      String(pg.id) === cleanId || 
+      String(pg.page_id) === cleanId || 
+      String(pg.accountId) === cleanId || 
+      String(pg.account_id) === cleanId ||
+      String(pg._id) === cleanId ||
+      String(pg.zernioAccountId) === cleanId
+    );
+    if (p && p.name) return p.name.trim();
+
     const fallbackMap = {
       '1342542735606057': 'Nova auto nz',
+      '6acd4daed19284a3227d7870': 'Nova auto nz',
       '1330954980099743': 'Nova cars Samoa nz',
+      '6accd8b0d52dc43d8bf6034c': 'Nova cars Samoa nz',
       '1217451958128630': 'Nova Cars Tongan NZ',
       '29279331294986321': '@bynotjiban',
-      '6accd8b0d52dc43d8bf6034c': '@bynotjiban',
+      '6aca1c00e12ba0b652e62f45': '@bynotjiban',
       'page_fb_001': 'Nova auto nz',
       'page_ig_001': '@bynotjiban'
     };
-    return fallbackMap[pageId] || pageId;
+    if (fallbackMap[cleanId]) return fallbackMap[cleanId];
+
+    // If ID looks like a raw Mongo hex or numeric string, return friendly name instead of raw code
+    if (/^[0-9a-f]{20,32}$/i.test(cleanId) || /^[0-9]{12,25}$/.test(cleanId)) {
+      return 'Nova auto nz';
+    }
+    return cleanId || 'Nova auto nz';
   }
 
   _statusColor(status) {
