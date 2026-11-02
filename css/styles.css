@@ -5437,3 +5437,226 @@ tbody tr:hover {
     border-bottom: 1px solid var(--border);
   }
 }
+
+/* ─── Fast Inbox Page Filter & Switcher System ────────────────────────────── */
+.inbox-header-page-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-card, #FFFFFF);
+  border: 1px solid var(--border, #E5E7EB);
+  border-radius: 8px;
+  padding: 3px 8px 3px 10px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.inbox-header-page-control label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary, #6B7280);
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.inbox-header-page-control select.inbox-page-select {
+  border: none !important;
+  background: transparent !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+  color: var(--text-primary, #111827) !important;
+  padding: 2px 6px !important;
+  outline: none !important;
+  cursor: pointer;
+  max-width: 220px;
+}
+
+.inbox-header-page-control select.inbox-page-select:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Horizontal Fast Page Chips Bar in Sidebar */
+.inbox-page-chips-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px 8px;
+  overflow-x: auto;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+  background: #F8FAFC;
+  border-bottom: 1px solid #E2E8F0;
+}
+
+.inbox-page-chips-bar::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}
+
+.inbox-page-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  font-size: 11.5px;
+  font-weight: 500;
+  font-family: inherit;
+  border-radius: 9999px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  color: #475569;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 120ms ease;
+  user-select: none;
+}
+
+.inbox-page-chip:hover {
+  background: #F1F5F9;
+  border-color: #CBD5E1;
+  color: #0F172A;
+  transform: translateY(-1px);
+}
+
+.inbox-page-chip.active {
+  background: #FF6A00;
+  border-color: #FF6A00;
+  color: #FFFFFF;
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(255, 106, 0, 0.25);
+}
+
+.inbox-page-chip .chip-dot {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.inbox-page-chip .chip-text {
+  max-width: 125px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbox-page-chip .chip-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  background: #F1F5F9;
+  color: #64748B;
+  line-height: 1.2;
+}
+
+.inbox-page-chip.active .chip-badge {
+  background: rgba(255, 255, 255, 0.25);
+  color: #FFFFFF;
+}
+
+.inbox-page-chip .chip-unread-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 9999px;
+  background: #EF4444;
+  color: #FFFFFF;
+  line-height: 1.2;
+  box-shadow: 0 1px 3px rgba(239, 68, 68, 0.4);
+}
+
+.inbox-page-chip.active .chip-unread-badge {
+  background: #FFFFFF;
+  color: #EF4444;
+}
+
+.inbox-page-chip .chip-unread-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #EF4444;
+  display: inline-block;
+  margin-left: -2px;
+}
+
+/* Conversation Item Page Attribution Pill */
+.conv-page-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1.5px 6px;
+  border-radius: 4px;
+  background: #F1F5F9;
+  color: #475569;
+  border: 1px solid #E2E8F0;
+  max-width: 125px;
+  line-height: 1.35;
+  flex-shrink: 0;
+}
+
+.conv-page-pill-icon {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.conv-page-pill-text {
+  max-width: 105px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Active page banner in inbox title */
+.inbox-active-page-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: #FFF7ED;
+  color: #C2410C;
+  border: 1px solid #FFEDD5;
+  max-width: 180px;
+}
+
+.inbox-active-page-clear {
+  background: transparent;
+  border: none;
+  color: #C2410C;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.inbox-active-page-clear:hover {
+  opacity: 1;
+}
+
+.thread-page-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1.5px 8px;
+  border-radius: 4px;
+  background: #F1F5F9;
+  color: #334155;
+  border: 1px solid #E2E8F0;
+  font-size: 11.5px;
+  font-weight: 600;
+  transition: all 120ms ease;
+}
+
+.thread-page-badge:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+  border-color: #CBD5E1;
+}
+

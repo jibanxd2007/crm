@@ -303,6 +303,7 @@ class MetaCRMApp {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         this.openCommandPalette();
+        return;
       }
       if (e.key === 'Escape') {
         this.closeCommandPalette();
@@ -310,6 +311,41 @@ class MetaCRMApp {
         this.closeModal();
         this.toggleMobileSidebar(false);
         if (this.el.notifPopover) this.el.notifPopover.classList.remove('open');
+        if (this.currentRoute === 'inbox' && this.selectedInboxPage && this.selectedInboxPage !== 'all') {
+          this.setInboxPageFilter('all');
+        }
+        return;
+      }
+
+      // Fast Inbox Page Switching Shortcuts (Alt+0 for All Pages, Alt+1..9 for specific pages, [ / ] to cycle)
+      const isInputActive = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+      if (this.currentRoute === 'inbox') {
+        if (e.altKey && !e.ctrlKey && !e.metaKey) {
+          const num = parseInt(e.key, 10);
+          if (num === 0) {
+            e.preventDefault();
+            this.setInboxPageFilter('all');
+            return;
+          } else if (num >= 1 && num <= 9) {
+            const pages = this._getAccessiblePages ? this._getAccessiblePages() : [];
+            if (pages && pages[num - 1]) {
+              e.preventDefault();
+              this.setInboxPageFilter(pages[num - 1].id || pages[num - 1].page_id);
+              return;
+            }
+          }
+        } else if (!isInputActive && !e.altKey && !e.ctrlKey && !e.metaKey) {
+          if (e.key === '[' || e.key === ']') {
+            e.preventDefault();
+            const pages = this._getAccessiblePages ? this._getAccessiblePages() : [];
+            const pageIds = ['all', ...pages.map(p => p.id || p.page_id)];
+            const currentIdx = Math.max(0, pageIds.indexOf(this.selectedInboxPage || 'all'));
+            const nextIdx = e.key === ']'
+              ? (currentIdx + 1) % pageIds.length
+              : (currentIdx - 1 + pageIds.length) % pageIds.length;
+            this.setInboxPageFilter(pageIds[nextIdx]);
+          }
+        }
       }
     });
 
@@ -3225,19 +3261,20 @@ class MetaCRMApp {
 
   renderInbox() {
     this.el.title.textContent = (this.user && this.user.role === 'staff') ? 'My Messages' : 'Messages';
-    this.el.actions.innerHTML = `
-      <button class="btn btn-dark btn-sm btn-inbox-refresh" id="btn-inbox-refresh" onclick="window.app.refreshRealInbox()">
-        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-        <span>Refresh Inbox</span>
-      </button>
-      <button class="btn btn-outline btn-sm btn-inbox-sync" id="btn-inbox-sync" onclick="window.app.syncConnections()">
-        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
-        <span>Sync Accounts</span>
-      </button>`;
 
-    // Ensure content wrapper has inbox-view-container for viewport-fit layout
-    if (this.el.content && !this.el.content.classList.contains('inbox-view-container')) {
-      this.el.content.classList.add('inbox-view-container');
+    // Page filter state initialization (remembered across navigation/reloads)
+    if (!this.selectedInboxPage) {
+      try {
+        this.selectedInboxPage = localStorage.getItem('metacrm_inbox_page_filter') || 'all';
+      } catch (e) {
+        this.selectedInboxPage = 'all';
+      }
+    }
+
+    // Accessible pages for current user
+    const accessiblePages = this._getAccessiblePages ? this._getAccessiblePages() : [];
+    if (this.selectedInboxPage !== 'all' && !accessiblePages.some(p => String(p.id) === String(this.selectedInboxPage) || String(p.page_id) === String(this.selectedInboxPage))) {
+      this.selectedInboxPage = 'all';
     }
 
     // Conversations collection
@@ -3253,19 +3290,84 @@ class MetaCRMApp {
       this._fetchedRealIgConvs = true;
       setTimeout(() => this.fetchRealInstagramConversations(), 50);
     }
-    const userPages = this._getAccessiblePages().map(p => p.id);
+    const userPages = accessiblePages.map(p => String(p.id || p.page_id));
     const accessibleConvs = (this.user && (this.user.role === 'admin' || this.user.role === 'super_admin'))
       ? convs
-      : convs.filter(c => !c.page_id || userPages.includes(c.page_id) || userPages.includes(c.accountId));
+      : convs.filter(c => {
+          const cPage = String(c.page_id || c.accountId || c.pageId || '');
+          return !cPage || userPages.includes(cPage);
+        });
+
+    // Helper to test if a conversation belongs to a given page ID
+    const convMatchesPage = (c, pageId) => {
+      if (!pageId || pageId === 'all') return true;
+      const pid = String(pageId);
+      const cp = String(c.page_id || c.accountId || c.pageId || '');
+      if (cp === pid) return true;
+      if (pid === '29279331294986321' && cp === '6accd8b0d52dc43d8bf6034c') return true;
+      if (pid === '6accd8b0d52dc43d8bf6034c' && cp === '29279331294986321') return true;
+      return false;
+    };
+
+    // Calculate per-page metrics for quick-switcher chips and dropdown
+    const allActiveConvs = accessibleConvs.filter(c => !c.is_archived);
+    const allPagesTotalCount = allActiveConvs.length;
+    const allPagesUnreadCount = allActiveConvs.filter(c => (c.unread || c.unread_count || 0) > 0).length;
+
+    const pageMetrics = accessiblePages.map(p => {
+      const pConvs = allActiveConvs.filter(c => convMatchesPage(c, p.id || p.page_id));
+      const pUnread = pConvs.filter(c => (c.unread || c.unread_count || 0) > 0).length;
+      return {
+        page: p,
+        total: pConvs.length,
+        unread: pUnread
+      };
+    });
+
+    // Top action bar with ultra-fast page switcher dropdown alongside refresh & sync
+    this.el.actions.innerHTML = `
+      <div class="inbox-header-page-control" title="Instant Page Filter (Alt+0 for All, Alt+1..9 for specific pages)">
+        <label for="inbox-header-page-select">
+          <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+          <span>Page:</span>
+        </label>
+        <select class="inbox-page-select" id="inbox-header-page-select" onchange="window.app.setInboxPageFilter(this.value)">
+          <option value="all" ${this.selectedInboxPage === 'all' ? 'selected' : ''}>🌐 All Pages (${allPagesTotalCount}${allPagesUnreadCount > 0 ? ` · ${allPagesUnreadCount} unread` : ''})</option>
+          ${pageMetrics.map(pm => `
+            <option value="${pm.page.id}" ${String(this.selectedInboxPage) === String(pm.page.id) ? 'selected' : ''}>
+              ${pm.page.channel === 'instagram' || (pm.page.name && pm.page.name.startsWith('@')) ? '📸' : '📄'} ${escapeHtml(pm.page.name)} (${pm.total}${pm.unread > 0 ? ` · ${pm.unread} new` : ''})
+            </option>
+          `).join('')}
+        </select>
+      </div>
+      <button class="btn btn-dark btn-sm btn-inbox-refresh" id="btn-inbox-refresh" onclick="window.app.refreshRealInbox()">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        <span>Refresh Inbox</span>
+      </button>
+      <button class="btn btn-outline btn-sm btn-inbox-sync" id="btn-inbox-sync" onclick="window.app.syncConnections()">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+        <span>Sync Accounts</span>
+      </button>`;
+
+    // Ensure content wrapper has inbox-view-container for viewport-fit layout
+    if (this.el.content && !this.el.content.classList.contains('inbox-view-container')) {
+      this.el.content.classList.add('inbox-view-container');
+    }
+
+    // 0ms In-Memory Page Scoping
+    let pageScopedConvs = accessibleConvs;
+    if (this.selectedInboxPage && this.selectedInboxPage !== 'all') {
+      pageScopedConvs = accessibleConvs.filter(c => convMatchesPage(c, this.selectedInboxPage));
+    }
 
     const sortMode = this.inboxSortMode || 'latest';
     const activeTab = this.inboxTab || 'all';
 
-    // Archived vs Active conversation filtering (Archived conversations are hidden by default)
-    const archivedCount = accessibleConvs.filter(c => c.is_archived === true).length;
+    // Archived vs Active conversation filtering for current page scope
+    const archivedCount = pageScopedConvs.filter(c => c.is_archived === true).length;
     let filteredConvs = (activeTab === 'archived')
-      ? accessibleConvs.filter(c => c.is_archived === true)
-      : accessibleConvs.filter(c => !c.is_archived);
+      ? pageScopedConvs.filter(c => c.is_archived === true)
+      : pageScopedConvs.filter(c => !c.is_archived);
 
     // Filter by channel, unread or starred
     if (activeTab === 'unread') {
@@ -3303,7 +3405,7 @@ class MetaCRMApp {
       return timeB - timeA;
     });
 
-    const activeScopedConvs = accessibleConvs.filter(c => !c.is_archived);
+    const activeScopedConvs = pageScopedConvs.filter(c => !c.is_archived);
     const totalCount = activeScopedConvs.length;
     const unreadInboxCount = activeScopedConvs.filter(c => (c.unread || c.unread_count || 0) > 0).length;
     const starredCount = activeScopedConvs.filter(c => c.starred === true).length;
@@ -3322,6 +3424,8 @@ class MetaCRMApp {
 
     const activeInitials = activeConv ? this._getContactInitials(activeConv.name) : '?';
     const activeColor = activeConv ? this._getAvatarColor(activeConv.name) : { bg: '#F1F5F9', text: '#334155' };
+    const activePageName = activeConv ? this._pageName(activeConv.page_id || activeConv.accountId || activeConv.pageId) : '';
+    const selectedPageObj = (this.selectedInboxPage !== 'all') ? accessiblePages.find(p => String(p.id) === String(this.selectedInboxPage) || String(p.page_id) === String(this.selectedInboxPage)) : null;
 
     this.el.content.innerHTML = `
       <div class="inbox-layout ${this.mobileInboxView === 'chat' ? 'view-chat' : 'view-list'} ${sessionStorage.getItem('inbox_details_collapsed') === 'true' ? 'details-collapsed' : ''}">
@@ -3329,14 +3433,60 @@ class MetaCRMApp {
         <div class="inbox-sidebar">
           <div class="inbox-sidebar-header" style="position:relative;">
             <div class="inbox-sidebar-title-row">
-              <h2 class="inbox-sidebar-title">Inbox</h2>
-              <button class="inbox-action-btn-sm" onclick="window.app.toggleInboxFilterMenu(event)" title="Filter channels &amp; sort">
-                <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
-              </button>
+              <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
+                <h2 class="inbox-sidebar-title">Inbox</h2>
+                ${this.selectedInboxPage !== 'all' ? `
+                  <span class="inbox-active-page-pill" title="Filtered to: ${escapeHtml(selectedPageObj ? selectedPageObj.name : this.selectedInboxPage)}">
+                    <span class="text-truncate">${escapeHtml(selectedPageObj ? selectedPageObj.name : this.selectedInboxPage)}</span>
+                    <button class="inbox-active-page-clear" onclick="window.app.setInboxPageFilter('all')" title="Clear filter (show all pages)">✕</button>
+                  </span>
+                ` : ''}
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;">
+                <button class="inbox-action-btn-sm" onclick="window.app.toggleInboxFilterMenu(event)" title="Filter channels, pages &amp; sort">
+                  <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+                </button>
+              </div>
             </div>
 
-            <!-- Channels & Sorting Popover Menu -->
+            <!-- Instant Horizontal Page Chips Bar for 0ms 1-Click Page Filtering -->
+            <div class="inbox-page-chips-bar" id="inbox-page-chips-bar" role="tablist" aria-label="Filter conversations by page">
+              <button class="inbox-page-chip ${this.selectedInboxPage === 'all' ? 'active' : ''}" onclick="window.app.setInboxPageFilter('all')" title="All Pages (${allPagesTotalCount} total) [Shortcut: Alt+0]">
+                <span class="chip-dot">🌐</span>
+                <span class="chip-text">All Pages</span>
+                <span class="chip-badge">${allPagesTotalCount}</span>
+                ${allPagesUnreadCount > 0 ? `<span class="chip-unread-dot" title="${allPagesUnreadCount} unread"></span>` : ''}
+              </button>
+              ${pageMetrics.map((pm, idx) => {
+                const isSelected = String(this.selectedInboxPage) === String(pm.page.id);
+                const isIg = pm.page.channel === 'instagram' || (pm.page.name && pm.page.name.startsWith('@'));
+                return `
+                  <button class="inbox-page-chip ${isSelected ? 'active' : ''} ${isIg ? 'chip-ig' : 'chip-fb'}" 
+                          onclick="window.app.setInboxPageFilter('${pm.page.id}')" 
+                          title="${escapeHtml(pm.page.name)} (${pm.total} messages, ${pm.unread} unread) [Shortcut: Alt+${idx + 1}]">
+                    <span class="chip-dot">${isIg ? '📸' : '📄'}</span>
+                    <span class="chip-text text-truncate">${escapeHtml(pm.page.name)}</span>
+                    <span class="chip-badge">${pm.total}</span>
+                    ${pm.unread > 0 ? `<span class="chip-unread-badge">${pm.unread}</span>` : ''}
+                  </button>
+                `;
+              }).join('')}
+            </div>
+
+            <!-- Channels, Pages & Sorting Popover Menu -->
             <div id="inbox-filter-menu-popover" class="inbox-filter-menu-popover" style="display:none;" onclick="event.stopPropagation()">
+              <div class="filter-menu-section-title">PAGES</div>
+              <div class="filter-menu-item ${this.selectedInboxPage === 'all' ? 'active' : ''}" onclick="window.app.setInboxPageFilter('all'); window.app.toggleInboxFilterMenu();">
+                <span>🌐 All Pages</span>
+                <span class="filter-menu-badge">${allPagesTotalCount}</span>
+              </div>
+              ${pageMetrics.map(pm => `
+                <div class="filter-menu-item ${String(this.selectedInboxPage) === String(pm.page.id) ? 'active' : ''}" onclick="window.app.setInboxPageFilter('${pm.page.id}'); window.app.toggleInboxFilterMenu();">
+                  <span>${pm.page.channel === 'instagram' || (pm.page.name && pm.page.name.startsWith('@')) ? '📸' : '📄'} ${escapeHtml(pm.page.name)}</span>
+                  <span class="filter-menu-badge">${pm.total}${pm.unread > 0 ? ` (${pm.unread} new)` : ''}</span>
+                </div>
+              `).join('')}
+              <div class="filter-menu-divider"></div>
               <div class="filter-menu-section-title">CHANNELS</div>
               <div class="filter-menu-item ${activeTab === 'all' ? 'active' : ''}" onclick="window.app.setInboxTab('all'); window.app.toggleInboxFilterMenu();">
                 <span>All Channels</span>
@@ -3384,7 +3534,7 @@ class MetaCRMApp {
                 ${starredCount > 0 ? `<span class="inbox-tab-count">${starredCount}</span>` : ''}
               </div>
               ${(activeTab === 'facebook' || activeTab === 'messenger' || activeTab === 'instagram' || activeTab === 'archived') ? `
-                <div class="inbox-tab active" onclick="window.app.setInboxTab('all')" title="Click to clear filter">
+                <div class="inbox-tab active" onclick="window.app.setInboxTab('all')" title="Click to clear channel filter">
                   <span>${activeTab === 'archived' ? 'Archived' : (activeTab === 'instagram' ? 'Instagram' : 'Facebook')}</span>
                   <span class="inbox-tab-count" style="margin-left:3px;font-size:10px;">✕</span>
                 </div>
@@ -3407,13 +3557,29 @@ class MetaCRMApp {
             ${convList.length === 0 ? `
               <div class="inbox-conv-empty">
                 <div class="inbox-conv-empty-icon" style="display:flex;justify-content:center;">${activeTab === 'instagram' ? this._icon('instagram', 28) : this._icon('facebook', 28)}</div>
-                <strong class="inbox-conv-empty-title">${activeTab === 'archived' ? 'No archived conversations' : (activeTab === 'starred' ? 'No starred conversations' : 'No conversations yet')}</strong>
+                <strong class="inbox-conv-empty-title">
+                  ${this.selectedInboxPage !== 'all' ? `No messages for ${escapeHtml(selectedPageObj ? selectedPageObj.name : this.selectedInboxPage)}` : (activeTab === 'archived' ? 'No archived conversations' : (activeTab === 'starred' ? 'No starred conversations' : 'No conversations yet'))}
+                </strong>
                 <p class="inbox-conv-empty-desc">
-                  ${activeTab === 'archived' ? 'Archived messages will appear here.' : (activeTab === 'starred' ? 'Starred conversations appear here.' : 'Messages from your connected Meta accounts appear here.')}
+                  ${this.selectedInboxPage !== 'all' ? 'Messages sent to this page will appear here.' : (activeTab === 'archived' ? 'Archived messages will appear here.' : (activeTab === 'starred' ? 'Starred conversations appear here.' : 'Messages from your connected Meta accounts appear here.'))}
                 </p>
-                <button class="btn btn-secondary btn-sm" onclick="window.app.refreshInbox()">
-                  ↻ Refresh
-                </button>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;">
+                  ${this.selectedInboxPage !== 'all' ? `
+                    <button class="btn btn-secondary btn-sm" onclick="window.app.setInboxPageFilter('all')">
+                      Show All Pages
+                    </button>
+                    <button class="btn btn-primary btn-sm" onclick="window.app.simulateInboundMessageForPage('${this.selectedInboxPage}')">
+                      + Simulate Message
+                    </button>
+                  ` : `
+                    <button class="btn btn-secondary btn-sm" onclick="window.app.refreshInbox()">
+                      ↻ Refresh
+                    </button>
+                    <button class="btn btn-primary btn-sm" onclick="window.app.simulateInboundMessage()">
+                      + Simulate Message
+                    </button>
+                  `}
+                </div>
               </div>
             ` : convList.map(c => {
               const isIg = c.channel && c.channel.toLowerCase().includes('insta');
@@ -3425,6 +3591,7 @@ class MetaCRMApp {
               const searchText = `${c.name || ''} ${c.preview || ''} ${c.participantUsername || ''}`.toLowerCase();
               const displayTime = this._formatMessageTime(c.last_message_at || c.time);
               const itemLead = (this.svc && this.svc.leads) ? this.svc.leads.find(l => l.name === c.name || (c.phone && l.phone === c.phone)) : null;
+              const convPageName = this._pageName(c.page_id || c.accountId || c.pageId) || 'Main Page';
 
               return `
               <div class="inbox-conv-item ${isCurrentActive ? 'active' : ''}" data-conv-id="${c.id}" data-search-text="${escapeHtml(searchText)}" onclick="window.app.selectInboxConv('${c.id}')">
@@ -3446,6 +3613,10 @@ class MetaCRMApp {
                   <div class="conv-channel-row">
                     <span class="conv-channel-pill ${isIg ? 'pill-ig' : 'pill-fb'}">
                       ${isIg ? `<svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg> Instagram` : (isWa ? '🟢 WhatsApp' : `<svg width="12" height="12" fill="#1877F2" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.145 2 11.258c0 2.91 1.455 5.518 3.735 7.21V22l3.415-1.874c.907.251 1.865.387 2.85.387 5.523 0 10-4.145 10-9.258C22 6.145 17.523 2 12 2zm1.054 12.433l-2.585-2.756-5.044 2.756 5.549-5.89 2.651 2.756 4.978-2.756-5.549 5.89z"/></svg> Messenger`)}
+                    </span>
+                    <span class="conv-page-pill" title="Page: ${escapeHtml(convPageName)}">
+                      <span class="conv-page-pill-icon">${isIg ? '📸' : '📄'}</span>
+                      <span class="conv-page-pill-text text-truncate">${escapeHtml(convPageName)}</span>
                     </span>
                     ${itemLead ? `<span class="conv-lead-pill">${escapeHtml(itemLead.status || 'Lead')}</span>` : `<span class="conv-lead-pill">New Lead</span>`}
                     ${(c.unread || 0) > 0 ? `<span class="conv-unread-count-bubble">${c.unread}</span>` : ''}
@@ -3491,7 +3662,9 @@ class MetaCRMApp {
                 <div class="thread-sub text-truncate">
                   <span>${isIgActive ? 'Instagram Direct' : 'Facebook Messenger'}</span>
                   <span>·</span>
-                  <span>${escapeHtml(this._pageName(activeConv.page_id))}</span>
+                  <span class="thread-page-badge" onclick="window.app.setInboxPageFilter('${activeConv.page_id || activeConv.accountId || activeConv.pageId || ''}')" title="Filter inbox to: ${escapeHtml(activePageName)}" style="cursor:pointer;">
+                    ${isIgActive ? '📸' : '📄'} ${escapeHtml(activePageName)}
+                  </span>
                 </div>
               </div>
               <div class="thread-header-actions">
@@ -3506,7 +3679,6 @@ class MetaCRMApp {
                 </button>
                 <button class="inbox-info-btn" onclick="window.app.toggleInboxDetails()" title="Toggle Customer Context">
                   <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-                </button>
               </div>
             </div>
 
@@ -3745,6 +3917,58 @@ class MetaCRMApp {
   setInboxSort(sort) {
     this.inboxSortMode = sort;
     this.renderInbox();
+  }
+
+  setInboxPageFilter(pageId) {
+    this.selectedInboxPage = pageId || 'all';
+    try {
+      localStorage.setItem('metacrm_inbox_page_filter', this.selectedInboxPage);
+    } catch (e) {}
+
+    // Find accessible conversations
+    const convs = (this.svc ? (this.svc.conversations || []) : []);
+    const accessiblePages = this._getAccessiblePages ? this._getAccessiblePages() : [];
+    const userPages = accessiblePages.map(p => String(p.id || p.page_id));
+    const accessibleConvs = (this.user && (this.user.role === 'admin' || this.user.role === 'super_admin'))
+      ? convs
+      : convs.filter(c => {
+          const cPage = String(c.page_id || c.accountId || c.pageId || '');
+          return !cPage || userPages.includes(cPage);
+        });
+
+    const convMatchesPage = (c, pId) => {
+      if (!pId || pId === 'all') return true;
+      const pid = String(pId);
+      const cp = String(c.page_id || c.accountId || c.pageId || '');
+      if (cp === pid) return true;
+      if (pid === '29279331294986321' && cp === '6accd8b0d52dc43d8bf6034c') return true;
+      if (pid === '6accd8b0d52dc43d8bf6034c' && cp === '29279331294986321') return true;
+      return false;
+    };
+
+    let matching = accessibleConvs.filter(c => !c.is_archived);
+    if (this.selectedInboxPage !== 'all') {
+      matching = matching.filter(c => convMatchesPage(c, this.selectedInboxPage));
+    }
+
+    // Auto-select first matching conversation if current active conversation is outside this page
+    const currentStillVisible = matching.some(c => String(c.id) === String(this.activeConvId));
+    if (!currentStillVisible) {
+      this.activeConvId = matching.length > 0 ? matching[0].id : null;
+    }
+
+    // 0ms instant UI update
+    this.renderInbox();
+
+    const pageName = (this.selectedInboxPage === 'all') ? 'All Pages' : this._pageName(this.selectedInboxPage);
+    this.toast(`Page filter: ${pageName} (${matching.length} conversations)`, 'info');
+  }
+
+  simulateInboundMessageForPage(pageId) {
+    const pages = this._getAccessiblePages ? this._getAccessiblePages() : [];
+    const page = pages.find(p => String(p.id) === String(pageId) || String(p.page_id) === String(pageId)) || pages[0];
+    const isIg = page ? (page.channel === 'instagram' || (page.name && page.name.startsWith('@'))) : false;
+    this.simulateInboundMessage(isIg ? 'instagram' : 'messenger', page ? (page.id || page.page_id) : pageId);
   }
 
   toggleInboxFilterMenu(e) {
@@ -5292,8 +5516,15 @@ class MetaCRMApp {
   }
 
 
-  simulateInboundMessage(preferredChannel) {
-    const isIg = preferredChannel ? preferredChannel.toLowerCase().includes('insta') : (Math.random() > 0.5);
+  simulateInboundMessage(preferredChannel, targetPageId = null) {
+    const pages = this._getAccessiblePages ? this._getAccessiblePages() : [];
+    let matchingPage = null;
+    if (targetPageId) {
+      matchingPage = pages.find(p => String(p.id) === String(targetPageId) || String(p.page_id) === String(targetPageId));
+    }
+    const isIg = matchingPage
+      ? (matchingPage.channel === 'instagram' || (matchingPage.name && matchingPage.name.startsWith('@')))
+      : (preferredChannel ? preferredChannel.toLowerCase().includes('insta') : (Math.random() > 0.5));
     const randChannel = isIg ? 'Instagram Direct' : 'Messenger';
 
     const names = isIg
@@ -5317,9 +5548,10 @@ class MetaCRMApp {
     const randName = names[Math.floor(Math.random() * names.length)];
     const randMsg = questions[Math.floor(Math.random() * questions.length)];
 
-    const pages = this._getAccessiblePages();
-    const matchingPage = isIg ? (pages.find(p => p.channel === 'instagram' || p.name.startsWith('@')) || pages[0]) : (pages.find(p => p.channel !== 'instagram') || pages[0]);
-    const pageId = matchingPage ? matchingPage.id : (isIg ? 'page_ig_001' : 'page_fb_001');
+    if (!matchingPage) {
+      matchingPage = isIg ? (pages.find(p => p.channel === 'instagram' || (p.name && p.name.startsWith('@'))) || pages[0]) : (pages.find(p => p.channel !== 'instagram') || pages[0]);
+    }
+    const pageId = matchingPage ? (matchingPage.id || matchingPage.page_id) : (isIg ? '29279331294986321' : '1342542735606057');
 
     const convId = 'conv_' + Date.now();
     if (this.svc && this.svc.receiveIncomingMessage) {
@@ -5327,13 +5559,14 @@ class MetaCRMApp {
         senderName: randName,
         channel: isIg ? 'instagram' : 'messenger',
         pageId: pageId,
+        accountId: pageId,
         metaMid: 'sim_mid_' + Date.now()
       });
     }
 
     this.activeConvId = convId;
     this.inboxTab = isIg ? 'instagram' : (preferredChannel ? 'messenger' : this.inboxTab || 'all');
-    this.toast(`New ${randChannel} message from ${randName}!`, 'info');
+    this.toast(`New ${randChannel} message on ${matchingPage ? matchingPage.name : 'Page'}!`, 'info');
     this.renderInbox();
   }
 
@@ -6976,14 +7209,22 @@ class MetaCRMApp {
   // ──────────────────────────────────────────────────────────
 
   _getAccessiblePages() {
-    if (!this.svc || !this.svc.pages) return [];
-    if (!this.user) return this.svc.pages;
+    let pages = (this.svc && this.svc.pages && this.svc.pages.length > 0) ? this.svc.pages : [];
+    if (!pages || pages.length === 0) {
+      pages = [
+        { id: '1342542735606057', page_id: '1342542735606057', name: 'Nova auto nz', platform: 'Facebook', channel: 'facebook' },
+        { id: '1330954980099743', page_id: '1330954980099743', name: 'Nova cars Samoa nz', platform: 'Facebook', channel: 'facebook' },
+        { id: '1217451958128630', page_id: '1217451958128630', name: 'Nova Cars Tongan NZ', platform: 'Facebook', channel: 'facebook' },
+        { id: '29279331294986321', page_id: '29279331294986321', name: '@bynotjiban', platform: 'Instagram', channel: 'instagram' }
+      ];
+    }
+    if (!this.user) return pages;
     if (this.user.role === 'admin' || this.user.role === 'super_admin') {
-      return this.svc.pages;
+      return pages;
     }
     const assignedIds = this.user.assignedPageIds || this.user.assignedPages || [];
     if (!Array.isArray(assignedIds) || assignedIds.length === 0) return [];
-    return this.svc.pages.filter(p => assignedIds.includes(p.id) || assignedIds.includes(p.page_id));
+    return pages.filter(p => assignedIds.includes(p.id) || assignedIds.includes(p.page_id));
   }
 
   _getISTDate(dateInput = null) {
@@ -7081,9 +7322,20 @@ class MetaCRMApp {
   }
 
   _pageName(pageId) {
-    if (!pageId || !this.svc || !this.svc.pages) return '';
-    const p = this.svc.pages.find(pg => pg.id === pageId || pg.page_id === pageId);
-    return p ? p.name : pageId;
+    if (!pageId) return 'Main Page';
+    const pages = (this._getAccessiblePages ? this._getAccessiblePages() : (this.svc ? this.svc.pages : [])) || [];
+    const p = pages.find(pg => String(pg.id) === String(pageId) || String(pg.page_id) === String(pageId) || String(pg.accountId) === String(pageId) || String(pg.account_id) === String(pageId));
+    if (p) return p.name;
+    const fallbackMap = {
+      '1342542735606057': 'Nova auto nz',
+      '1330954980099743': 'Nova cars Samoa nz',
+      '1217451958128630': 'Nova Cars Tongan NZ',
+      '29279331294986321': '@bynotjiban',
+      '6accd8b0d52dc43d8bf6034c': '@bynotjiban',
+      'page_fb_001': 'Nova auto nz',
+      'page_ig_001': '@bynotjiban'
+    };
+    return fallbackMap[pageId] || pageId;
   }
 
   _statusColor(status) {
