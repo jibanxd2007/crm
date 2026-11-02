@@ -119,7 +119,7 @@ function createMainWindow() {
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
-          "default-src 'self' 'unsafe-inline' 'unsafe-eval' https://crm-beta-three-36.vercel.app https://fonts.googleapis.com https://fonts.gstatic.com data: blob:;"
+          "default-src 'self' 'unsafe-inline' 'unsafe-eval' https://crm-beta-three-36.vercel.app https://fonts.googleapis.com https://fonts.gstatic.com data: blob:; connect-src 'self' https://crm-beta-three-36.vercel.app https://*.supabase.co wss://*.supabase.co https://*.facebook.com https://graph.facebook.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:;"
         ]
       }
     });

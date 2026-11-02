@@ -896,7 +896,7 @@ class CRMService {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (res && res.ok) {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         if (data.authenticated && data.user) {
           this.currentUser = { ...(this.currentUser || {}), ...data.user };
           try {
@@ -906,14 +906,18 @@ class CRMService {
           return true;
         }
       }
-      // Invalid or expired session
-      this.currentUser = null;
-      this.setSessionToken('');
-      try {
-        localStorage.removeItem(this.currentUserKey);
-        localStorage.removeItem('metacrm_authenticated');
-      } catch (e) {}
-      return false;
+      if (res && (res.status === 401 || res.status === 403)) {
+        // Invalid or expired session explicitly rejected by server
+        this.currentUser = null;
+        this.setSessionToken('');
+        try {
+          localStorage.removeItem(this.currentUserKey);
+          localStorage.removeItem('metacrm_authenticated');
+        } catch (e) {}
+        return false;
+      }
+      // Transient server failure or 5xx: keep cached identity if currentUser exists
+      return Boolean(this.currentUser);
     } catch (err) {
       // Offline fallback: keep cached identity if token exists
       return Boolean(this.currentUser);
@@ -935,14 +939,16 @@ class CRMService {
 
       const data = await res.json().catch(() => ({}));
 
-      if (!res.ok || data.status !== 'success') {
+      const isSuccess = res.ok && (data.status === 'success' || data.success === true);
+      if (!isSuccess) {
         return {
           success: false,
           error: data.error || (res.status === 429 ? "Too many login attempts. Please wait a few minutes." : "Invalid email or password.")
         };
       }
 
-      this.setSessionToken(data.token);
+      const token = data.token || data.sessionToken;
+      if (token) this.setSessionToken(token);
       this.currentUser = { ...data.user };
       try {
         localStorage.setItem(this.currentUserKey, JSON.stringify(this.currentUser));

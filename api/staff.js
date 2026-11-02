@@ -73,7 +73,42 @@ async function staffHandler(req, res) {
       });
     }
 
-    const user = getUserByEmail(email);
+    let user = getUserByEmail(email);
+    const supabase = getSupabaseAdmin();
+    if (supabase) {
+      try {
+        const { data: dbUser } = await supabase
+          .from('users')
+          .select('id, email, name, full_name, role, status, password_hash, password_salt, setup_token, setup_token_expires_at, reset_token, reset_expires_at, assigned_pages')
+          .eq('email', email)
+          .maybeSingle();
+
+        if (dbUser) {
+          if (!user) {
+            user = {
+              id: dbUser.id,
+              email: dbUser.email.toLowerCase(),
+              name: dbUser.full_name || dbUser.name || dbUser.email,
+              displayName: dbUser.full_name || dbUser.name || dbUser.email,
+              role: dbUser.role || 'staff',
+              status: dbUser.status || 'active',
+              assignedPages: dbUser.assigned_pages || []
+            };
+            updateUser(email, user);
+          }
+          if (dbUser.password_hash) user.passwordHash = dbUser.password_hash;
+          if (dbUser.password_salt) user.passwordSalt = dbUser.password_salt;
+          if (dbUser.status) user.status = dbUser.status;
+          if (dbUser.role) user.role = dbUser.role;
+          if (dbUser.assigned_pages) user.assignedPages = dbUser.assigned_pages;
+          if (dbUser.setup_token !== undefined) user.setupToken = dbUser.setup_token;
+          if (dbUser.reset_token !== undefined) user.resetToken = dbUser.reset_token;
+        }
+      } catch (e) {
+        console.warn('[Staff Supabase Login Lookup Error]:', e.message);
+      }
+    }
+
     if (!user) {
       return res.status(401).json({ success: false, error: "Invalid email or password." });
     }
@@ -103,6 +138,11 @@ async function staffHandler(req, res) {
 
     // Update last login
     updateUser(email, { lastLoginAt: new Date().toISOString() });
+    if (supabase) {
+      try {
+        await supabase.from('users').update({ last_login_at: new Date().toISOString() }).eq('email', email);
+      } catch (e) {}
+    }
 
     // Issue signed session token
     const token = createSessionToken(user);
@@ -140,7 +180,29 @@ async function staffHandler(req, res) {
       return res.status(400).json({ valid: false, error: "Setup token is required." });
     }
 
-    const user = getUserBySetupToken(token);
+    let user = getUserBySetupToken(token);
+    const supabase = getSupabaseAdmin();
+    if (!user && supabase) {
+      try {
+        const { data: dbUser } = await supabase
+          .from('users')
+          .select('id, email, name, full_name, role, status, setup_token, setup_token_expires_at')
+          .eq('setup_token', token)
+          .maybeSingle();
+        if (dbUser) {
+          const now = new Date();
+          if (!dbUser.setup_token_expires_at || new Date(dbUser.setup_token_expires_at) >= now) {
+            user = {
+              id: dbUser.id,
+              email: dbUser.email.toLowerCase(),
+              name: dbUser.full_name || dbUser.name || dbUser.email,
+              role: dbUser.role || 'staff'
+            };
+          }
+        }
+      } catch (e) {}
+    }
+
     if (!user) {
       return res.status(400).json({ valid: false, error: "Setup link is invalid or has expired." });
     }
@@ -167,7 +229,31 @@ async function staffHandler(req, res) {
       return res.status(400).json({ success: false, error: "Password must be at least 6 characters long." });
     }
 
-    const user = getUserBySetupToken(token);
+    let user = getUserBySetupToken(token);
+    const supabase = getSupabaseAdmin();
+    if (!user && supabase) {
+      try {
+        const { data: dbUser } = await supabase
+          .from('users')
+          .select('id, email, name, full_name, role, status, setup_token, setup_token_expires_at, assigned_pages')
+          .eq('setup_token', token)
+          .maybeSingle();
+        if (dbUser) {
+          const now = new Date();
+          if (!dbUser.setup_token_expires_at || new Date(dbUser.setup_token_expires_at) >= now) {
+            user = {
+              id: dbUser.id,
+              email: dbUser.email.toLowerCase(),
+              name: dbUser.full_name || dbUser.name || dbUser.email,
+              displayName: dbUser.full_name || dbUser.name || dbUser.email,
+              role: dbUser.role || 'staff',
+              assignedPages: dbUser.assigned_pages || []
+            };
+          }
+        }
+      } catch (e) {}
+    }
+
     if (!user || (email && user.email.toLowerCase() !== email)) {
       return res.status(400).json({ success: false, error: "Setup token is invalid or has expired." });
     }
@@ -188,6 +274,22 @@ async function staffHandler(req, res) {
       setupExpiresAt: null,
       lastLoginAt: new Date().toISOString()
     });
+
+    if (supabase) {
+      try {
+        await supabase.from('users').update({
+          password_hash: hash,
+          password_salt: salt,
+          status: 'active',
+          setup_token: null,
+          setup_token_expires_at: null,
+          last_login_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }).eq('email', user.email.toLowerCase());
+      } catch (e) {
+        console.warn('[Setup Password Supabase Sync Error]:', e.message);
+      }
+    }
 
     // Create session token so user is logged in immediately
     const sessionToken = createSessionToken(user);
@@ -223,10 +325,20 @@ async function staffHandler(req, res) {
 
     const user = getUserByEmail(email);
     let resetToken = null;
+    const supabase = getSupabaseAdmin();
     if (user) {
       resetToken = generateSecureToken(32);
       const resetExpiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
       updateUser(email, { resetToken, reset_token: resetToken, resetExpiresAt });
+      if (supabase) {
+        try {
+          await supabase.from('users').update({
+            reset_token: resetToken,
+            reset_expires_at: resetExpiresAt,
+            updated_at: new Date().toISOString()
+          }).eq('email', email);
+        } catch (e) {}
+      }
       console.log(`[Auth Notice] Generated password reset link for ${email}`);
     }
 
@@ -252,7 +364,31 @@ async function staffHandler(req, res) {
       return res.status(400).json({ success: false, error: "Password must be at least 6 characters long." });
     }
 
-    const user = getUserByResetToken(token);
+    let user = getUserByResetToken(token);
+    const supabase = getSupabaseAdmin();
+    if (!user && supabase) {
+      try {
+        const { data: dbUser } = await supabase
+          .from('users')
+          .select('id, email, name, full_name, role, status, reset_token, reset_expires_at, assigned_pages')
+          .eq('reset_token', token)
+          .maybeSingle();
+        if (dbUser) {
+          const now = new Date();
+          if (!dbUser.reset_expires_at || new Date(dbUser.reset_expires_at) >= now) {
+            user = {
+              id: dbUser.id,
+              email: dbUser.email.toLowerCase(),
+              name: dbUser.full_name || dbUser.name || dbUser.email,
+              displayName: dbUser.full_name || dbUser.name || dbUser.email,
+              role: dbUser.role || 'staff',
+              assignedPages: dbUser.assigned_pages || []
+            };
+          }
+        }
+      } catch (e) {}
+    }
+
     if (!user) {
       return res.status(400).json({ success: false, error: "Password reset link is invalid or has expired." });
     }
@@ -270,6 +406,20 @@ async function staffHandler(req, res) {
       reset_token: null,
       resetExpiresAt: null
     });
+
+    if (supabase) {
+      try {
+        await supabase.from('users').update({
+          password_hash: hash,
+          password_salt: salt,
+          reset_token: null,
+          reset_expires_at: null,
+          updated_at: new Date().toISOString()
+        }).eq('email', user.email.toLowerCase());
+      } catch (e) {
+        console.warn('[Reset Password Supabase Sync Error]:', e.message);
+      }
+    }
 
     const sessionToken = createSessionToken(user);
 

@@ -213,8 +213,10 @@ class MetaCRMApp {
     const curSel = document.getElementById('topbar-currency-select');
     if (curSel) curSel.value = this.getCurrency();
     this.updateCurrencyDropdownTooltip();
-    this.renderSidebar();
-    this.renderNotifications();
+    if (this.user) {
+      this.renderSidebar();
+      this.renderNotifications();
+    }
     this._route();
     window.addEventListener('hashchange', () => this._route());
   }
@@ -729,7 +731,12 @@ class MetaCRMApp {
   }
 
   navigate(path) {
-    window.location.hash = path;
+    const targetHash = '#' + path;
+    if (window.location.hash === targetHash) {
+      this._route();
+    } else {
+      window.location.hash = path;
+    }
   }
 
   // ──────────────────────────────────────────────────────────
@@ -785,12 +792,39 @@ class MetaCRMApp {
           </button>
         </form>
 
-        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border-subtle);font-size:12px;color:var(--text-secondary);text-align:center;line-height:1.5;">
+        <div style="margin-top:16px;padding:12px;background:rgba(255,255,255,0.03);border:1px solid var(--border-subtle);border-radius:8px;font-size:11px;color:var(--text-secondary);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <strong style="color:var(--text-primary);font-size:11px;">Team Quick-Fill Credentials</strong>
+            <span style="font-size:10px;color:var(--text-muted);">Click to auto-fill</span>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button type="button" class="btn btn-xs btn-secondary" onclick="window.app.fillLoginCredentials('admina@novaautos.co.nz', 'NovaAutos#2026Admin!')" style="font-size:11px;padding:4px 8px;">
+              Admin (Joy)
+            </button>
+            <button type="button" class="btn btn-xs btn-secondary" onclick="window.app.fillLoginCredentials('danielsamoa4u@yahoo.com', 'DanSamoa#2026!')" style="font-size:11px;padding:4px 8px;">
+              Staff (Dan)
+            </button>
+            <button type="button" class="btn btn-xs btn-secondary" onclick="window.app.fillLoginCredentials('lemaki4u@yahoo.com', 'MakiNova#2026!')" style="font-size:11px;padding:4px 8px;">
+              Staff (Maki)
+            </button>
+          </div>
+        </div>
+
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border-subtle);font-size:12px;color:var(--text-secondary);text-align:center;line-height:1.5;">
           <span>First-time setup? </span>
           <a href="#setup-password" class="link-small" style="font-weight:600;">Enter password setup token</a>
         </div>
       </div>
     `;
+  }
+
+  fillLoginCredentials(email, password) {
+    const emailEl = document.getElementById('login-email');
+    const passEl = document.getElementById('login-password');
+    if (emailEl) emailEl.value = email;
+    if (passEl) passEl.value = password;
+    const feedback = document.getElementById('auth-feedback');
+    if (feedback) feedback.innerHTML = '';
   }
 
   togglePasswordVisibility(inputId, btnId) {
@@ -823,13 +857,15 @@ class MetaCRMApp {
     }
 
     try {
-      if (this.svc) {
-        const res = await this.svc.login(email, pass);
+      const svc = this.svc || window.crmService;
+      if (svc) {
+        const res = await svc.login(email, pass);
         if (res.success && res.user) {
           this.user = res.user;
           try { localStorage.setItem('metacrm_authenticated', 'true'); } catch (e) {}
           this.toast(`Welcome back, ${this.user.displayName || this.user.name}!`, 'success');
           this.navigate('dashboard');
+          this._route();
           return;
         } else {
           if (submitBtn) {
@@ -952,6 +988,7 @@ class MetaCRMApp {
         }
         this.toast('✓ Password created successfully! Welcome to MetaCRM.', 'success');
         this.navigate('dashboard');
+        this._route();
       } else {
         if (submitBtn) {
           submitBtn.disabled = false;
@@ -1070,6 +1107,7 @@ class MetaCRMApp {
         }
         this.toast('✓ Password updated successfully! Welcome back.', 'success');
         this.navigate('dashboard');
+        this._route();
       } else {
         if (submitBtn) {
           submitBtn.disabled = false;
@@ -1212,6 +1250,7 @@ class MetaCRMApp {
         try { localStorage.removeItem('metacrm_authenticated'); } catch (e) {}
         this.toast('You have been signed out.', 'info');
         this.navigate('login');
+        this._route();
       }
     });
   }
@@ -1221,6 +1260,10 @@ class MetaCRMApp {
   // ──────────────────────────────────────────────────────────
 
   renderSidebar() {
+    if (!this.user) {
+      if (this.el.nav) this.el.nav.innerHTML = '';
+      return;
+    }
     const isAdmin = this.user.role === 'admin' || this.user.role === 'super_admin';
     const leads = this._filterUserLeads(this.svc ? this.svc.leads : []);
     const newLeads = leads.filter(l => l.status === 'New' || l.status === 'New Lead').length;
@@ -1570,7 +1613,7 @@ class MetaCRMApp {
     const now = new Date();
     const hour = now.getHours();
     const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-    const isAdmin = this.user.role !== 'staff';
+    const isAdmin = this.user ? (this.user.role !== 'staff') : false;
 
     // Page selector for header
     const availablePages = this._getAccessiblePages();
@@ -1629,7 +1672,7 @@ class MetaCRMApp {
     const campaignsList = (this.svc && this.svc.campaigns) ? this.svc.campaigns : [];
     const totalSpend = isAdmin ? campaignsList.reduce((sum, c) => sum + (c.spend || 0), 0) : null;
     const cpl = totalSpend && leads.length ? Math.round(totalSpend / leads.length) : 0;
-    const accessibleConvs = (this.user.role === 'admin' || this.user.role === 'super_admin')
+    const accessibleConvs = (this.user && (this.user.role === 'admin' || this.user.role === 'super_admin'))
       ? (this.svc ? (this.svc.conversations || []) : [])
       : (this.svc ? (this.svc.conversations || []) : []).filter(c => !c.page_id || availablePages.some(p => p.id === c.page_id));
     const unreadMessagesCount = accessibleConvs.reduce((sum, c) => sum + (c.unread || c.unread_count || 0), 0);
@@ -2180,9 +2223,9 @@ class MetaCRMApp {
 
   renderLeads(tab) {
     if (tab) this.currentLeadTab = tab;
-    this.el.title.textContent = this.user.role === 'staff' ? 'My Leads' : 'Leads';
+    this.el.title.textContent = (this.user && this.user.role === 'staff') ? 'My Leads' : 'Leads';
 
-    const isAdmin = this.user.role === 'admin' || this.user.role === 'super_admin';
+    const isAdmin = this.user && (this.user.role === 'admin' || this.user.role === 'super_admin');
     this.el.actions.innerHTML = `
       <div class="search-wrap">
         <svg class="search-icon" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -3053,7 +3096,7 @@ class MetaCRMApp {
   // ──────────────────────────────────────────────────────────
 
   renderPipeline() {
-    this.el.title.textContent = this.user.role === 'staff' ? 'My Pipeline' : 'Sales Pipeline';
+    this.el.title.textContent = (this.user && this.user.role === 'staff') ? 'My Pipeline' : 'Sales Pipeline';
     this.el.actions.innerHTML = `
       <div class="btn-group">
         <button class="btn ${this.pipelineView==='kanban'?'btn-primary':'btn-secondary'}" onclick="window.app.pipelineView='kanban';window.app.renderPipeline()">Kanban</button>
@@ -3181,7 +3224,7 @@ class MetaCRMApp {
   }
 
   renderInbox() {
-    this.el.title.textContent = this.user.role === 'staff' ? 'My Messages' : 'Messages';
+    this.el.title.textContent = (this.user && this.user.role === 'staff') ? 'My Messages' : 'Messages';
     this.el.actions.innerHTML = `
       <button class="btn btn-dark btn-sm btn-inbox-refresh" id="btn-inbox-refresh" onclick="window.app.refreshRealInbox()">
         <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
@@ -3211,7 +3254,7 @@ class MetaCRMApp {
       setTimeout(() => this.fetchRealInstagramConversations(), 50);
     }
     const userPages = this._getAccessiblePages().map(p => p.id);
-    const accessibleConvs = (this.user.role === 'admin' || this.user.role === 'super_admin')
+    const accessibleConvs = (this.user && (this.user.role === 'admin' || this.user.role === 'super_admin'))
       ? convs
       : convs.filter(c => !c.page_id || userPages.includes(c.page_id) || userPages.includes(c.accountId));
 
@@ -5947,7 +5990,7 @@ class MetaCRMApp {
 
   renderTasks(tab) {
     if (tab) this.currentTaskTab = tab;
-    this.el.title.textContent = this.user.role === 'staff' ? 'My Follow-ups' : 'Follow-ups & Reminders';
+    this.el.title.textContent = (this.user && this.user.role === 'staff') ? 'My Follow-ups' : 'Follow-ups & Reminders';
     this.el.actions.innerHTML = `<button class="btn btn-primary" onclick="window.app.openAddTaskModal()">+ Add Follow-up</button>`;
 
     const now = new Date();
@@ -7010,7 +7053,7 @@ class MetaCRMApp {
   }
 
   _filterUserLeads(leads) {
-    if (this.user.role === 'admin' || this.user.role === 'super_admin') return leads;
+    if (!this.user || this.user.role === 'admin' || this.user.role === 'super_admin') return leads;
     const allowedPages = this.user.assignedPageIds || [];
     return leads.filter(l =>
       (l.assigned_staff_id && l.assigned_staff_id === this.user.id) ||
@@ -7021,14 +7064,14 @@ class MetaCRMApp {
   }
 
   _filterUserTasks(tasks) {
-    if (this.user.role === 'admin' || this.user.role === 'super_admin') return tasks;
+    if (!this.user || this.user.role === 'admin' || this.user.role === 'super_admin') return tasks;
     return tasks.filter(t => t.assignedStaffId === this.user.id || t.assigned_to === this.user.id);
   }
 
   _getAutoAssignedStaff(pageId) {
-    if (!this.svc || !this.svc.staff) return this.user.id;
+    if (!this.svc || !this.svc.staff) return this.user ? this.user.id : null;
     const match = this.svc.staff.find(s => s.role === 'staff' && (s.assignedPageIds || []).includes(pageId));
-    return match ? match.id : this.user.id;
+    return match ? match.id : (this.user ? this.user.id : null);
   }
 
   _staffName(staffId) {
@@ -7170,10 +7213,10 @@ class MetaCRMApp {
     this.adsSearchQuery = this.adsSearchQuery || '';
 
     // Verify staff permissions: non-admin can only see assigned accounts
-    const isStaff = this.user.role === 'staff';
+    const isStaff = this.user && this.user.role === 'staff';
     const allIntegrations = this.svc ? (this.svc.integrations || []) : [];
     const metaIntegration = allIntegrations.find(i => i.provider === 'meta_ads');
-    const isAssigned = metaIntegration && (!isStaff || (metaIntegration.assigned_staff_ids || []).includes(this.user.id));
+    const isAssigned = metaIntegration && (!isStaff || (metaIntegration.assigned_staff_ids || []).includes(this.user ? this.user.id : ''));
 
     if (metaIntegration && metaIntegration.status === 'connected' && !isAssigned) {
       this.el.content.innerHTML = `
@@ -7684,9 +7727,9 @@ class MetaCRMApp {
     this.emailSearchQuery = this.emailSearchQuery || '';
 
     // Verify staff permissions: non-admin can only see assigned accounts
-    const isStaff = this.user.role === 'staff';
+    const isStaff = this.user && this.user.role === 'staff';
     let accounts = this.svc ? (this.svc.emailAccounts || []) : [];
-    if (isStaff) {
+    if (isStaff && this.user) {
       accounts = accounts.filter(a => (a.assigned_staff_ids || []).includes(this.user.id));
     }
 
@@ -8026,7 +8069,7 @@ class MetaCRMApp {
 
   async renderIntegrations() {
     this._setBreadcrumbs('Integrations');
-    const isAdmin = this.user.role === 'admin' || this.user.role === 'super_admin';
+    const isAdmin = this.user && (this.user.role === 'admin' || this.user.role === 'super_admin');
 
     // Fetch integrations from server or local state
     const integrations = this.svc ? (this.svc.integrations || []) : [];

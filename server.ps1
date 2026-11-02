@@ -1049,16 +1049,33 @@ while ($listener.IsListening) {
             # /api/staff and /api/auth/*
             if ($urlPath -eq "/api/staff" -or $urlPath.StartsWith("/api/auth/")) {
                 $canonicalStaff = @(
-                    @{ id = "00000000-0000-0000-0000-000000000001"; name = "Joy"; email = "admina@novaautos.co.nz"; role = "admin"; status = "active"; setup_token = $null; assigned_pages = @() },
-                    @{ id = "00000000-0000-0000-0000-000000000002"; name = "Dan"; email = "danielsamoa4u@yahoo.com"; role = "staff"; status = "pending_setup"; setup_token = "stp_dan_2026"; assigned_pages = @() },
-                    @{ id = "00000000-0000-0000-0000-000000000003"; name = "Maki"; email = "lemaki4u@yahoo.com"; role = "staff"; status = "pending_setup"; setup_token = "stp_maki_2026"; assigned_pages = @() },
-                    @{ id = "00000000-0000-0000-0000-000000000004"; name = "Seni"; email = "masimanovacars@yahoo.com"; role = "staff"; status = "pending_setup"; setup_token = "stp_seni_2026"; assigned_pages = @() },
-                    @{ id = "00000000-0000-0000-0000-000000000005"; name = "Tala"; email = "langinoavacars@yahoo.com"; role = "staff"; status = "pending_setup"; setup_token = "stp_tala_2026"; assigned_pages = @() },
-                    @{ id = "00000000-0000-0000-0000-000000000006"; name = "massihsales298@gmail.com"; email = "massihsales298@gmail.com"; role = "staff"; status = "pending_setup"; setup_token = "stp_massih_2026"; assigned_pages = @() },
-                    @{ id = "00000000-0000-0000-0000-000000000007"; name = "ania.okana@gmail.com"; email = "ania.okana@gmail.com"; role = "staff"; status = "pending_setup"; setup_token = "stp_ania_2026"; assigned_pages = @() }
+                    @{ id = "00000000-0000-4001-a001-000000000001"; name = "Joy"; email = "admina@novaautos.co.nz"; role = "admin"; status = "active"; setup_token = $null; assigned_pages = @("*") },
+                    @{ id = "00000000-0000-4001-a002-000000000002"; name = "Dan"; email = "danielsamoa4u@yahoo.com"; role = "staff"; status = "active"; setup_token = "stp_dan_2026"; assigned_pages = @() },
+                    @{ id = "00000000-0000-4001-a003-000000000003"; name = "Maki"; email = "lemaki4u@yahoo.com"; role = "staff"; status = "active"; setup_token = "stp_maki_2026"; assigned_pages = @() },
+                    @{ id = "00000000-0000-4001-a004-000000000004"; name = "Seni"; email = "masimanovacars@yahoo.com"; role = "staff"; status = "active"; setup_token = "stp_seni_2026"; assigned_pages = @() },
+                    @{ id = "00000000-0000-4001-a005-000000000005"; name = "Tala"; email = "langinoavacars@yahoo.com"; role = "staff"; status = "active"; setup_token = "stp_tala_2026"; assigned_pages = @() },
+                    @{ id = "00000000-0000-4001-a006-000000000006"; name = "massihsales298@gmail.com"; email = "massihsales298@gmail.com"; role = "staff"; status = "active"; setup_token = "stp_massih_2026"; assigned_pages = @() },
+                    @{ id = "00000000-0000-4001-a007-000000000007"; name = "ania.okana@gmail.com"; email = "ania.okana@gmail.com"; role = "staff"; status = "active"; setup_token = "stp_ania_2026"; assigned_pages = @() }
                 )
 
                 if ($request.HttpMethod -eq "GET" -and $urlPath -eq "/api/staff") {
+                    $qAct = $request.QueryString["action"]
+                    if ($qAct -eq "session") {
+                        Send-JsonResponse $response 200 @{
+                            status = "success";
+                            authenticated = $true;
+                            user = @{
+                                id = "00000000-0000-4001-a001-000000000001";
+                                email = "admina@novaautos.co.nz";
+                                name = "Joy";
+                                displayName = "Joy";
+                                role = "admin";
+                                assignedPages = @("*")
+                            }
+                        }
+                        continue
+                    }
+
                     Send-JsonResponse $response 200 @{
                         status = "success";
                         staff = $canonicalStaff;
@@ -1080,9 +1097,18 @@ while ($listener.IsListening) {
                             $fakeToken = "st_ps_" + (Get-Random)
                             Send-JsonResponse $response 200 @{
                                 success = $true;
+                                status = "success";
                                 message = "Authenticated successfully";
+                                token = $fakeToken;
                                 sessionToken = $fakeToken;
-                                user = $matched;
+                                user = @{
+                                    id = $matched.id;
+                                    email = $matched.email;
+                                    name = $matched.name;
+                                    displayName = $matched.name;
+                                    role = $matched.role;
+                                    assignedPages = if ($matched.role -eq "admin") { @("*") } else { $matched.assigned_pages }
+                                };
                                 redirectUrl = if ($matched.role -eq "admin") { "/#dashboard" } else { "/#dashboard" }
                             }
                             continue
@@ -1092,11 +1118,30 @@ while ($listener.IsListening) {
                         }
                     }
 
+                    if ($act -eq "session") {
+                        Send-JsonResponse $response 200 @{
+                            status = "success";
+                            authenticated = $true;
+                            user = @{
+                                id = "00000000-0000-4001-a001-000000000001";
+                                email = "admina@novaautos.co.nz";
+                                name = "Joy";
+                                displayName = "Joy";
+                                role = "admin";
+                                assignedPages = @("*")
+                            }
+                        }
+                        continue
+                    }
+
                     if ($act -eq "setup-password" -or $act -eq "reset-password") {
+                        $fakeToken = "st_ps_" + (Get-Random)
                         Send-JsonResponse $response 200 @{
                             success = $true;
+                            status = "success";
                             message = "Password configured successfully";
-                            sessionToken = "st_ps_" + (Get-Random);
+                            token = $fakeToken;
+                            sessionToken = $fakeToken;
                             user = $canonicalStaff[0]
                         }
                         continue
@@ -1106,6 +1151,7 @@ while ($listener.IsListening) {
                         $inputEmail = if ($bJson.email) { $bJson.email.Trim().ToLower() } else { "" }
                         Send-JsonResponse $response 200 @{
                             success = $true;
+                            status = "success";
                             message = "Password reset instructions prepared";
                             resetLink = "http://localhost:3000/#reset-password?token=rst_demo_" + (Get-Random)
                         }
