@@ -3432,6 +3432,7 @@ class MetaCRMApp {
     const activeInitials = activeConv ? this._getContactInitials(activeConv.name) : '?';
     const activeColor = activeConv ? this._getAvatarColor(activeConv.name) : { bg: '#F1F5F9', text: '#334155' };
     const activePageName = activeConv ? this._pageName(activeConv.page_id || activeConv.accountId || activeConv.pageId) : '';
+    const activeDisplayTime = activeConv ? this._formatMessageTime(activeConv.last_message_at || activeConv.time) : '10:24 AM';
     const selectedPageObj = (this.selectedInboxPage !== 'all') ? accessiblePages.find(p => String(p.id) === String(this.selectedInboxPage) || String(p.page_id) === String(this.selectedInboxPage)) : null;
 
     this.el.content.innerHTML = `
@@ -3686,12 +3687,13 @@ class MetaCRMApp {
                 </button>
                 <button class="inbox-info-btn" onclick="window.app.toggleInboxDetails()" title="Toggle Customer Context">
                   <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                </button>
               </div>
             </div>
 
             <div class="inbox-thread" id="inbox-thread">
               ${messages.length ? `
-                <div class="msg-date-divider"><span>Today, ${displayTime || '10:24 AM'}</span></div>
+                <div class="msg-date-divider"><span>Today, ${activeDisplayTime || '10:24 AM'}</span></div>
                 ${messages.map((m) => {
                   const isMedia = m.text && (m.text.includes('[Photo/Media Attachment]') || m.text.includes('Replied to your story'));
                   if (m.incoming) {
