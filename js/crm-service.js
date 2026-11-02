@@ -227,7 +227,12 @@ class CRMService {
   }
 
   getDefaultPages() {
-    return [];
+    return [
+      { id: '1342542735606057', page_id: '1342542735606057', name: 'Nova auto nz', platform: 'Facebook', channel: 'facebook', is_active: true },
+      { id: '1330954980099743', page_id: '1330954980099743', name: 'Nova cars Samoa nz', platform: 'Facebook', channel: 'facebook', is_active: true },
+      { id: '1217451958128630', page_id: '1217451958128630', name: 'Nova Cars Tongan NZ', platform: 'Facebook', channel: 'facebook', is_active: true },
+      { id: '29279331294986321', page_id: '29279331294986321', name: '@bynotjiban', platform: 'Instagram', channel: 'instagram', is_active: true }
+    ];
   }
   loadStaff() {
     try {
@@ -454,7 +459,89 @@ class CRMService {
   }
 
   getDefaultConversations() {
-    return [];
+    const now = Date.now();
+    return [
+      {
+        id: "conv_fb_page1_001",
+        conversationId: "conv_fb_page1_001",
+        name: "Priya Patel",
+        participant_name: "Priya Patel",
+        channel: "messenger",
+        page_id: "1342542735606057",
+        accountId: "1342542735606057",
+        unread: 1,
+        unread_count: 1,
+        starred: true,
+        preview: "Saturday at 10:30 AM would be perfect! Can you send through the pre-inspection report?",
+        last_message: "Saturday at 10:30 AM would be perfect! Can you send through the pre-inspection report?",
+        last_message_at: new Date(now - 12 * 60 * 1000).toISOString(),
+        time: "12m ago",
+        messages: [
+          { id: "msg_p1_1", text: "Hi! Inquiring about the 2021 Toyota Hilux SR5 listed on your Facebook page. Is it still available for a test drive?", incoming: true, time: "10:15 AM" },
+          { id: "msg_p1_2", text: "Hello Priya! Yes, the Hilux is currently on the lot in Auckland. Would Saturday morning suit you for a test drive?", incoming: false, time: "10:20 AM" },
+          { id: "msg_p1_3", text: "Saturday at 10:30 AM would be perfect! Can you send through the pre-inspection report?", incoming: true, time: "10:24 AM" }
+        ]
+      },
+      {
+        id: "conv_fb_page2_002",
+        conversationId: "conv_fb_page2_002",
+        name: "Taufu'i Fa'amatu",
+        participant_name: "Taufu'i Fa'amatu",
+        channel: "messenger",
+        page_id: "1330954980099743",
+        accountId: "1330954980099743",
+        unread: 1,
+        unread_count: 1,
+        starred: false,
+        preview: "Talofa! Looking for a 7-seater family SUV to ship to Apia. What are the freight and compliance costs?",
+        last_message: "Talofa! Looking for a 7-seater family SUV to ship to Apia. What are the freight and compliance costs?",
+        last_message_at: new Date(now - 45 * 60 * 1000).toISOString(),
+        time: "45m ago",
+        messages: [
+          { id: "msg_p2_1", text: "Talofa! Looking for a 7-seater family SUV to ship to Apia. What are the freight and compliance costs?", incoming: true, time: "9:45 AM" }
+        ]
+      },
+      {
+        id: "conv_fb_page3_003",
+        conversationId: "conv_fb_page3_003",
+        name: "Sione Tupou",
+        participant_name: "Sione Tupou",
+        channel: "messenger",
+        page_id: "1217451958128630",
+        accountId: "1217451958128630",
+        unread: 0,
+        unread_count: 0,
+        starred: false,
+        preview: "Malo e lelei Sione! Yes, we have low-deposit finance starting from $85/week with approved credit.",
+        last_message: "Malo e lelei Sione! Yes, we have low-deposit finance starting from $85/week with approved credit.",
+        last_message_at: new Date(now - 2 * 3600 * 1000).toISOString(),
+        time: "2h ago",
+        messages: [
+          { id: "msg_p3_1", text: "Malo e lelei, do you offer low-deposit weekly finance on commercial vans for local transport?", incoming: true, time: "8:10 AM" },
+          { id: "msg_p3_2", text: "Malo e lelei Sione! Yes, we have low-deposit finance starting from $85/week with approved credit.", incoming: false, time: "8:18 AM" }
+        ]
+      },
+      {
+        id: "conv_ig_page4_004",
+        conversationId: "conv_ig_page4_004",
+        name: "@maya.sen.art",
+        participant_name: "@maya.sen.art",
+        participantUsername: "maya.sen.art",
+        channel: "instagram",
+        page_id: "29279331294986321",
+        accountId: "6accd8b0d52dc43d8bf6034c",
+        unread: 1,
+        unread_count: 1,
+        starred: true,
+        preview: "Hey! Loved your Instagram story on the custom vehicle wrap. Can you quote for a compact hatchback?",
+        last_message: "Hey! Loved your Instagram story on the custom vehicle wrap. Can you quote for a compact hatchback?",
+        last_message_at: new Date(now - 3 * 3600 * 1000).toISOString(),
+        time: "3h ago",
+        messages: [
+          { id: "msg_p4_1", text: "Hey! Loved your Instagram story on the custom vehicle wrap. Can you quote for a compact hatchback?", incoming: true, time: "7:30 AM" }
+        ]
+      }
+    ];
   }
 
   // ==========================================================================

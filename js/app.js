@@ -736,6 +736,9 @@ class MetaCRMApp {
 
     // 3. Login or Unauthenticated check
     if (hash === 'login' || !this.user) {
+      if (hash && hash !== 'login') {
+        this.redirectAfterLogin = hash;
+      }
       this.currentRoute = 'login';
       this.renderAuthScreen();
       return;
@@ -900,7 +903,9 @@ class MetaCRMApp {
           this.user = res.user;
           try { localStorage.setItem('metacrm_authenticated', 'true'); } catch (e) {}
           this.toast(`Welcome back, ${this.user.displayName || this.user.name}!`, 'success');
-          this.navigate('dashboard');
+          const target = this.redirectAfterLogin || 'dashboard';
+          this.redirectAfterLogin = null;
+          this.navigate(target);
           this._route();
           return;
         } else {
@@ -1500,7 +1505,9 @@ class MetaCRMApp {
           this.renderDashboard();
           break;
         case 'leads':        this.renderLeads(); break;
-        case 'inbox':        this.renderInbox(); break;
+        case 'inbox':
+        case 'messages':
+        case 'conversations': this.renderInbox(); break;
         case 'email':        this.renderEmailInbox(); break;
         case 'meta-ads':     this.renderMetaAds(); break;
         case 'pipeline':     this.renderPipeline(); break;
@@ -5917,16 +5924,23 @@ class MetaCRMApp {
 
       let addedAny = false;
       accounts.forEach(acc => {
-        const id = acc.platformUserId || acc._id;
+        const rawPageId = acc.metadata?.selectedPageId || (acc.platformUserId && acc.platformUserId.includes(':page:') ? acc.platformUserId.split(':page:')[1] : (acc.platformUserId || acc._id));
+        const id = String(rawPageId);
         const isIg = acc.platform === 'instagram';
-        const name = acc.username ? (isIg && !acc.username.startsWith('@') ? `@${acc.username}` : acc.username) : (acc.displayName || (isIg ? 'Instagram Account' : 'Facebook Page'));
-        const exists = this.svc.pages.find(p => p.id === id || p.page_id === id);
-        if (!exists) {
+        const name = (acc.metadata?.selectedPageName || (acc.username ? (isIg && !acc.username.startsWith('@') ? `@${acc.username}` : acc.username) : (acc.displayName || (isIg ? 'Instagram Account' : 'Facebook Page')))).trim();
+        const exists = this.svc.pages.find(p => String(p.id) === id || String(p.page_id) === id || (p.name && (p.name.trim().toLowerCase() === name.toLowerCase())));
+        if (exists) {
+          exists.id = id;
+          exists.page_id = id;
+          if (acc.profilePicture) exists.profilePicture = acc.profilePicture;
+          exists.provider = 'zernio';
+          addedAny = true;
+        } else {
           this.svc.pages.push({
             id: id,
             page_id: id,
             name: name,
-            displayName: acc.displayName,
+            displayName: acc.displayName || name,
             username: acc.username,
             channel: isIg ? 'instagram' : 'facebook',
             color: isIg ? '#E1306C' : '#1877F2',
@@ -5941,6 +5955,9 @@ class MetaCRMApp {
       if (accounts.length > 0) {
         this.metaConnectionState = 'connected';
         try { localStorage.setItem('metacrm_meta_conn_state', 'connected'); } catch (e) {}
+      }
+      if (addedAny && this.svc && typeof this.svc.savePages === 'function') {
+        this.svc.savePages();
       }
 
       // If Instagram is connected and no conversations exist yet,
