@@ -62,6 +62,24 @@ function recordTest(id, name, passed, metricStr = '', error = null) {
   }
 }
 
+
+function createWebhookReq(payload) {
+  const rawBody = JSON.stringify(payload);
+  const secret = process.env.ZERNIO_WEBHOOK_SECRET || '';
+  const sig = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+  return {
+    method: 'POST',
+    url: '/api/zernio?path=webhook',
+    query: { path: 'webhook' },
+    headers: {
+      'content-type': 'application/json',
+      'x-zernio-signature': 'sha256=' + sig
+    },
+    rawBody: rawBody,
+    body: payload
+  };
+}
+
 function mockRes() {
   const res = {
     statusCode: 200,
@@ -99,20 +117,7 @@ async function runAcceptanceCriteriaTests() {
     const testConvPrefix = 'bench_conv_inc_' + Date.now();
     let routingCorrect = true;
     // Warm up network/TLS connection pool
-    const warmupReq = {
-      method: 'POST',
-      url: '/api/zernio?path=webhook',
-      query: { path: 'webhook' },
-      headers: { 'content-type': 'application/json' },
-      rawBody: JSON.stringify({
-        event: 'message.received',
-        data: { id: `zmid_warm_${Date.now()}`, conversationId: 'warm_conv', message: { text: 'warmup' } }
-      }),
-      body: {
-        event: 'message.received',
-        data: { id: `zmid_warm_${Date.now()}`, conversationId: 'warm_conv', message: { text: 'warmup' } }
-      }
-    };
+    const warmupReq = createWebhookReq({ event: "message.received", data: { id: `zmid_warm_${Date.now()}`, conversationId: "warm_conv", message: { text: "warmup" } } });
     const handlerFn = zernioHandler.zernioUnifiedHandler || zernioHandler;
     await handlerFn(warmupReq, mockRes());
 
@@ -133,14 +138,7 @@ async function runAcceptanceCriteriaTests() {
         }
       };
 
-      const req = {
-        method: 'POST',
-        url: '/api/zernio?path=webhook',
-        query: { path: 'webhook' },
-        headers: { 'content-type': 'application/json' },
-        rawBody: JSON.stringify(payload),
-        body: payload
-      };
+      const req = createWebhookReq(payload);
       const res = mockRes();
 
       const tStart = process.hrtime.bigint();
@@ -287,14 +285,7 @@ async function runAcceptanceCriteriaTests() {
     const handlerFn = zernioHandler.zernioUnifiedHandler || zernioHandler;
 
     for (let i = 0; i < 10; i++) {
-      const req = {
-        method: 'POST',
-        url: '/api/zernio?path=webhook',
-        query: { path: 'webhook' },
-        headers: { 'content-type': 'application/json' },
-        rawBody: JSON.stringify(replayPayload),
-        body: replayPayload
-      };
+      const req = createWebhookReq(replayPayload);
       const res = mockRes();
       await handlerFn(req, res);
 

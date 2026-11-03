@@ -53,6 +53,24 @@ function testAssert(name, condition, details = '') {
   }
 }
 
+
+function createWebhookReq(payload) {
+  const rawBody = JSON.stringify(payload);
+  const secret = process.env.ZERNIO_WEBHOOK_SECRET || '';
+  const sig = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+  return {
+    method: 'POST',
+    url: '/api/zernio?path=webhook',
+    query: { path: 'webhook' },
+    headers: {
+      'content-type': 'application/json',
+      'x-zernio-signature': 'sha256=' + sig
+    },
+    rawBody: rawBody,
+    body: payload
+  };
+}
+
 function mockRes() {
   const res = {
     statusCode: 200,
@@ -95,14 +113,7 @@ async function runTests() {
       }
     };
 
-    const req = {
-      method: 'POST',
-      url: '/api/zernio?path=webhook',
-      query: { path: 'webhook' },
-      headers: { 'content-type': 'application/json' },
-      rawBody: JSON.stringify(testPayload),
-      body: testPayload
-    };
+    const req = createWebhookReq(testPayload);
     const res = mockRes();
     const handlerFn = zernioHandler.zernioUnifiedHandler || zernioHandler;
     await handlerFn(req, res);
@@ -172,27 +183,13 @@ async function runTests() {
       }
     };
 
-    const req1 = {
-      method: 'POST',
-      url: '/api/zernio?path=webhook',
-      query: { path: 'webhook' },
-      headers: { 'content-type': 'application/json' },
-      rawBody: JSON.stringify(dupePayload),
-      body: dupePayload
-    };
+    const req1 = createWebhookReq(dupePayload);
     const res1 = mockRes();
     const handlerFn = zernioHandler.zernioUnifiedHandler || zernioHandler;
     await handlerFn(req1, res1);
 
     // Duplicate delivery
-    const req2 = {
-      method: 'POST',
-      url: '/api/zernio?path=webhook',
-      query: { path: 'webhook' },
-      headers: { 'content-type': 'application/json' },
-      rawBody: JSON.stringify(dupePayload),
-      body: dupePayload
-    };
+    const req2 = createWebhookReq(dupePayload);
     const res2 = mockRes();
     await handlerFn(req2, res2);
 
@@ -399,14 +396,7 @@ async function runTests() {
       }
     };
 
-    const req = {
-      method: 'POST',
-      url: '/api/zernio?path=webhook',
-      query: { path: 'webhook' },
-      headers: { 'content-type': 'application/json' },
-      rawBody: JSON.stringify(attPayload),
-      body: attPayload
-    };
+    const req = createWebhookReq(attPayload);
     const res = mockRes();
     const handlerFn = zernioHandler.zernioUnifiedHandler || zernioHandler;
     await handlerFn(req, res);
@@ -605,14 +595,7 @@ async function runTests() {
     const handlerFn = zernioHandler.zernioUnifiedHandler || zernioHandler;
     let all200 = true;
     for (let i = 0; i < 10; i++) {
-      const req = {
-        method: 'POST',
-        url: '/api/zernio?path=webhook',
-        query: { path: 'webhook' },
-        headers: { 'content-type': 'application/json' },
-        rawBody: JSON.stringify(replayPayload),
-        body: replayPayload
-      };
+      const req = createWebhookReq(replayPayload);
       const res = mockRes();
       await handlerFn(req, res);
       if (res.statusCode !== 200) all200 = false;
