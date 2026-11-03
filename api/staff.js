@@ -47,7 +47,12 @@ async function staffHandler(req, res) {
   const action = body.action || query.action || query.path || '';
 
   // Get base application URL for link generation
-  const appUrl = (process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://crm-mu-three-52.vercel.app').replace(/\/$/, '');
+  const reqHost = req.headers['x-forwarded-host'] || req.headers.host;
+  let rawAppUrl = reqHost ? `https://${reqHost}` : (process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://crm-mu-three-52.vercel.app');
+  if (rawAppUrl.includes('crm-beta-three-36')) {
+    rawAppUrl = reqHost ? `https://${reqHost}` : 'https://crm-mu-three-52.vercel.app';
+  }
+  const appUrl = rawAppUrl.replace(/\/$/, '');
 
   // --------------------------------------------------------------------------
   // PUBLIC AUTH ACTIONS: LOGIN, VERIFY SETUP, COMPLETE SETUP, RESET PASSWORD

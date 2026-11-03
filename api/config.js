@@ -17,7 +17,11 @@ async function configHandler(req, res) {
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '';
-  const appUrl = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://crm-mu-three-52.vercel.app';
+  const reqHost = req.headers['x-forwarded-host'] || req.headers.host;
+  let appUrl = reqHost ? `https://${reqHost}` : (process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://crm-mu-three-52.vercel.app');
+  if (appUrl.includes('crm-beta-three-36')) {
+    appUrl = reqHost ? `https://${reqHost}` : 'https://crm-mu-three-52.vercel.app';
+  }
 
   const resendFromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
   const isSenderVerified = Boolean(
