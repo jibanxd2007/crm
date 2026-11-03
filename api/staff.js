@@ -47,7 +47,7 @@ async function staffHandler(req, res) {
   const action = body.action || query.action || query.path || '';
 
   // Get base application URL for link generation
-  const appUrl = (process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://crm-beta-three-36.vercel.app').replace(/\/$/, '');
+  const appUrl = (process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || 'https://crm-mu-three-52.vercel.app').replace(/\/$/, '');
 
   // --------------------------------------------------------------------------
   // PUBLIC AUTH ACTIONS: LOGIN, VERIFY SETUP, COMPLETE SETUP, RESET PASSWORD

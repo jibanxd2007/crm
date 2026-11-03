@@ -4,7 +4,7 @@
 # ==============================================================================
 
 param(
-  [string]$baseUri = "https://crm-beta-three-36.vercel.app"
+  [string]$baseUri = "https://crm-mu-three-52.vercel.app"
 )
 
 $results = @()

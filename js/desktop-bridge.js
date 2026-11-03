@@ -10,7 +10,7 @@
   'use strict';
 
   const isDesktop = Boolean(window.desktopAPI?.isDesktop || window.location.protocol === 'file:');
-  const PROD_BACKEND_ORIGIN = 'https://crm-beta-three-36.vercel.app';
+  const PROD_BACKEND_ORIGIN = 'https://crm-mu-three-52.vercel.app';
 
   window.IS_DESKTOP_APP = isDesktop;
   window.CRM_BACKEND_ORIGIN = isDesktop ? PROD_BACKEND_ORIGIN : '';

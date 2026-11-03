@@ -752,7 +752,7 @@ async function zernioUnifiedHandler(req, res) {
       });
     }
 
-    const host = req.headers['x-forwarded-host'] || req.headers.host || process.env.VERCEL_URL || "crm-beta-three-36.vercel.app";
+    const host = req.headers['x-forwarded-host'] || req.headers.host || process.env.VERCEL_URL || "crm-mu-three-52.vercel.app";
     const proto = req.headers['x-forwarded-proto'] || (host.includes('localhost') ? 'http' : 'https');
     const redirectUrl = process.env.META_REDIRECT_URI || `${proto}://${host}/api/meta/callback`;
 
