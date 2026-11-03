@@ -98,13 +98,11 @@
           <span>Get Windows App</span>
         </a>
 
-        <!-- Currency Selector Indicator -->
-        <div class="topbar-currency-wrap">
-          <select id="topbar-currency-select" class="topbar-currency-select" onchange="window.app.setCurrency(this.value)" title="Change CRM Display Currency">
-            <option value="USD" selected>$ USD</option>
-            <option value="INR">₹ INR</option>
-            <option value="NZD">$ NZD</option>
-          </select>
+        <!-- Fixed Dealership NZD Currency -->
+        <div class="topbar-currency-wrap" title="Dealership Base Currency: NZD ($)">
+          <div class="topbar-currency-badge" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:#F1F5F9;border:1px solid #CBD5E1;border-radius:8px;font-size:12px;font-weight:700;color:#0F172A;user-select:none;">
+            <span style="color:#059669;font-weight:800;">$</span> NZD
+          </div>
         </div>
 
         <!-- User Profile Avatar -->

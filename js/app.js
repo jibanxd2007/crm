@@ -74,40 +74,20 @@ class MetaCRMApp {
   }
 
   getCurrencySymbol(currency = null) {
-    if (this.svc && this.svc.getCurrencySymbol) return this.svc.getCurrencySymbol(currency);
-    const cur = currency || this.getCurrency();
-    if (cur === 'EUR') return '€';
-    if (cur === 'GBP') return '£';
-    if (cur === 'INR') return '₹';
     return '$';
   }
 
   getCurrency() {
-    return (this.svc && this.svc.getCurrency) ? this.svc.getCurrency() : (localStorage.getItem('metacrm_currency') || 'USD');
+    return 'NZD';
   }
 
   setCurrency(curr) {
-    const selected = curr || 'USD';
-    if (this.svc && this.svc.setCurrency) this.svc.setCurrency(selected);
-    else localStorage.setItem('metacrm_currency', selected);
-    this.updateCurrencyDropdownTooltip();
-    this.toast(`Currency set to ${selected} (${this.getCurrencySymbol(selected)})`, 'info');
-    if (this.currentRoute) this.navigate(this.currentRoute);
+    localStorage.setItem('metacrm_currency', 'NZD');
   }
 
   updateCurrencyDropdownTooltip() {
     const sel = document.getElementById('topbar-currency-select');
     if (!sel) return;
-    const curr = this.getCurrency();
-    sel.value = curr;
-    const rates = (this.svc && this.svc.fxRates) || { base: 'INR', USD: 0.012, NZD: 0.020, INR: 1.0, updated: '2026-10-14' };
-    const base = rates.base || 'INR';
-    const rate = rates[curr] !== undefined ? rates[curr] : (curr === 'USD' ? 0.012 : (curr === 'NZD' ? 0.020 : 1.0));
-    const tipText = curr === base 
-      ? `Base: 1 ${base} (FX rates updated: ${rates.updated || '2026-10-14'})`
-      : `Rate: 1 ${base} = ${rate} ${curr} (Updated: ${rates.updated || '2026-10-14'})`;
-    sel.title = tipText;
-    if (sel.parentElement) sel.parentElement.title = tipText;
   }
 
   formatMoney(amount, currency = null) {
@@ -1485,13 +1465,18 @@ class MetaCRMApp {
   // ──────────────────────────────────────────────────────────
 
   _renderPage() {
+    if (this._pageRenderTimer) {
+      clearTimeout(this._pageRenderTimer);
+      this._pageRenderTimer = null;
+    }
     this.el.content.innerHTML = `<div class="page-skeleton"></div>`;
     if (this.currentRoute === 'inbox' || this.currentRoute === 'email') {
       this.el.content.classList.add('inbox-view-container');
     } else {
       this.el.content.classList.remove('inbox-view-container');
     }
-    setTimeout(() => {
+    this._pageRenderTimer = setTimeout(() => {
+      this._pageRenderTimer = null;
       switch (this.currentRoute) {
         case 'dashboard':
           if (!this._lastAutoRefresh || (Date.now() - this._lastAutoRefresh > 20000)) {
@@ -3267,6 +3252,9 @@ class MetaCRMApp {
   }
 
   renderInbox() {
+    if (!['inbox', 'messages', 'conversations'].includes(this.currentRoute)) {
+      return;
+    }
     this.el.title.textContent = (this.user && this.user.role === 'staff') ? 'My Messages' : 'Messages';
 
     // Page filter state initialization (remembered across navigation/reloads)
@@ -3310,7 +3298,6 @@ class MetaCRMApp {
       const s = String(id || '').trim();
       if (s === '6acd4daed19284a3227d7870') return '1342542735606057';
       if (s === '6accd8b0d52dc43d8bf6034c') return '1330954980099743';
-      if (s === '6aca1c00e12ba0b652e62f45') return '29279331294986321';
       return s;
     };
     const convMatchesPage = (c, pageId) => {
@@ -3959,7 +3946,6 @@ class MetaCRMApp {
       const s = String(id || '').trim();
       if (s === '6acd4daed19284a3227d7870') return '1342542735606057';
       if (s === '6accd8b0d52dc43d8bf6034c') return '1330954980099743';
-      if (s === '6aca1c00e12ba0b652e62f45') return '29279331294986321';
       return s;
     };
     const convMatchesPage = (c, pId) => {
@@ -4731,7 +4717,7 @@ class MetaCRMApp {
         }
       }
 
-      if (this.activeConvId === conv.id) {
+      if (this.activeConvId === conv.id && ['inbox', 'messages', 'conversations'].includes(this.currentRoute)) {
         this.renderInbox();
         const threadAfter = document.getElementById('inbox-thread');
         if (threadAfter) {
@@ -5589,7 +5575,7 @@ class MetaCRMApp {
     if (!matchingPage) {
       matchingPage = isIg ? (pages.find(p => p.channel === 'instagram' || (p.name && p.name.startsWith('@'))) || pages[0]) : (pages.find(p => p.channel !== 'instagram') || pages[0]);
     }
-    const pageId = matchingPage ? (matchingPage.id || matchingPage.page_id) : (isIg ? '29279331294986321' : '1342542735606057');
+    const pageId = matchingPage ? (matchingPage.id || matchingPage.page_id) : (isIg ? '1330954980099743' : '1342542735606057');
 
     const convId = 'conv_' + Date.now();
     if (this.svc && this.svc.receiveIncomingMessage) {
@@ -5638,6 +5624,10 @@ class MetaCRMApp {
   // ──────────────────────────────────────────────────────────
 
   renderConnections() {
+    this.currentRoute = 'connections';
+    if (this.el.content) {
+      this.el.content.classList.remove('inbox-view-container');
+    }
     this.el.title.textContent = 'Connect Facebook Page';
     const pages = this._getAccessiblePages();
     const isExpired = this.metaConnectionState === 'expired';
@@ -5954,6 +5944,11 @@ class MetaCRMApp {
       if (!this.svc.pages) this.svc.pages = [];
 
       let addedAny = false;
+      accounts = accounts.filter(acc => {
+        const n = (acc.displayName || acc.username || acc.metadata?.selectedPageName || '').toLowerCase();
+        const id = String(acc.platformUserId || acc._id || '');
+        return !n.includes('jiban') && !n.includes('prakash') && !n.includes('omm') && id !== '29279331294986321';
+      });
       accounts.forEach(acc => {
         const rawPageId = acc.metadata?.selectedPageId || (acc.platformUserId && acc.platformUserId.includes(':page:') ? acc.platformUserId.split(':page:')[1] : (acc.platformUserId || acc._id));
         const id = String(rawPageId);
@@ -7262,10 +7257,15 @@ class MetaCRMApp {
       pages = [
         { id: '1342542735606057', page_id: '1342542735606057', name: 'Nova auto nz', platform: 'Facebook', channel: 'facebook' },
         { id: '1330954980099743', page_id: '1330954980099743', name: 'Nova cars Samoa nz', platform: 'Facebook', channel: 'facebook' },
-        { id: '1217451958128630', page_id: '1217451958128630', name: 'Nova Cars Tongan NZ', platform: 'Facebook', channel: 'facebook' },
-        { id: '29279331294986321', page_id: '29279331294986321', name: '@bynotjiban', platform: 'Instagram', channel: 'instagram' }
+        { id: '1217451958128630', page_id: '1217451958128630', name: 'Nova Cars Tongan NZ', platform: 'Facebook', channel: 'facebook' }
       ];
     }
+    // Filter out unauthorized test connections
+    pages = pages.filter(p => {
+      const n = (p.name || '').toLowerCase();
+      const id = String(p.id || p.page_id || '');
+      return !n.includes('jiban') && !n.includes('prakash') && !n.includes('omm') && id !== '29279331294986321' && id !== 'page_ig_001';
+    });
     if (!this.user) return pages;
     if (this.user.role === 'admin' || this.user.role === 'super_admin') {
       return pages;
@@ -7389,10 +7389,7 @@ class MetaCRMApp {
       '1330954980099743': 'Nova cars Samoa nz',
       '6accd8b0d52dc43d8bf6034c': 'Nova cars Samoa nz',
       '1217451958128630': 'Nova Cars Tongan NZ',
-      '29279331294986321': '@bynotjiban',
-      '6aca1c00e12ba0b652e62f45': '@bynotjiban',
       'page_fb_001': 'Nova auto nz',
-      'page_ig_001': '@bynotjiban'
     };
     if (fallbackMap[cleanId]) return fallbackMap[cleanId];
 
@@ -7573,8 +7570,7 @@ class MetaCRMApp {
     const connectedLiveAccounts = [
       { id: '1342542735606057', name: 'Nova auto nz ', platform: 'Facebook' },
       { id: '1330954980099743', name: 'Nova cars Samoa nz', platform: 'Facebook' },
-      { id: '1217451958128630', name: 'Nova Cars Tongan NZ', platform: 'Facebook' },
-      { id: '29279331294986321', name: '@bynotjiban', platform: 'Instagram' }
+      { id: '1217451958128630', name: 'Nova Cars Tongan NZ', platform: 'Facebook' }
     ];
     const accessiblePages = (this._getAccessiblePages && this._getAccessiblePages().length > 0)
       ? this._getAccessiblePages()
@@ -7699,12 +7695,12 @@ class MetaCRMApp {
             </div>
             <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text);">Meta Ad Accounts Connected</h3>
             <p class="text-xs text-gray" style="max-width:540px;margin:0 auto 16px;">
-              Your connected Facebook &amp; Instagram advertising accounts (<strong>Nova auto nz </strong>, <strong>Nova cars Samoa nz</strong>, and <strong>@bynotjiban</strong>) are active via Meta Verified OAuth. Paid campaigns created or published from Meta Ads Manager will appear here automatically.
+              Your connected Facebook &amp; Instagram advertising accounts (<strong>Nova auto nz </strong> and <strong>Nova cars Samoa nz</strong>) are active via Meta Verified OAuth. Paid campaigns created or published from Meta Ads Manager will appear here automatically.
             </p>
             <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
               <span class="badge badge-success" style="padding:4px 10px;font-size:11px;">● Nova auto nz (Connected)</span>
               <span class="badge badge-success" style="padding:4px 10px;font-size:11px;">● Nova cars Samoa nz (Connected)</span>
-              <span class="badge badge-success" style="padding:4px 10px;font-size:11px;">● @bynotjiban (Connected)</span>
+              
             </div>
             <div style="display:flex;justify-content:center;gap:10px;">
               <button class="btn btn-primary btn-sm" onclick="window.app.openCreateCampaignModal()">+ Create Campaign</button>
@@ -7936,7 +7932,7 @@ class MetaCRMApp {
                 <option value="1342542735606057">Nova auto nz  (Facebook)</option>
                 <option value="1330954980099743">Nova cars Samoa nz (Facebook)</option>
                 <option value="1217451958128630">Nova Cars Tongan NZ (Facebook)</option>
-                <option value="29279331294986321">@bynotjiban (Instagram)</option>
+                
               </select>
             </div>
             <div>

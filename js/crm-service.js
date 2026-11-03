@@ -127,27 +127,17 @@ class CRMService {
   }
 
   getCurrency() {
-    const saved = localStorage.getItem('metacrm_currency');
-    if (!saved) {
-      localStorage.setItem('metacrm_currency', 'USD');
-      return 'USD';
-    }
-    return saved;
+    return 'NZD';
   }
 
   getCurrencySymbol(currency = null) {
-    const cur = currency || this.getCurrency();
-    if (cur === 'EUR') return '€';
-    if (cur === 'GBP') return '£';
-    if (cur === 'INR') return '₹';
-    if (cur === 'NZD') return 'NZ$';
     return '$';
   }
 
   setCurrency(curr) {
-    localStorage.setItem('metacrm_currency', curr || 'USD');
+    localStorage.setItem('metacrm_currency', 'NZD');
     this.notifyChange('currency_changed');
-    return curr;
+    return 'NZD';
   }
 
   async loadFxRates() {
@@ -217,8 +207,14 @@ class CRMService {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && Array.isArray(parsed)) {
-          // Filter out legacy demo entities
-          const filtered = parsed.filter(p => p.id !== 'page_01' && p.id !== 'page_02' && p.name !== 'TechNova Solutions');
+          // Filter out legacy demo entities and unwanted personal/test accounts
+          const filtered = parsed.filter(p => {
+            const name = (p.name || '').toLowerCase();
+            const id = String(p.id || p.page_id || '');
+            if (p.id === 'page_01' || p.id === 'page_02' || name.includes('technova')) return false;
+            if (name.includes('jiban') || name.includes('prakash') || name.includes('omm') || id === '29279331294986321' || id === 'page_ig_001') return false;
+            return true;
+          });
           if (filtered.length > 0) return filtered;
         }
       }
@@ -230,8 +226,7 @@ class CRMService {
     return [
       { id: '1342542735606057', page_id: '1342542735606057', name: 'Nova auto nz', platform: 'Facebook', channel: 'facebook', is_active: true },
       { id: '1330954980099743', page_id: '1330954980099743', name: 'Nova cars Samoa nz', platform: 'Facebook', channel: 'facebook', is_active: true },
-      { id: '1217451958128630', page_id: '1217451958128630', name: 'Nova Cars Tongan NZ', platform: 'Facebook', channel: 'facebook', is_active: true },
-      { id: '29279331294986321', page_id: '29279331294986321', name: '@bynotjiban', platform: 'Instagram', channel: 'instagram', is_active: true }
+      { id: '1217451958128630', page_id: '1217451958128630', name: 'Nova Cars Tongan NZ', platform: 'Facebook', channel: 'facebook', is_active: true }
     ];
   }
   loadStaff() {
@@ -519,26 +514,6 @@ class CRMService {
         messages: [
           { id: "msg_p3_1", text: "Malo e lelei, do you offer low-deposit weekly finance on commercial vans for local transport?", incoming: true, time: "8:10 AM" },
           { id: "msg_p3_2", text: "Malo e lelei Sione! Yes, we have low-deposit finance starting from $85/week with approved credit.", incoming: false, time: "8:18 AM" }
-        ]
-      },
-      {
-        id: "conv_ig_page4_004",
-        conversationId: "conv_ig_page4_004",
-        name: "@maya.sen.art",
-        participant_name: "@maya.sen.art",
-        participantUsername: "maya.sen.art",
-        channel: "instagram",
-        page_id: "29279331294986321",
-        accountId: "6accd8b0d52dc43d8bf6034c",
-        unread: 1,
-        unread_count: 1,
-        starred: true,
-        preview: "Hey! Loved your Instagram story on the custom vehicle wrap. Can you quote for a compact hatchback?",
-        last_message: "Hey! Loved your Instagram story on the custom vehicle wrap. Can you quote for a compact hatchback?",
-        last_message_at: new Date(now - 3 * 3600 * 1000).toISOString(),
-        time: "3h ago",
-        messages: [
-          { id: "msg_p4_1", text: "Hey! Loved your Instagram story on the custom vehicle wrap. Can you quote for a compact hatchback?", incoming: true, time: "7:30 AM" }
         ]
       }
     ];

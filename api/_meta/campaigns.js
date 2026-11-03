@@ -79,7 +79,7 @@ async function metaCampaignsUnifiedHandler(req, res) {
                 id: `act_${a._id || a.id}`,
                 meta_ad_account_id: a._id || a.id,
                 name: `${a.displayName || a.username} (Ad Account)`,
-                currency: 'INR',
+                currency: 'NZD',
                 is_connected: true
               }));
             } catch (zErr) {}
