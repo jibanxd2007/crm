@@ -226,7 +226,9 @@ class CRMService {
     return [
       { id: '1342542735606057', page_id: '1342542735606057', name: 'Nova auto nz', platform: 'Facebook', channel: 'facebook', is_active: true },
       { id: '1330954980099743', page_id: '1330954980099743', name: 'Nova cars Samoa nz', platform: 'Facebook', channel: 'facebook', is_active: true },
-      { id: '1217451958128630', page_id: '1217451958128630', name: 'Nova Cars Tongan NZ', platform: 'Facebook', channel: 'facebook', is_active: true }
+      { id: '1217451958128630', page_id: '1217451958128630', name: 'Nova Cars Tongan NZ', platform: 'Facebook', channel: 'facebook', is_active: true },
+      { id: '284138661621993', page_id: '284138661621993', name: 'Zodiac Motor Company', platform: 'Facebook', channel: 'facebook', is_active: true },
+      { id: '1271057346092106', page_id: '1271057346092106', name: 'Car4u Mo Samoa NZ', platform: 'Facebook', channel: 'facebook', is_active: true }
     ];
   }
   loadStaff() {

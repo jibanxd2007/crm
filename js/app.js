@@ -3298,6 +3298,9 @@ class MetaCRMApp {
       const s = String(id || '').trim();
       if (s === '6acd4daed19284a3227d7870') return '1342542735606057';
       if (s === '6accd8b0d52dc43d8bf6034c') return '1330954980099743';
+      if (s === '6aea5280a5c031c687ccba16') return '284138661621993';
+      if (s === '6aea5281a5c031c687ccba18') return '1271057346092106';
+      if (s === '380918975300755') return '284138661621993';
       return s;
     };
     const convMatchesPage = (c, pageId) => {
@@ -3444,28 +3447,56 @@ class MetaCRMApp {
               </div>
             </div>
 
-            <!-- Instant Horizontal Page Chips Bar for 0ms 1-Click Page Filtering -->
-            <div class="inbox-page-chips-bar" id="inbox-page-chips-bar" role="tablist" aria-label="Filter conversations by page">
-              <button class="inbox-page-chip ${this.selectedInboxPage === 'all' ? 'active' : ''}" onclick="window.app.setInboxPageFilter('all')" title="All Pages (${allPagesTotalCount} total) [Shortcut: Alt+0]">
-                <span class="chip-dot">🌐</span>
-                <span class="chip-text">All Pages</span>
-                <span class="chip-badge">${allPagesTotalCount}</span>
-                ${allPagesUnreadCount > 0 ? `<span class="chip-unread-dot" title="${allPagesUnreadCount} unread"></span>` : ''}
+            <!-- Instant Page Selector Dropdown (Quick 1-Click Access to Every Page) -->
+            <div class="inbox-page-selector-bar">
+              <div class="inbox-page-dropdown-wrap">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="inbox-page-dropdown-icon">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>
+                </svg>
+                <select id="inbox-page-quick-select" class="inbox-page-quick-select" onchange="window.app.setInboxPageFilter(this.value)" title="Select active page to view conversations">
+                  <option value="all" ${this.selectedInboxPage === 'all' ? 'selected' : ''}>🌐 All Pages (${allPagesTotalCount} total${allPagesUnreadCount > 0 ? ` · ${allPagesUnreadCount} new` : ''})</option>
+                  ${pageMetrics.map(pm => {
+                    const isIg = pm.page.channel === 'instagram' || (pm.page.name && pm.page.name.startsWith('@'));
+                    const isSel = String(this.selectedInboxPage) === String(pm.page.id);
+                    return `<option value="${pm.page.id}" ${isSel ? 'selected' : ''}>${isIg ? '📸' : '📄'} ${escapeHtml(pm.page.name)} (${pm.total} msgs${pm.unread > 0 ? ` · ${pm.unread} new` : ''})</option>`;
+                  }).join('')}
+                </select>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="inbox-page-dropdown-arrow">
+                  <polyline points="6 9 12 15 18 9"/>
+                </svg>
+              </div>
+            </div>
+
+            <!-- Enhanced Movable Horizontal Chips Bar Carousel with Scroll Buttons & Drag-Pan -->
+            <div class="inbox-page-chips-wrapper">
+              <button type="button" class="chips-arrow-btn chips-arrow-left" id="chips-arrow-left" onclick="window.app.scrollInboxChips(-1)" title="Scroll left to view previous pages">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
               </button>
-              ${pageMetrics.map((pm, idx) => {
-                const isSelected = String(this.selectedInboxPage) === String(pm.page.id);
-                const isIg = pm.page.channel === 'instagram' || (pm.page.name && pm.page.name.startsWith('@'));
-                return `
-                  <button class="inbox-page-chip ${isSelected ? 'active' : ''} ${isIg ? 'chip-ig' : 'chip-fb'}" 
-                          onclick="window.app.setInboxPageFilter('${pm.page.id}')" 
-                          title="${escapeHtml(pm.page.name)} (${pm.total} messages, ${pm.unread} unread) [Shortcut: Alt+${idx + 1}]">
-                    <span class="chip-dot">${isIg ? '📸' : '📄'}</span>
-                    <span class="chip-text text-truncate">${escapeHtml(pm.page.name)}</span>
-                    <span class="chip-badge">${pm.total}</span>
-                    ${pm.unread > 0 ? `<span class="chip-unread-badge">${pm.unread}</span>` : ''}
-                  </button>
-                `;
-              }).join('')}
+              <div class="inbox-page-chips-bar" id="inbox-page-chips-bar" role="tablist" aria-label="Filter conversations by page">
+                <button class="inbox-page-chip ${this.selectedInboxPage === 'all' ? 'active' : ''}" onclick="if(!window.app._isDraggingChips) window.app.setInboxPageFilter('all')" title="All Pages (${allPagesTotalCount} total) [Shortcut: Alt+0]">
+                  <span class="chip-dot">🌐</span>
+                  <span class="chip-text">All Pages</span>
+                  <span class="chip-badge">${allPagesTotalCount}</span>
+                  ${allPagesUnreadCount > 0 ? `<span class="chip-unread-dot" title="${allPagesUnreadCount} unread"></span>` : ''}
+                </button>
+                ${pageMetrics.map((pm, idx) => {
+                  const isSelected = String(this.selectedInboxPage) === String(pm.page.id);
+                  const isIg = pm.page.channel === 'instagram' || (pm.page.name && pm.page.name.startsWith('@'));
+                  return `
+                    <button class="inbox-page-chip ${isSelected ? 'active' : ''} ${isIg ? 'chip-ig' : 'chip-fb'}" 
+                            onclick="if(!window.app._isDraggingChips) window.app.setInboxPageFilter('${pm.page.id}')" 
+                            title="${escapeHtml(pm.page.name)} (${pm.total} messages, ${pm.unread} unread) [Shortcut: Alt+${idx + 1}]">
+                      <span class="chip-dot">${isIg ? '📸' : '📄'}</span>
+                      <span class="chip-text text-truncate">${escapeHtml(pm.page.name)}</span>
+                      <span class="chip-badge">${pm.total}</span>
+                      ${pm.unread > 0 ? `<span class="chip-unread-badge">${pm.unread}</span>` : ''}
+                    </button>
+                  `;
+                }).join('')}
+              </div>
+              <button type="button" class="chips-arrow-btn chips-arrow-right" id="chips-arrow-right" onclick="window.app.scrollInboxChips(1)" title="Scroll right to view more pages">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
             </div>
 
             <!-- Channels, Pages & Sorting Popover Menu -->
@@ -3913,6 +3944,96 @@ class MetaCRMApp {
     if (thread) {
       setTimeout(() => { thread.scrollTop = thread.scrollHeight; }, 30);
     }
+
+    // Initialize interactive movable chips carousel
+    this._initInboxChipsCarousel();
+  }
+
+  _initInboxChipsCarousel() {
+    setTimeout(() => {
+      const chipsBar = document.getElementById('inbox-page-chips-bar');
+      const leftBtn = document.getElementById('chips-arrow-left');
+      const rightBtn = document.getElementById('chips-arrow-right');
+      if (!chipsBar) return;
+
+      // 1. Wheel to horizontal scroll
+      chipsBar.onwheel = (e) => {
+        if (e.deltaY !== 0) {
+          e.preventDefault();
+          chipsBar.scrollLeft += e.deltaY;
+          this._updateChipsNavArrows();
+        }
+      };
+
+      // 2. Mouse Drag-to-Scroll (Pan)
+      let isDown = false;
+      let startX = 0;
+      let scrollLeft = 0;
+      let moved = false;
+
+      chipsBar.onmousedown = (e) => {
+        isDown = true;
+        moved = false;
+        startX = e.pageX - chipsBar.offsetLeft;
+        scrollLeft = chipsBar.scrollLeft;
+        chipsBar.classList.add('is-dragging');
+      };
+
+      const stopDrag = () => {
+        if (isDown) {
+          isDown = false;
+          chipsBar.classList.remove('is-dragging');
+          setTimeout(() => { this._isDraggingChips = false; }, 40);
+        }
+      };
+
+      chipsBar.onmouseleave = stopDrag;
+      chipsBar.onmouseup = stopDrag;
+
+      chipsBar.onmousemove = (e) => {
+        if (!isDown) return;
+        const x = e.pageX - chipsBar.offsetLeft;
+        const walk = (x - startX) * 1.5;
+        if (Math.abs(walk) > 4) {
+          moved = true;
+          this._isDraggingChips = true;
+        }
+        chipsBar.scrollLeft = scrollLeft - walk;
+        this._updateChipsNavArrows();
+      };
+
+      // 3. Update arrows on scroll
+      chipsBar.onscroll = () => this._updateChipsNavArrows();
+
+      // 4. Scroll active chip into view
+      const activeChip = chipsBar.querySelector('.inbox-page-chip.active');
+      if (activeChip) {
+        activeChip.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      }
+
+      this._updateChipsNavArrows();
+    }, 40);
+  }
+
+  scrollInboxChips(direction) {
+    const bar = document.getElementById('inbox-page-chips-bar');
+    if (!bar) return;
+    const scrollStep = Math.max(160, bar.clientWidth * 0.7);
+    bar.scrollBy({ left: direction * scrollStep, behavior: 'smooth' });
+    setTimeout(() => this._updateChipsNavArrows(), 250);
+  }
+
+  _updateChipsNavArrows() {
+    const bar = document.getElementById('inbox-page-chips-bar');
+    const leftBtn = document.getElementById('chips-arrow-left');
+    const rightBtn = document.getElementById('chips-arrow-right');
+    if (!bar || !leftBtn || !rightBtn) return;
+    const canScrollLeft = bar.scrollLeft > 2;
+    const canScrollRight = bar.scrollLeft + bar.clientWidth < (bar.scrollWidth - 4);
+    leftBtn.style.opacity = canScrollLeft ? '1' : '0.2';
+    leftBtn.style.pointerEvents = canScrollLeft ? 'auto' : 'none';
+    rightBtn.style.opacity = canScrollRight ? '1' : '0.2';
+    rightBtn.style.pointerEvents = canScrollRight ? 'auto' : 'none';
   }
 
   setInboxTab(tab) {
@@ -3946,6 +4067,9 @@ class MetaCRMApp {
       const s = String(id || '').trim();
       if (s === '6acd4daed19284a3227d7870') return '1342542735606057';
       if (s === '6accd8b0d52dc43d8bf6034c') return '1330954980099743';
+      if (s === '6aea5280a5c031c687ccba16') return '284138661621993';
+      if (s === '6aea5281a5c031c687ccba18') return '1271057346092106';
+      if (s === '380918975300755') return '284138661621993';
       return s;
     };
     const convMatchesPage = (c, pId) => {
@@ -7257,7 +7381,9 @@ class MetaCRMApp {
       pages = [
         { id: '1342542735606057', page_id: '1342542735606057', name: 'Nova auto nz', platform: 'Facebook', channel: 'facebook' },
         { id: '1330954980099743', page_id: '1330954980099743', name: 'Nova cars Samoa nz', platform: 'Facebook', channel: 'facebook' },
-        { id: '1217451958128630', page_id: '1217451958128630', name: 'Nova Cars Tongan NZ', platform: 'Facebook', channel: 'facebook' }
+        { id: '1217451958128630', page_id: '1217451958128630', name: 'Nova Cars Tongan NZ', platform: 'Facebook', channel: 'facebook' },
+        { id: '284138661621993', page_id: '284138661621993', name: 'Zodiac Motor Company', platform: 'Facebook', channel: 'facebook' },
+        { id: '1271057346092106', page_id: '1271057346092106', name: 'Car4u Mo Samoa NZ', platform: 'Facebook', channel: 'facebook' }
       ];
     }
     // Filter out unauthorized test connections
@@ -7389,7 +7515,12 @@ class MetaCRMApp {
       '1330954980099743': 'Nova cars Samoa nz',
       '6accd8b0d52dc43d8bf6034c': 'Nova cars Samoa nz',
       '1217451958128630': 'Nova Cars Tongan NZ',
-      'page_fb_001': 'Nova auto nz',
+      '284138661621993': 'Zodiac Motor Company',
+      '6aea5280a5c031c687ccba16': 'Zodiac Motor Company',
+      '380918975300755': 'Zodiac Motor Company',
+      '1271057346092106': 'Car4u Mo Samoa NZ',
+      '6aea5281a5c031c687ccba18': 'Car4u Mo Samoa NZ',
+      'page_fb_001': 'Nova auto nz'
     };
     if (fallbackMap[cleanId]) return fallbackMap[cleanId];
 
