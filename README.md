@@ -55,7 +55,7 @@ Designed as a focused combination of:
 ## 💻 How to Run
 
 ### Production Deployment (Vercel)
-This CRM is optimized for production deployment on **Vercel** with full serverless endpoints and scheduled cron jobs.
+This CRM is live on **Vercel** at **https://crm-mu-three-52.vercel.app/** with full serverless endpoints and scheduled cron jobs.
 
 #### Option A: 1-Click CLI Deployment
 ```bash
