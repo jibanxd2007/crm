@@ -6989,234 +6989,6 @@ class MetaCRMApp {
   }
 
   // ──────────────────────────────────────────────────────────
-  // 6-PAGE REPORTS (Section 20)
-  // ──────────────────────────────────────────────────────────
-
-  renderReports() {
-    this.el.title.textContent = 'Performance & Reports';
-    this.el.actions.innerHTML = `
-      <button class="btn btn-secondary" onclick="window.app.toast('Exporting report...')">Export CSV</button>`;
-
-    const leads = this.svc ? this.svc.leads : [];
-    const pages = this.svc ? this.svc.pages : [];
-    const staff = this.svc ? this.svc.staff : [];
-
-    const won = leads.filter(l => l.status === 'Won' || l.status === 'Converted');
-    const qual = leads.filter(l => l.status === 'Qualified');
-
-    const pageStats = pages.map(p => {
-      const pl = leads.filter(l => l.page_id === p.id || l.pageId === p.id || l.source === p.name);
-      const pw = pl.filter(l => l.status === 'Won' || l.status === 'Converted');
-      const pct = leads.length ? Math.round(pl.length / leads.length * 100) : 0;
-      return { ...p, leads: pl.length, won: pw.length, pct };
-    }).sort((a,b) => b.leads - a.leads);
-
-    this.el.content.innerHTML = `
-      <div class="kpi-row">
-        <div class="kpi-card"><div class="kpi-title">TOTAL INQUIRIES</div><div class="kpi-value">${leads.length}</div><div class="kpi-trend">All captured leads</div></div>
-        <div class="kpi-card"><div class="kpi-title">QUALIFIED PROSPECTS</div><div class="kpi-value" style="color:#7C3AED">${qual.length}</div><div class="kpi-trend">High purchase intent</div></div>
-        <div class="kpi-card"><div class="kpi-title">CLOSED CUSTOMERS</div><div class="kpi-value" style="color:var(--success)">${won.length}</div><div class="kpi-trend">Won deals</div></div>
-        <div class="kpi-card"><div class="kpi-title">CONVERSION RATE</div><div class="kpi-value">${leads.length ? ((won.length/leads.length)*100).toFixed(1) : 0}%</div><div class="kpi-trend">Leads to customers</div></div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><div class="card-title">Leads Breakdown by Page (Facebook &amp; Instagram)</div></div>
-        <div class="chart-bars">
-          ${pageStats.length > 0 ? pageStats.map(p => `
-            <div class="chart-bar-row">
-              <div class="chart-bar-label"><strong>${p.name}</strong></div>
-              <div class="chart-bar-track">
-                <div class="chart-bar-fill" style="width:${p.pct}%;background:${p.color||'var(--accent)'}"></div>
-              </div>
-              <div class="chart-bar-value">${p.leads} leads (${p.pct}%)</div>
-              <div class="chart-bar-won text-xs text-gray">${p.won} won</div>
-            </div>`).join('') : '<div style="padding:16px;text-align:center;color:var(--text-muted);">No page data available</div>'}
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><div class="card-title">Team Conversion Performance</div></div>
-        <table>
-          <thead>
-            <tr><th>Team Member</th><th>Role</th><th>Assigned Pages</th><th>Active Leads</th><th>Won Deals</th><th>Conversion Rate</th></tr>
-          </thead>
-          <tbody>
-            ${staff.length > 0 ? staff.map(s => {
-              const sl = leads.filter(l => l.assigned_staff_id === s.id || l.assignedStaffId === s.id);
-              const sw = sl.filter(l => l.status === 'Won' || l.status === 'Converted');
-              const conv = sl.length ? ((sw.length / sl.length) * 100).toFixed(1) : '0.0';
-              return `
-                <tr>
-                  <td><strong>${s.name}</strong></td>
-                  <td>${this._roleBadge(s.role)}</td>
-                  <td class="text-xs text-gray">${(s.assignedPageIds||[]).map(pid => this._pageName(pid)).join(', ') || 'All Pages'}</td>
-                  <td class="font-semibold">${sl.length}</td>
-                  <td><span class="badge badge-green">${sw.length}</span></td>
-                  <td>${conv}%</td>
-                </tr>`;
-            }).join('') : '<tr><td colspan="6" class="empty-cell" style="text-align:center;padding:24px;color:var(--text-muted);">No staff members found</td></tr>'}
-          </tbody>
-        </table>
-      </div>
-
-      <!-- PHASE A: STAFF SPEED-TO-LEAD & SLA LEADERBOARD -->
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">Response Time &amp; Speed-to-Lead</div>
-          <span class="text-xs text-gray">Target: Contact new leads within 5 minutes</span>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Team Member</th>
-              <th>Assigned Leads</th>
-              <th>Responded</th>
-              <th>Within 5 Mins</th>
-              <th>Replied Late</th>
-              <th>Needs Reply (>5m)</th>
-              <th>Fast Reply Rate</th>
-              <th>Avg. Reply Time</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${(() => {
-              const leaderboard = this.svc ? this.svc.getStaffSpeedLeaderboard() : [];
-              return leaderboard.length > 0 ? leaderboard.map(row => `
-                <tr>
-                  <td><strong>${row.staff.name}</strong></td>
-                  <td class="font-semibold">${row.assignedCount}</td>
-                  <td>${row.respondedCount}</td>
-                  <td><span class="badge badge-green">${row.compliantCount}</span></td>
-                  <td><span class="badge badge-orange">${row.lateCount}</span></td>
-                  <td><span class="badge ${row.liveBreachCount > 0 ? 'badge-red' : 'badge-gray'}">${row.liveBreachCount}</span></td>
-                  <td><strong>${row.complianceRate}</strong></td>
-                  <td class="font-mono text-xs">${row.medianText}</td>
-                </tr>`).join('') : '<tr><td colspan="8" class="empty-cell" style="text-align:center;padding:24px;color:var(--text-muted);">No staff response records available yet.</td></tr>';
-            })()}
-          </tbody>
-        </table>
-      </div>
-
-      <!-- PHASE B: AD SPEND & TRUE ROI ENGINE -->
-      <div class="card roi-section">
-        <div class="card-header">
-          <div>
-            <div class="card-title">Ad Spend &amp; Return on Advertising</div>
-            <span class="text-xs text-gray">Live cost per lead and customer tracked against Meta ad spend</span>
-          </div>
-          <button class="btn btn-secondary btn-sm" onclick="window.app.syncAdSpend()">${this._icon('refresh', 13)} Refresh Ad Spend</button>
-        </div>
-
-        ${(() => {
-          const roi = this.svc ? this.svc.getRoiMetrics() : { totalSpend: 0, cpl: 0, cpa: 0, roas: 0, roiByPage: [], roiByCampaign: [] };
-          return `
-          <!-- Summary ROI KPI Grid -->
-          <div class="roi-grid" style="padding: 16px;">
-            <div class="roi-card">
-              <div class="roi-card-label">TOTAL AD SPEND</div>
-              <div class="roi-card-value">${this.formatMoney(roi.totalSpend)}</div>
-              <div class="roi-card-sub">Meta Graph Verified</div>
-            </div>
-            <div class="roi-card">
-              <div class="roi-card-label">COST PER LEAD (CPL)</div>
-              <div class="roi-card-value" style="color:var(--accent);">${this.formatMoney(roi.cpl)}</div>
-              <div class="roi-card-sub">Spend / ${roi.totalLeads} Total Leads</div>
-            </div>
-            <div class="roi-card">
-              <div class="roi-card-label">COST PER CUSTOMER (CPA)</div>
-              <div class="roi-card-value" style="color:var(--success);">${this.formatMoney(roi.cpa)}</div>
-              <div class="roi-card-sub">Spend / ${roi.totalWonDeals} Closed Deals</div>
-            </div>
-            <div class="roi-card">
-              <div class="roi-card-label">RETURN ON AD SPEND (ROAS)</div>
-              <div class="roi-card-value" style="color:#7C3AED;">${roi.roas}x</div>
-              <div class="roi-card-sub">Revenue: ${this.formatMoney(roi.totalWonValue)}</div>
-            </div>
-          </div>
-
-          <!-- ROI By Page Table -->
-          <div style="padding: 0 16px 16px;">
-            <h4 style="font-size: 13px; font-weight: 600; margin-bottom: 8px;">ROI Breakdown by Page</h4>
-            <div class="roi-table-container">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Facebook Page</th>
-                    <th>Ad Spend</th>
-                    <th>Leads</th>
-                    <th>Live CPL</th>
-                    <th>Won Deals</th>
-                    <th>Won Value</th>
-                    <th>Live CPA</th>
-                    <th>ROAS</th>
-                    <th>Performance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${roi.roiByPage.length > 0 ? roi.roiByPage.map(row => `
-                    <tr>
-                      <td><strong>${row.pageName}</strong></td>
-                      <td>${this.formatMoney(row.spend)}</td>
-                      <td class="font-semibold">${row.leads}</td>
-                      <td>${this.formatMoney(row.cpl)}</td>
-                      <td><span class="badge badge-green">${row.wonDeals}</span></td>
-                      <td>${this.formatMoney(row.wonValue)}</td>
-                      <td class="font-semibold">${this.formatMoney(row.cpa)}</td>
-                      <td><strong>${row.roas}x</strong></td>
-                      <td>
-                        ${row.performerFlag === 'top_roas' ? '<span class="badge-top-roas">★ Top ROI</span>' :
-                          row.performerFlag === 'high_cpl' ? '<span class="badge-high-cpl">⚠ High CPL</span>' :
-                          '<span class="badge-stable-roi">Stable</span>'}
-                      </td>
-                    </tr>`).join('') : '<tr><td colspan="9" class="empty-cell" style="text-align:center;padding:16px;">No pages assigned</td></tr>'}
-                </tbody>
-              </table>
-            </div>
-
-            <!-- ROI By Campaign Table -->
-            <h4 style="font-size: 13px; font-weight: 600; margin-bottom: 8px; margin-top: 16px;">ROI Breakdown by Campaign</h4>
-            <div class="roi-table-container">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Campaign</th>
-                    <th>Page</th>
-                    <th>Ad Spend</th>
-                    <th>Leads</th>
-                    <th>Live CPL</th>
-                    <th>Won Deals</th>
-                    <th>Live CPA</th>
-                    <th>ROAS</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${roi.roiByCampaign.length > 0 ? roi.roiByCampaign.map(camp => `
-                    <tr>
-                      <td><strong>${camp.campaignName}</strong></td>
-                      <td class="text-xs text-gray">${camp.pageName}</td>
-                      <td>${this.formatMoney(camp.spend)}</td>
-                      <td class="font-semibold">${camp.leads}</td>
-                      <td>${this.formatMoney(camp.cpl)}</td>
-                      <td><span class="badge badge-green">${camp.wonDeals}</span></td>
-                      <td class="font-semibold">${this.formatMoney(camp.cpa)}</td>
-                      <td><strong>${camp.roas}x</strong></td>
-                      <td>
-                        ${camp.performerFlag === 'top_roas' ? '<span class="badge-top-roas">★ Top ROI</span>' :
-                          camp.performerFlag === 'high_cpl' ? '<span class="badge-high-cpl">Review Needed</span>' :
-                          '<span class="badge-stable-roi">Active</span>'}
-                      </td>
-                    </tr>`).join('') : '<tr><td colspan="9" class="empty-cell" style="text-align:center;padding:16px;">No campaigns available</td></tr>'}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          `;
-        })()}
-      </div>`;
-  }
-
-  // ──────────────────────────────────────────────────────────
   // STAFF & RBAC MANAGEMENT (Section 16)
   // ──────────────────────────────────────────────────────────
 
@@ -9579,7 +9351,7 @@ class MetaCRMApp {
   }
 
   // ──────────────────────────────────────────────────────────
-  // REPORTS & ANALYTICS
+  // DEALERSHIP BUSINESS REPORTS (Pacific/Auckland, Honest Attribution & Drill-Down)
   // ──────────────────────────────────────────────────────────
 
   changeReportsDateRange(val) {
@@ -9589,16 +9361,38 @@ class MetaCRMApp {
     this.generateReport();
   }
 
+  changeReportsPageFilter(val) {
+    this.reportsPageFilter = val || 'all';
+    this.reportsData = null;
+    this.renderReports();
+    this.generateReport();
+  }
+
+  drillDownReportToLeads({ pageId = null, status = null, unassignedOnly = false } = {}) {
+    if (this.svc && this.svc.setFilter) {
+      this.svc.setFilter('pageId', pageId || 'all');
+      this.svc.setFilter('status', status || 'all');
+    }
+    this._reportDrilldownFilter = { pageId, status, unassignedOnly };
+    this.navigate('leads');
+    if (unassignedOnly) {
+      this.toast('Showing authorised leads — filter by Unassigned to claim them.', 'info');
+    }
+  }
+
   async generateReport() {
     this.reportsLoading = true;
     const btn = document.getElementById('btn-generate-report');
     if (btn) {
       btn.disabled = true;
-      btn.innerHTML = `<span class="spinner" style="width:12px;height:12px;border-width:2px;display:inline-block;"></span> Generating…`;
+      btn.innerHTML = `<span class="spinner" style="width:12px;height:12px;border-width:2px;display:inline-block;"></span> Refreshing…`;
     }
 
     const range = this.reportsDateRange || 'last_7d';
     let url = `/api/reports?date_range=${encodeURIComponent(range)}`;
+    if (this.reportsPageFilter && this.reportsPageFilter !== 'all') {
+      url += `&page_id=${encodeURIComponent(this.reportsPageFilter)}`;
+    }
     if (range === 'custom') {
       const sDate = document.getElementById('reports-start-date')?.value || this.reportsCustomStart;
       const eDate = document.getElementById('reports-end-date')?.value || this.reportsCustomEnd;
@@ -9613,202 +9407,354 @@ class MetaCRMApp {
     }
 
     try {
-      const res = await fetch(url, {
-        headers: {
-          'X-User-Id': (this.user && this.user.id) || 'admin'
-        }
-      });
+      const headers = (this.svc && this.svc.getAuthHeaders)
+        ? this.svc.getAuthHeaders(false)
+        : { 'X-User-Id': (this.user && this.user.id) || 'admin' };
+      const res = await fetch(url, { headers });
       if (res.ok) {
         this.reportsData = await res.json();
-      } else {
-        const errJson = await res.json().catch(() => null);
-        console.warn('Reports API response not ok, falling back to local reconciliation:', errJson);
       }
     } catch (e) {
-      console.warn('Reports API fetch failed, falling back to local calculation:', e);
+      console.warn('Reports API fetch failed, using local authorised reconciliation:', e);
     } finally {
       this.reportsLoading = false;
       this.renderReports();
     }
   }
 
+  _buildLocalAuthorisedReport() {
+    const isAdmin = this.user && (this.user.role === 'admin' || this.user.role === 'super_admin');
+    const accessiblePages = this._getAccessiblePages ? this._getAccessiblePages() : [];
+    const allowedIds = new Set(accessiblePages.map(p => String(p.id || p.page_id)));
+    const allLeads = (this.svc ? (this.svc.leads || []) : []).filter(l => {
+      if (isAdmin) return true;
+      const pid = String(l.page_id || l.pageId || '');
+      return allowedIds.has(pid) || String(l.assigned_staff_id || l.assigned_to) === String(this.user?.id);
+    });
+    const scopedLeads = (this.reportsPageFilter && this.reportsPageFilter !== 'all')
+      ? allLeads.filter(l => String(l.page_id || l.pageId) === String(this.reportsPageFilter))
+      : allLeads;
+
+    const convs = (this.svc ? (this.svc.conversations || []) : []).filter(c => !c.is_archived && (isAdmin || allowedIds.has(String(c.page_id || c.accountId || ''))));
+    const tasks = this._filterUserTasks ? this._filterUserTasks(this.svc ? (this.svc.tasks || []) : []) : [];
+
+    const uniqueKeys = new Set(scopedLeads.map(l => l.contact_id || (l.phone ? String(l.phone).replace(/[^\d+]/g, '') : null) || (l.email ? l.email.toLowerCase() : null) || l.id));
+    const isWon = s => ['won', 'sold', 'converted'].includes(String(s || '').toLowerCase());
+    const isLost = s => ['lost', 'closed lost'].includes(String(s || '').toLowerCase());
+    const isContacted = l => Boolean(l.human_first_response_at || l.first_response_at || (l.status && !['new', 'new lead'].includes(String(l.status).toLowerCase())));
+
+    const contacted = scopedLeads.filter(isContacted);
+    const qualified = scopedLeads.filter(l => ['qualified', 'proposal sent', 'negotiation', 'booked', 'won', 'sold', 'converted'].includes(String(l.status || '').toLowerCase()));
+    const booked = scopedLeads.filter(l => Boolean(l.appointment_at || l.appointment_status));
+    const attended = scopedLeads.filter(l => String(l.appointment_status || '').toLowerCase() === 'attended');
+    const won = scopedLeads.filter(l => isWon(l.status));
+    const lost = scopedLeads.filter(l => isLost(l.status));
+    const unassigned = scopedLeads.filter(l => !(l.assigned_to || l.assigned_staff_id || l.assignedStaffId));
+    const overdueFollowups = tasks.filter(t => t.status !== 'Done' && t.dueDate && new Date(t.dueDate).getTime() < Date.now()).length;
+
+    const saleValueNzd = won.reduce((sum, l) => sum + (Number(l.sale_value_nzd ?? l.lead_value ?? 0) || 0), 0);
+
+    const respMins = scopedLeads
+      .map(l => {
+        const ts = l.human_first_response_at || l.first_response_at;
+        if (!ts || !l.created_at) return null;
+        const m = (new Date(ts).getTime() - new Date(l.created_at).getTime()) / 60000;
+        return (!isNaN(m) && m >= 0) ? m : null;
+      })
+      .filter(v => v !== null)
+      .sort((a, b) => a - b);
+
+    const pctile = (arr, p) => {
+      if (!arr.length) return null;
+      const idx = (p / 100) * (arr.length - 1);
+      const lo = Math.floor(idx), hi = Math.ceil(idx);
+      return Number((arr[lo] * (1 - (idx - lo)) + arr[hi] * (idx - lo)).toFixed(1));
+    };
+
+    const lostReasons = {};
+    lost.forEach(l => {
+      const r = (l.loss_reason || 'Not recorded').trim();
+      lostReasons[r] = (lostReasons[r] || 0) + 1;
+    });
+
+    const pageBreakdown = accessiblePages.map(p => {
+      const pl = scopedLeads.filter(l => String(l.page_id || l.pageId) === String(p.id || p.page_id));
+      const pWon = pl.filter(l => isWon(l.status));
+      return {
+        pageId: p.id || p.page_id,
+        pageName: p.name || 'Connected Page',
+        enquiries: pl.length,
+        leads: pl.length,
+        uniqueContacts: new Set(pl.map(l => l.contact_id || l.phone || l.email || l.id)).size,
+        contacted: pl.filter(isContacted).length,
+        booked: pl.filter(l => Boolean(l.appointment_at || l.appointment_status)).length,
+        attended: pl.filter(l => String(l.appointment_status || '').toLowerCase() === 'attended').length,
+        dealsWon: pWon.length,
+        saleValueNzd: pWon.reduce((s, l) => s + (Number(l.sale_value_nzd ?? l.lead_value ?? 0) || 0), 0),
+        conversations: convs.filter(c => String(c.page_id || c.accountId) === String(p.id || p.page_id)).length,
+        spend: null,
+        cpl: null
+      };
+    });
+
+    return {
+      currency: 'NZD',
+      timezone: 'Pacific/Auckland',
+      adDataStatus: 'no_data',
+      metadata: {
+        scope: isAdmin ? 'All Authorised Dealership Pages' : 'Your Assigned Pages Only',
+        cohortExplanation: 'Funnel reflects enquiries received in the selected Pacific/Auckland period; overdue follow-ups reflect current live queue.',
+        attributionModel: 'Verified Meta Lead Ad / referral IDs only. Unattributed enquiries appear under Unknown.',
+        dataFreshness: new Date().toISOString()
+      },
+      summary: {
+        totalEnquiries: scopedLeads.length,
+        totalLeads: scopedLeads.length,
+        uniqueContacts: uniqueKeys.size,
+        contacted: contacted.length,
+        qualified: qualified.length,
+        booked: booked.length,
+        attended: attended.length,
+        dealsWon: won.length,
+        dealsLost: lost.length,
+        unassignedLeads: unassigned.length,
+        overdueFollowups,
+        totalConversations: convs.length,
+        totalWonValue: saleValueNzd,
+        medianHumanResponseMin: pctile(respMins, 50),
+        p90HumanResponseMin: pctile(respMins, 90),
+        humanResponsesSampleSize: respMins.length,
+        totalSpend: null,
+        platformReportedLeads: null,
+        cpl: null,
+        costPerAttendedAppointment: null,
+        costPerAttributedSale: null
+      },
+      lostReasons,
+      pageBreakdown,
+      formBreakdown: [],
+      campaignBreakdown: [],
+      staffBreakdown: []
+    };
+  }
+
   renderReports() {
-    this._setBreadcrumbs('Reports & Performance');
+    this._setBreadcrumbs('Reports');
     this.reportsDateRange = this.reportsDateRange || 'last_7d';
+    this.reportsPageFilter = this.reportsPageFilter || 'all';
 
     if (!this.reportsData && !this.reportsLoading) {
       this.reportsLoading = true;
       setTimeout(() => this.generateReport(), 40);
     }
 
-    const rep = this.reportsData || {};
-    const sum = rep.summary || null;
+    const isAdmin = this.user && (this.user.role === 'admin' || this.user.role === 'super_admin');
+    const accessiblePages = this._getAccessiblePages ? this._getAccessiblePages() : [];
+    const rep = (this.reportsData && this.reportsData.summary) ? this.reportsData : this._buildLocalAuthorisedReport();
+    const sum = rep.summary || {};
+    const meta = rep.metadata || {};
     const isTokenExpired = rep.tokenExpired === true;
-
-    // Local Fallback Aggregations if server data not loaded yet
-    const leads = this._getFilteredLeads ? this._getFilteredLeads(true) : (this.svc ? this.svc.leads : []);
-    const campaigns = this.svc ? (this.svc.campaigns || []) : [];
-    const convs = (this.svc ? (this.svc.conversations || []) : []).filter(c => !c.is_archived);
-
-    const totalLeads = sum ? sum.totalLeads : leads.length;
-    const wonLeads = sum ? sum.dealsWon : leads.filter(l => l.status === 'Won' || l.status === 'Converted').length;
-    const totalSpend = sum ? sum.totalSpend : campaigns.reduce((s, c) => s + (c.spend || (c.metrics && c.metrics.spend) || 0), 0);
-    const avgCpl = sum ? sum.cpl : (totalLeads > 0 ? Math.round(totalSpend / totalLeads) : 0);
-    const totalConversations = sum ? sum.totalConversations : convs.length;
-    const pipelineWonValue = sum ? sum.totalWonValue : (wonLeads * 25000);
-    const conversionRate = sum ? sum.conversionRate : (totalLeads > 0 ? ((wonLeads / totalLeads) * 100).toFixed(1) + '%' : '0.0%');
-
-    // Page Breakdown
-    const pageBreakdown = rep.pageBreakdown || (this._getAccessiblePages ? this._getAccessiblePages().map(p => {
-      const pLeads = leads.filter(l => String(l.page_id || l.pageId) === String(p.id));
-      const pWon = pLeads.filter(l => l.status === 'Won' || l.status === 'Converted').length;
-      const pConvs = convs.filter(c => String(c.page_id) === String(p.id)).length;
-      return {
-        pageId: p.id,
-        pageName: p.name || 'Facebook Page',
-        leads: pLeads.length,
-        spend: 0,
-        cpl: 0,
-        conversations: pConvs,
-        dealsWon: pWon
-      };
-    }) : []);
-
-    // Campaign Breakdown
-    const campaignBreakdown = rep.campaignBreakdown || campaigns.map(c => {
-      const cSpend = c.spend || (c.metrics && c.metrics.spend) || 0;
-      const cLeads = c.leads || (c.metrics && c.metrics.leads) || 0;
-      const cCpl = cLeads > 0 ? Math.round(cSpend / cLeads) : 0;
-      return {
-        campaignId: c.id,
-        campaignName: c.name || 'Campaign',
-        pageName: this._pageName(c.page_id || c.account_id),
-        status: c.status || 'ACTIVE',
-        spend: cSpend,
-        leads: cLeads,
-        cpl: cCpl,
-        dealsWon: 0
-      };
-    });
-
     const isCustom = this.reportsDateRange === 'custom';
 
-    this.el.content.innerHTML = `
-      <div class="reports-view" style="padding:4px 0 32px;">
-        <!-- HEADER & DATE RANGE CONTROLS -->
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
-          <div>
-            <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.02em;margin-bottom:4px;color:var(--text);">CRM Reports &amp; ROI Analytics</h2>
-            <p class="text-xs text-gray">Reconciled performance across Meta Ads, Lead Gen Instant Forms, and Sales Won pipeline.</p>
-          </div>
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            <div style="display:flex;align-items:center;gap:6px;">
-              <label for="reports-daterange-select" style="font-size:12px;font-weight:600;color:var(--text-secondary);">Period (IST):</label>
-              <select id="reports-daterange-select" class="input input-sm" style="font-weight:500;" onchange="window.app.changeReportsDateRange(this.value)">
-                <option value="today" ${this.reportsDateRange === 'today' ? 'selected' : ''}>Today</option>
-                <option value="yesterday" ${this.reportsDateRange === 'yesterday' ? 'selected' : ''}>Yesterday</option>
-                <option value="last_7d" ${this.reportsDateRange === 'last_7d' ? 'selected' : ''}>Last 7 Days</option>
-                <option value="this_month" ${this.reportsDateRange === 'this_month' ? 'selected' : ''}>This Month</option>
-                <option value="custom" ${isCustom ? 'selected' : ''}>Custom Range…</option>
-              </select>
-            </div>
+    const fmtNullableMoney = (v) => {
+      if (v === null || v === undefined) return rep.adDataStatus === 'not_connected' ? 'Not connected' : 'No data';
+      return this.formatMoney(v);
+    };
+    const fmtMin = (m) => {
+      if (m === null || m === undefined) return 'No data';
+      if (m < 60) return `${m}m`;
+      return `${(m / 60).toFixed(1)}h`;
+    };
+    const fmtRate = (num, den) => den > 0 ? `${((num / den) * 100).toFixed(1)}% (${num}/${den})` : 'No data';
 
+    const pageBreakdown = rep.pageBreakdown || [];
+    const formBreakdown = rep.formBreakdown || [];
+    const campaignBreakdown = rep.campaignBreakdown || [];
+    const staffBreakdown = rep.staffBreakdown || [];
+    const lostReasons = Object.entries(rep.lostReasons || {});
+
+    this.el.content.innerHTML = `
+      <div class="reports-view" style="padding:4px 0 36px;">
+        <!-- HEADER & PACIFIC/AUCKLAND CONTROLS -->
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+          <div>
+            <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.02em;margin-bottom:4px;color:var(--text);">${isAdmin ? 'Dealership Business Reports' : 'My Sales Performance'}</h2>
+            <p class="text-xs text-gray">
+              Scope: <strong>${escapeHtml(meta.scope || (isAdmin ? 'All Authorised Pages' : 'Assigned Pages Only'))}</strong> ·
+              Timezone: <strong>Pacific/Auckland (NZST/NZDT)</strong> ·
+              Currency: <strong>NZD ($)</strong>
+            </p>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <select id="reports-page-select" class="input input-sm" style="font-weight:500;" onchange="window.app.changeReportsPageFilter(this.value)">
+              <option value="all">${isAdmin ? 'All Authorised Pages' : 'All Assigned Pages'}</option>
+              ${accessiblePages.map(p => `<option value="${p.id || p.page_id}" ${String(this.reportsPageFilter) === String(p.id || p.page_id) ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
+            </select>
+            <select id="reports-daterange-select" class="input input-sm" style="font-weight:500;" onchange="window.app.changeReportsDateRange(this.value)">
+              <option value="today" ${this.reportsDateRange === 'today' ? 'selected' : ''}>Today (NZ)</option>
+              <option value="yesterday" ${this.reportsDateRange === 'yesterday' ? 'selected' : ''}>Yesterday (NZ)</option>
+              <option value="last_7d" ${this.reportsDateRange === 'last_7d' ? 'selected' : ''}>Last 7 Days (NZ)</option>
+              <option value="last_30d" ${this.reportsDateRange === 'last_30d' ? 'selected' : ''}>Last 30 Days (NZ)</option>
+              <option value="this_month" ${this.reportsDateRange === 'this_month' ? 'selected' : ''}>This Month (NZ)</option>
+              <option value="custom" ${isCustom ? 'selected' : ''}>Custom Range…</option>
+            </select>
             <div id="reports-custom-dates" style="display:${isCustom ? 'flex' : 'none'};align-items:center;gap:6px;">
               <input type="date" id="reports-start-date" class="input input-sm" value="${this.reportsCustomStart || ''}">
-              <span style="color:var(--text-secondary);font-size:12px;">to</span>
+              <span class="text-xs text-gray">to</span>
               <input type="date" id="reports-end-date" class="input input-sm" value="${this.reportsCustomEnd || ''}">
             </div>
-
-            <button class="btn btn-primary btn-sm" id="btn-generate-report" onclick="window.app.generateReport()">
-              <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
-              <span>Generate Report</span>
-            </button>
-            <button class="btn btn-secondary btn-sm" onclick="window.app.exportReportsCsv()">
-              <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Export CSV
-            </button>
+            <button class="btn btn-primary btn-sm" id="btn-generate-report" onclick="window.app.generateReport()">↻ Refresh</button>
+            <button class="btn btn-secondary btn-sm" onclick="window.app.exportReportsCsv()">Export CSV (NZD)</button>
           </div>
         </div>
 
-        <!-- META TOKEN EXPIRY BANNER -->
+        <!-- METHODOLOGY & DATA FRESHNESS DISCLOSURE -->
+        <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:10px 14px;margin-bottom:18px;font-size:11.5px;color:#475569;display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;">
+          <span><strong>Cohort basis:</strong> ${escapeHtml(meta.cohortExplanation || 'Enquiries received within selected Pacific/Auckland dates.')}</span>
+          <span><strong>Updated:</strong> ${meta.dataFreshness ? new Date(meta.dataFreshness).toLocaleTimeString('en-NZ', { timeZone: 'Pacific/Auckland', hour: '2-digit', minute: '2-digit' }) + ' NZ' : 'Live'}</span>
+        </div>
+
         ${isTokenExpired ? `
-          <div class="auth-error-banner" style="margin-bottom:20px;padding:14px 18px;background:#FEF2F2;border:1px solid #FCA5A5;border-radius:8px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
-            <div style="display:flex;align-items:center;gap:10px;">
-              <span style="font-size:20px;">⚠️</span>
-              <div>
-                <strong style="color:#991B1B;font-size:13px;display:block;">Meta Connection Error: Access Token Expired</strong>
-                <span style="color:#7F1D1D;font-size:12px;">Your Meta OAuth access token has expired or is invalid. Ad spend and live Marketing API insights require a valid token.</span>
-              </div>
-            </div>
-            <button class="btn btn-sm btn-primary" onclick="window.app.navigate('connections')" style="background:#DC2626;border-color:#DC2626;white-space:nowrap;">
-              Reconnect Meta account →
-            </button>
+          <div style="margin-bottom:18px;padding:12px 16px;background:#FEF2F2;border:1px solid #FCA5A5;border-radius:8px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+            <div style="font-size:12.5px;color:#991B1B;"><strong>⚠️ Meta Token Expired:</strong> Ad spend &amp; platform lead metrics are unavailable until reconnected.</div>
+            ${isAdmin ? `<button class="btn btn-sm btn-primary" style="background:#DC2626;border-color:#DC2626;" onclick="window.app.navigate('connections')">Reconnect →</button>` : ''}
           </div>
         ` : ''}
 
-        <!-- KPI SUMMARY CARDS -->
-        <div class="stats-grid" style="grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:14px;margin-bottom:24px;">
-          <div class="stat-card">
-            <div class="stat-label">Total Leads</div>
-            <div class="stat-value">${totalLeads}</div>
-            <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Inbound CRM contacts</div>
+        <!-- 1. CORE DEALERSHIP KPI SUMMARY (Clickable Drill-Down) -->
+        <div class="stats-grid" style="grid-template-columns:repeat(auto-fit, minmax(175px, 1fr));gap:12px;margin-bottom:20px;">
+          <div class="stat-card" style="cursor:pointer;" onclick="window.app.drillDownReportToLeads({ pageId: window.app.reportsPageFilter })" title="Click to inspect underlying enquiries">
+            <div class="stat-label">Enquiries / Unique Buyers</div>
+            <div class="stat-value">${sum.totalEnquiries ?? 0} <span style="font-size:14px;font-weight:500;color:#64748B;">/ ${sum.uniqueContacts ?? 0}</span></div>
+            <div class="text-xs text-gray mt-1">Repeat vehicle enquiries counted separately</div>
           </div>
           <div class="stat-card">
-            <div class="stat-label">Total Ad Spend</div>
-            <div class="stat-value">${this.formatMoney(totalSpend)}</div>
-            <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Marketing API spend</div>
+            <div class="stat-label">Human Response (Median / p90)</div>
+            <div class="stat-value">${fmtMin(sum.medianHumanResponseMin)} <span style="font-size:14px;font-weight:500;color:#64748B;">/ ${fmtMin(sum.p90HumanResponseMin)}</span></div>
+            <div class="text-xs text-gray mt-1">Excludes automated replies (n=${sum.humanResponsesSampleSize || 0})</div>
           </div>
-          <div class="stat-card">
-            <div class="stat-label">Cost Per Lead (CPL)</div>
-            <div class="stat-value">${this.formatMoney(avgCpl)}</div>
-            <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Blended acquisition cost</div>
+          <div class="stat-card" style="cursor:pointer;" onclick="window.app.drillDownReportToLeads({ unassignedOnly: true })" title="Click to review unassigned leads">
+            <div class="stat-label">Needs Attention</div>
+            <div class="stat-value" style="color:${(sum.unassignedLeads||0)+(sum.overdueFollowups||0)>0?'#EA580C':'#059669'};">${sum.unassignedLeads ?? 0} <span style="font-size:13px;font-weight:500;color:#64748B;">unassigned · ${sum.overdueFollowups ?? 0} overdue</span></div>
+            <div class="text-xs text-gray mt-1">Avg open age: ${sum.avgPipelineAgeDays !== null && sum.avgPipelineAgeDays !== undefined ? sum.avgPipelineAgeDays + 'd' : 'No data'}</div>
           </div>
-          <div class="stat-card">
-            <div class="stat-label">Conversations</div>
-            <div class="stat-value">${totalConversations}</div>
-            <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">Messenger &amp; Instagram chats</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Deals Won</div>
-            <div class="stat-value">${wonLeads}</div>
-            <div style="font-size:11px;color:#10B981;margin-top:4px;">${conversionRate} win rate</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Won Pipeline Value</div>
-            <div class="stat-value">${this.formatMoney(pipelineWonValue)}</div>
-            <div style="font-size:11px;color:#10B981;margin-top:4px;">Closed deal revenue</div>
+          <div class="stat-card" style="cursor:pointer;" onclick="window.app.drillDownReportToLeads({ status: 'Won' })" title="Click to inspect sold deals">
+            <div class="stat-label">Sold Deals &amp; NZD Value</div>
+            <div class="stat-value" style="color:#059669;">${sum.dealsWon ?? 0} <span style="font-size:14px;font-weight:600;">(${sum.totalWonValue > 0 ? this.formatMoney(sum.totalWonValue) : 'No value recorded'})</span></div>
+            <div class="text-xs text-gray mt-1">Sale rate: ${fmtRate(sum.dealsWon || 0, sum.totalEnquiries || 0)}</div>
           </div>
         </div>
 
-        <!-- BREAKDOWN BY PAGE -->
-        <div class="dash-panel-card" style="margin-bottom:24px;">
+        <!-- 2. SALES FUNNEL PROGRESSION -->
+        <div class="dash-panel-card" style="margin-bottom:20px;">
           <div class="dash-panel-header">
-            <div class="dash-panel-title">Performance by Facebook Page &amp; Account</div>
-            <span class="text-xs text-gray">Scored by Page RLS permissions</span>
+            <div class="dash-panel-title">Dealership Sales Funnel (Acquisition Cohort)</div>
+            <span class="text-xs text-gray">Every percentage shows exact numerator / denominator</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;padding:14px 18px;">
+            <div style="padding:10px;border:1px solid #E2E8F0;border-radius:8px;background:#F8FAFC;">
+              <div class="text-xs text-gray">Received</div>
+              <div style="font-size:20px;font-weight:700;">${sum.totalEnquiries ?? 0}</div>
+              <div class="text-xs text-gray">100% baseline</div>
+            </div>
+            <div style="padding:10px;border:1px solid #E2E8F0;border-radius:8px;background:#F8FAFC;">
+              <div class="text-xs text-gray">Contacted</div>
+              <div style="font-size:20px;font-weight:700;">${sum.contacted ?? 0}</div>
+              <div class="text-xs text-gray">${fmtRate(sum.contacted || 0, sum.totalEnquiries || 0)}</div>
+            </div>
+            <div style="padding:10px;border:1px solid #E2E8F0;border-radius:8px;background:#F8FAFC;">
+              <div class="text-xs text-gray">Qualified</div>
+              <div style="font-size:20px;font-weight:700;">${sum.qualified ?? 0}</div>
+              <div class="text-xs text-gray">${fmtRate(sum.qualified || 0, sum.totalEnquiries || 0)}</div>
+            </div>
+            <div style="padding:10px;border:1px solid #E2E8F0;border-radius:8px;background:#F8FAFC;">
+              <div class="text-xs text-gray">Booked Visit</div>
+              <div style="font-size:20px;font-weight:700;">${sum.booked ?? 0}</div>
+              <div class="text-xs text-gray">${fmtRate(sum.booked || 0, sum.totalEnquiries || 0)}</div>
+            </div>
+            <div style="padding:10px;border:1px solid #E2E8F0;border-radius:8px;background:#F8FAFC;">
+              <div class="text-xs text-gray">Attended Yard</div>
+              <div style="font-size:20px;font-weight:700;">${sum.attended ?? 0}</div>
+              <div class="text-xs text-gray">${fmtRate(sum.attended || 0, sum.booked || 0)} of booked</div>
+            </div>
+            <div style="padding:10px;border:1px solid #BBF7D0;border-radius:8px;background:#ECFDF5;">
+              <div class="text-xs" style="color:#065F46;">Sold</div>
+              <div style="font-size:20px;font-weight:700;color:#059669;">${sum.dealsWon ?? 0}</div>
+              <div class="text-xs" style="color:#065F46;">${fmtRate(sum.dealsWon || 0, sum.totalEnquiries || 0)}</div>
+            </div>
+          </div>
+          ${lostReasons.length > 0 ? `
+            <div style="padding:0 18px 14px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+              <span class="text-xs text-gray" style="font-weight:600;">Lost Reasons (${sum.dealsLost}):</span>
+              ${lostReasons.map(([r, c]) => `<span class="badge badge-gray" style="font-size:11px;">${escapeHtml(r)}: ${c}</span>`).join('')}
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- 3. MARKETING SPEND & HONEST COST METRICS (Managers Only) -->
+        ${isAdmin ? `
+        <div class="dash-panel-card" style="margin-bottom:20px;">
+          <div class="dash-panel-header">
+            <div class="dash-panel-title">Meta Advertising Cost Metrics (NZD)</div>
+            <span class="text-xs text-gray">Platform-reported leads vs CRM-ingested leads shown separately; missing data shown honestly</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;padding:14px 18px;">
+            <div style="padding:10px;border:1px solid #E2E8F0;border-radius:8px;">
+              <div class="text-xs text-gray">Ad Spend (NZD)</div>
+              <div style="font-size:17px;font-weight:700;">${fmtNullableMoney(sum.totalSpend)}</div>
+            </div>
+            <div style="padding:10px;border:1px solid #E2E8F0;border-radius:8px;">
+              <div class="text-xs text-gray">Platform Leads / CRM Ad Leads</div>
+              <div style="font-size:17px;font-weight:700;">${sum.platformReportedLeads !== null && sum.platformReportedLeads !== undefined ? sum.platformReportedLeads : 'Unavailable'} / ${sum.crmAttributedAdLeads ?? 0}</div>
+            </div>
+            <div style="padding:10px;border:1px solid #E2E8F0;border-radius:8px;">
+              <div class="text-xs text-gray">Cost per CRM Lead (CPL)</div>
+              <div style="font-size:17px;font-weight:700;">${fmtNullableMoney(sum.cpl)}</div>
+            </div>
+            <div style="padding:10px;border:1px solid #E2E8F0;border-radius:8px;">
+              <div class="text-xs text-gray">Cost / Attended Visit</div>
+              <div style="font-size:17px;font-weight:700;">${fmtNullableMoney(sum.costPerAttendedAppointment)}</div>
+            </div>
+            <div style="padding:10px;border:1px solid #E2E8F0;border-radius:8px;">
+              <div class="text-xs text-gray">Cost / Attributed Sale</div>
+              <div style="font-size:17px;font-weight:700;">${fmtNullableMoney(sum.costPerAttributedSale)}</div>
+            </div>
+          </div>
+        </div>` : ''}
+
+        <!-- 4. BREAKDOWN BY PAGE -->
+        <div class="dash-panel-card" style="margin-bottom:20px;">
+          <div class="dash-panel-header">
+            <div class="dash-panel-title">Performance by Page</div>
+            <span class="text-xs text-gray">Click any page row to drill down into its leads</span>
           </div>
           <div style="overflow-x:auto;">
             <table class="crm-table">
               <thead>
                 <tr>
-                  <th>Page / Account</th>
-                  <th style="text-align:right;">Leads</th>
-                  <th style="text-align:right;">Spend</th>
-                  <th style="text-align:right;">CPL</th>
-                  <th style="text-align:right;">Conversations</th>
-                  <th style="text-align:right;">Deals Won</th>
+                  <th>Page</th>
+                  <th style="text-align:right;">Enquiries</th>
+                  <th style="text-align:right;">Unique Buyers</th>
+                  <th style="text-align:right;">Contacted</th>
+                  <th style="text-align:right;">Booked / Attended</th>
+                  <th style="text-align:right;">Sold</th>
+                  <th style="text-align:right;">Sale Value (NZD)</th>
+                  <th style="text-align:right;">Ad Spend</th>
                 </tr>
               </thead>
               <tbody>
                 ${pageBreakdown.length === 0 ? `
-                  <tr><td colspan="6" class="empty-cell" style="text-align:center;padding:24px 16px;color:var(--text-muted);">No page data found for selected period.</td></tr>
+                  <tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted);">No authorised page data for this period.</td></tr>
                 ` : pageBreakdown.map(p => `
-                  <tr>
+                  <tr style="cursor:pointer;" onclick="window.app.drillDownReportToLeads({ pageId: '${p.pageId}' })">
                     <td style="font-weight:600;">${escapeHtml(p.pageName)}</td>
-                    <td style="text-align:right;font-weight:600;">${p.leads}</td>
-                    <td style="text-align:right;">${this.formatMoney(p.spend)}</td>
-                    <td style="text-align:right;font-weight:600;">${this.formatMoney(p.cpl)}</td>
-                    <td style="text-align:right;">${p.conversations}</td>
-                    <td style="text-align:right;font-weight:600;color:#10B981;">${p.dealsWon}</td>
+                    <td style="text-align:right;font-weight:600;">${p.enquiries ?? p.leads ?? 0}</td>
+                    <td style="text-align:right;">${p.uniqueContacts ?? '—'}</td>
+                    <td style="text-align:right;">${p.contacted ?? 0}</td>
+                    <td style="text-align:right;">${p.booked ?? 0} / ${p.attended ?? 0}</td>
+                    <td style="text-align:right;font-weight:600;color:#059669;">${p.dealsWon ?? 0}</td>
+                    <td style="text-align:right;">${p.saleValueNzd > 0 ? this.formatMoney(p.saleValueNzd) : '—'}</td>
+                    <td style="text-align:right;">${fmtNullableMoney(p.spend)}</td>
                   </tr>
                 `).join('')}
               </tbody>
@@ -9816,37 +9762,76 @@ class MetaCRMApp {
           </div>
         </div>
 
-        <!-- BREAKDOWN BY CAMPAIGN -->
-        <div class="dash-panel-card">
+        <!-- 5. BREAKDOWN BY SALESPERSON (Managers Only) -->
+        ${isAdmin && staffBreakdown.length > 0 ? `
+        <div class="dash-panel-card" style="margin-bottom:20px;">
           <div class="dash-panel-header">
-            <div class="dash-panel-title">Performance by Campaign Attribution</div>
-            <span class="text-xs text-gray">Reconciled with Meta Ads Manager</span>
+            <div class="dash-panel-title">Salesperson Response &amp; Results</div>
+            <span class="text-xs text-gray">Human response times only (automated acknowledgements excluded)</span>
           </div>
           <div style="overflow-x:auto;">
             <table class="crm-table">
               <thead>
                 <tr>
-                  <th>Campaign Name</th>
-                  <th>Page / Account</th>
+                  <th>Salesperson</th>
+                  <th style="text-align:right;">Enquiries</th>
+                  <th style="text-align:right;">Contacted</th>
+                  <th style="text-align:right;">Booked / Attended</th>
+                  <th style="text-align:right;">Sold</th>
+                  <th style="text-align:right;">Median Response</th>
+                  <th style="text-align:right;">p90 Response</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${staffBreakdown.map(s => `
+                  <tr>
+                    <td style="font-weight:600;">${escapeHtml(s.staffName)}</td>
+                    <td style="text-align:right;font-weight:600;">${s.enquiries}</td>
+                    <td style="text-align:right;">${s.contacted}</td>
+                    <td style="text-align:right;">${s.booked} / ${s.attended}</td>
+                    <td style="text-align:right;font-weight:600;color:#059669;">${s.dealsWon}</td>
+                    <td style="text-align:right;">${fmtMin(s.medianResponseMin)}</td>
+                    <td style="text-align:right;">${fmtMin(s.p90ResponseMin)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>` : ''}
+
+        <!-- 6. CAMPAIGN & FORM ATTRIBUTION -->
+        <div class="dash-panel-card">
+          <div class="dash-panel-header">
+            <div class="dash-panel-title">Campaign &amp; Form Attribution</div>
+            <span class="text-xs text-gray">${escapeHtml(meta.attributionModel || 'Unavailable attribution is explicitly labelled Unknown.')}</span>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="crm-table">
+              <thead>
+                <tr>
+                  <th>Campaign</th>
+                  <th>Page</th>
                   <th>Status</th>
-                  <th style="text-align:right;">Spend</th>
-                  <th style="text-align:right;">Leads</th>
-                  <th style="text-align:right;">CPL</th>
-                  <th style="text-align:right;">Deals Won</th>
+                  <th style="text-align:right;">Ad Spend (NZD)</th>
+                  <th style="text-align:right;">Platform Leads</th>
+                  <th style="text-align:right;">CRM Leads</th>
+                  <th style="text-align:right;">CPL (NZD)</th>
+                  <th style="text-align:right;">Sold</th>
                 </tr>
               </thead>
               <tbody>
                 ${campaignBreakdown.length === 0 ? `
-                  <tr><td colspan="7" class="empty-cell" style="text-align:center;padding:24px 16px;color:var(--text-muted);">No campaign data found for selected period.</td></tr>
+                  <tr><td colspan="8" style="text-align:center;padding:20px;color:var(--text-muted);">No campaign attribution records for this period.</td></tr>
                 ` : campaignBreakdown.map(c => `
                   <tr>
                     <td style="font-weight:600;">${escapeHtml(c.campaignName)}</td>
-                    <td style="color:var(--text-secondary);font-size:12px;">${escapeHtml(c.pageName || 'Connected Page')}</td>
-                    <td><span class="badge ${c.status === 'ACTIVE' ? 'badge-green' : 'badge-gray'}">${escapeHtml(c.status || 'PAUSED')}</span></td>
-                    <td style="text-align:right;">${this.formatMoney(c.spend)}</td>
-                    <td style="text-align:right;font-weight:600;">${c.leads}</td>
-                    <td style="text-align:right;font-weight:600;">${this.formatMoney(c.cpl)}</td>
-                    <td style="text-align:right;font-weight:600;color:#10B981;">${c.dealsWon || 0}</td>
+                    <td class="text-xs text-gray">${escapeHtml(c.pageName || 'Unknown')}</td>
+                    <td><span class="badge ${c.status === 'ACTIVE' ? 'badge-green' : 'badge-gray'}">${escapeHtml(c.status || 'UNKNOWN')}</span></td>
+                    <td style="text-align:right;">${fmtNullableMoney(c.spend)}</td>
+                    <td style="text-align:right;">${c.platformLeads !== null && c.platformLeads !== undefined ? c.platformLeads : 'Unavailable'}</td>
+                    <td style="text-align:right;font-weight:600;">${c.crmLeads ?? c.leads ?? 0}</td>
+                    <td style="text-align:right;">${fmtNullableMoney(c.cpl)}</td>
+                    <td style="text-align:right;font-weight:600;color:#059669;">${c.dealsWon || 0}</td>
                   </tr>
                 `).join('')}
               </tbody>
@@ -9858,36 +9843,42 @@ class MetaCRMApp {
   }
 
   exportReportsCsv() {
-    const rep = this.reportsData || {};
+    const rep = (this.reportsData && this.reportsData.summary) ? this.reportsData : this._buildLocalAuthorisedReport();
     const sum = rep.summary || {};
     const pageBreakdown = rep.pageBreakdown || [];
     const campaignBreakdown = rep.campaignBreakdown || [];
 
-    let csv = 'Report,Category,Metric,Value\n';
-    csv += `"Summary","Period","Date Range","${this.reportsDateRange || 'last_7d'}"\n`;
-    csv += `"Summary","Overview","Total Leads","${sum.totalLeads || 0}"\n`;
-    csv += `"Summary","Overview","Total Spend (INR)","${sum.totalSpend || 0}"\n`;
-    csv += `"Summary","Overview","Cost Per Lead (INR)","${sum.cpl || 0}"\n`;
-    csv += `"Summary","Overview","Conversations","${sum.totalConversations || 0}"\n`;
-    csv += `"Summary","Overview","Deals Won","${sum.dealsWon || 0}"\n`;
+    let csv = 'Section,Category,Metric,Value\n';
+    csv += `"Summary","Period (Pacific/Auckland)","Date Range","${this.reportsDateRange || 'last_7d'}"\n`;
+    csv += `"Summary","Overview","Total Enquiries","${sum.totalEnquiries || 0}"\n`;
+    csv += `"Summary","Overview","Unique Contacts","${sum.uniqueContacts || 0}"\n`;
+    csv += `"Summary","Overview","Contacted","${sum.contacted || 0}"\n`;
+    csv += `"Summary","Overview","Booked Yard Visits","${sum.booked || 0}"\n`;
+    csv += `"Summary","Overview","Attended Yard Visits","${sum.attended || 0}"\n`;
+    csv += `"Summary","Overview","Deals Sold","${sum.dealsWon || 0}"\n`;
+    csv += `"Summary","Overview","Recorded Sale Value (NZD)","${sum.totalWonValue || 0}"\n`;
+    csv += `"Summary","Speed","Median Human Response (Min)","${sum.medianHumanResponseMin ?? 'No data'}"\n`;
+    csv += `"Summary","Speed","p90 Human Response (Min)","${sum.p90HumanResponseMin ?? 'No data'}"\n`;
+    csv += `"Summary","Ads","Total Spend (NZD)","${sum.totalSpend ?? 'Unavailable'}"\n`;
+    csv += `"Summary","Ads","Cost Per CRM Lead (NZD)","${sum.cpl ?? 'Unavailable'}"\n`;
 
-    csv += '\nPage Breakdown\nPage_ID,Page_Name,Leads,Spend_INR,CPL_INR,Conversations,Deals_Won\n';
+    csv += '\nPage Breakdown\nPage_ID,Page_Name,Enquiries,Unique_Buyers,Contacted,Booked,Attended,Sold,Sale_Value_NZD,Spend_NZD\n';
     pageBreakdown.forEach(p => {
-      csv += `"${p.pageId}","${p.pageName}","${p.leads}","${p.spend}","${p.cpl}","${p.conversations}","${p.dealsWon}"\n`;
+      csv += `"${p.pageId}","${p.pageName}","${p.enquiries ?? p.leads ?? 0}","${p.uniqueContacts ?? 0}","${p.contacted ?? 0}","${p.booked ?? 0}","${p.attended ?? 0}","${p.dealsWon ?? 0}","${p.saleValueNzd ?? 0}","${p.spend ?? 'Unavailable'}"\n`;
     });
 
-    csv += '\nCampaign Breakdown\nCampaign_ID,Campaign_Name,Page_Name,Status,Spend_INR,Leads,CPL_INR,Deals_Won\n';
+    csv += '\nCampaign Breakdown\nCampaign_ID,Campaign_Name,Page_Name,Status,Spend_NZD,Platform_Leads,CRM_Leads,CPL_NZD,Sold\n';
     campaignBreakdown.forEach(c => {
-      csv += `"${c.campaignId}","${c.campaignName}","${c.pageName}","${c.status}","${c.spend}","${c.leads}","${c.cpl}","${c.dealsWon || 0}"\n`;
+      csv += `"${c.campaignId || ''}","${c.campaignName}","${c.pageName}","${c.status}","${c.spend ?? 'Unavailable'}","${c.platformLeads ?? 'Unavailable'}","${c.crmLeads ?? c.leads ?? 0}","${c.cpl ?? 'Unavailable'}","${c.dealsWon || 0}"\n`;
     });
 
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `metacrm_report_${this.reportsDateRange || 'last_7d'}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `nova_autos_report_nzd_${this.reportsDateRange || 'last_7d'}_${this._getNZDate()}.csv`;
     a.click();
-    this.toast('Reports exported to CSV successfully! ✓', 'success');
+    this.toast('Authorised NZD report exported to CSV ✓', 'success');
   }
 }
 
