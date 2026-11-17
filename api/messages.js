@@ -145,12 +145,36 @@ async function messagesHandler(req, res) {
     }
   }
 
-  // 3. PATCH /api/messages — Update Conversation (read, unread, archive)
+  // 3. PATCH /api/messages — Update Conversation with Mandatory Page Scoping Authorization
   if (req.method === 'PATCH') {
     const body = req.body || {};
     const convId = body.conversation_id || body.conversationId || body.id || req.query?.id || req.query?.conversation_id;
     if (!convId) {
       return res.status(400).json({ error: "Missing conversation_id" });
+    }
+
+    if (user.role !== 'admin' && !user.pages.includes('*')) {
+      const normConvId = toDeterministicUuid(convId);
+      if (user.convs && user.convs.length > 0 && !user.convs.includes(convId) && !user.convs.includes(normConvId)) {
+        return res.status(403).json({ error: "Forbidden: Cannot modify unassigned conversation" });
+      }
+      if (!user.pages || user.pages.length === 0) {
+        return res.status(403).json({ error: "Forbidden: Staff member has no assigned pages" });
+      }
+      if (body.page_id && !user.pages.includes(String(body.page_id))) {
+        return res.status(403).json({ error: "Forbidden: Conversation belongs to an unassigned page" });
+      }
+      if (supabase) {
+        const { data: convCheck } = await supabase
+          .from('conversations')
+          .select('id, page_id, account_id')
+          .or(`id.eq.${convId},id.eq.${normConvId}`)
+          .maybeSingle();
+        const convPage = convCheck?.page_id || convCheck?.account_id;
+        if (convPage && !user.pages.includes(String(convPage))) {
+          return res.status(403).json({ error: "Forbidden: Conversation belongs to an unassigned page" });
+        }
+      }
     }
 
     const updates = { updated_at: new Date().toISOString() };
@@ -285,10 +309,35 @@ async function messagesHandler(req, res) {
       return res.status(400).json({ error: "Message text or attachment is required" });
     }
 
-    // Check idempotency cache to prevent double-send on rapid clicks or network retries
+    // 1. Fast in-memory idempotency cache to prevent double-send on rapid clicks or retries
     const cached = getCachedResponse(clientMsgId);
     if (cached) {
-      return res.status(200).json(cached);
+      return res.status(200).json({ ...cached, deduplicated: true });
+    }
+
+    // 2. Persistent DB idempotency check across serverless cold starts
+    if (clientMsgId && supabase) {
+      try {
+        const { data: existingMsg } = await supabase
+          .from('messages')
+          .select('id, meta_mid, client_msg_id, created_at')
+          .eq('client_msg_id', String(clientMsgId))
+          .limit(1)
+          .maybeSingle();
+        if (existingMsg) {
+          const replayRes = {
+            status: "sent",
+            deduplicated: true,
+            metaVerified: true,
+            messageId: existingMsg.meta_mid || existingMsg.id,
+            client_msg_id: clientMsgId,
+            content: text || (attachment ? `📎 ${attachment.name || 'Attachment'}` : ''),
+            sentAt: existingMsg.created_at
+          };
+          setCachedResponse(clientMsgId, replayRes);
+          return res.status(200).json(replayRes);
+        }
+      } catch (e) {}
     }
 
     if (user.role !== 'admin' && !user.pages.includes('*')) {

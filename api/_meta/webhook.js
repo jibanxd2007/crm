@@ -1,4 +1,5 @@
 const { verifyMetaSignature, createVercelHandler } = require('../_utils/index.js');
+const { ingestLeadAdEvent } = require('../_utils/lead-ingestion.js');
 let createClient = null;
 try {
   createClient = require('@supabase/supabase-js').createClient;
@@ -118,73 +119,21 @@ async function metaWebhookHandler(req, res) {
 
           processedLeads++;
 
-          // Attempt to fetch full lead data from Meta Graph API if token available
-          let leadName = 'New Lead';
-          let leadEmail = '';
-          let leadPhone = '';
-          let customFields = {};
-          let formName = leadVal.form_name || `Form #${formId || ''}`;
-          let campaignName = leadVal.campaign_name || '';
-          let adsetName = leadVal.adset_name || '';
-          let adName = leadVal.ad_name || '';
-
-          const pageToken = (global.META_PAGE_TOKENS && global.META_PAGE_TOKENS[entryPageId]?.accessToken) || process.env.META_ACCESS_TOKEN || process.env.META_SYSTEM_USER_ACCESS_TOKEN;
-          if (pageToken && leadgenId) {
-            try {
-              const { httpsRequest } = require('../_utils/index.js');
-              const graphLead = await httpsRequest(`https://graph.facebook.com/v24.0/${leadgenId}?fields=id,created_time,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,form_id,field_data&access_token=${pageToken}`);
-              if (graphLead && Array.isArray(graphLead.field_data)) {
-                if (graphLead.campaign_name) campaignName = graphLead.campaign_name;
-                if (graphLead.adset_name) adsetName = graphLead.adset_name;
-                if (graphLead.ad_name) adName = graphLead.ad_name;
-
-                for (const field of graphLead.field_data) {
-                  const fname = (field.name || '').toLowerCase();
-                  const fval = Array.isArray(field.values) ? field.values[0] : field.values;
-                  if (fname.includes('full_name') || fname === 'name') leadName = fval || leadName;
-                  else if (fname.includes('first_name')) leadName = fval ? `${fval} ${leadName}`.trim() : leadName;
-                  else if (fname.includes('last_name')) leadName = fval ? `${leadName} ${fval}`.trim() : leadName;
-                  else if (fname.includes('email')) leadEmail = fval || leadEmail;
-                  else if (fname.includes('phone')) leadPhone = fval || leadPhone;
-                  else customFields[field.name] = fval;
-                }
-              }
-            } catch (err) {
-              console.warn(`[Leadgen Graph API Retrieval Note]: ${err.message}`);
-            }
-          }
-
-          // Persist lead with complete attribution to Supabase
           const supabase = getSupabaseAdmin();
-          if (supabase) {
-            try {
-              // Idempotent upsert deduplicating on meta_lead_id
-              const { error: insErr } = await supabase
-                .from('leads')
-                .upsert({
-                  full_name: leadName,
-                  email: leadEmail || null,
-                  phone: leadPhone || null,
-                  source: 'Facebook Lead Ad',
-                  status: 'New',
-                  meta_lead_id: String(leadgenId),
-                  form_id: formId ? String(formId) : null,
-                  form_name: formName || null,
-                  campaign_id: campaignId ? String(campaignId) : null,
-                  campaign_name: campaignName || null,
-                  adset_id: adsetId ? String(adsetId) : null,
-                  adset_name: adsetName || null,
-                  ad_id: adId ? String(adId) : null,
-                  ad_name: adName || null,
-                  created_at: createdTime
-                }, { onConflict: 'meta_lead_id', ignoreDuplicates: true });
-
-              if (insErr) {
-                console.warn(`[Lead DB Ingest Warning]: ${insErr.message}`);
-              }
-            } catch (leadDbErr) {
-              console.warn(`[Lead DB Ingest Note]: ${leadDbErr.message}`);
-            }
+          const pageToken = (global.META_PAGE_TOKENS && global.META_PAGE_TOKENS[entryPageId]?.accessToken) || process.env.META_ACCESS_TOKEN || process.env.META_SYSTEM_USER_ACCESS_TOKEN;
+          const ingestRes = await ingestLeadAdEvent(supabase, {
+            ...leadVal,
+            leadgen_id: leadgenId,
+            page_id: leadVal.page_id || entryPageId,
+            form_id: formId,
+            ad_id: adId,
+            adset_id: adsetId,
+            campaign_id: campaignId,
+            created_time: leadVal.created_time || Math.floor(new Date(createdTime).getTime() / 1000),
+            source: 'Facebook Lead Ad'
+          }, { provider: 'meta_direct', pageAccessToken: pageToken });
+          if (ingestRes.isDuplicate) {
+            duplicateIgnored = true;
           }
         }
       }

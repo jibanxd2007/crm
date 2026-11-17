@@ -6294,21 +6294,127 @@ class MetaCRMApp {
                     <span style="color:var(--border);">•</span>
                     ${assignedStaff.length > 0
                       ? `<span class="badge badge-indigo text-xs" style="padding:2px 6px;">Assigned: ${assignedStaff.map(s => escapeHtml(s.displayName || s.name)).join(', ')}</span>`
-                      : `<span class="badge badge-gray text-xs" style="color:var(--text-muted);padding:2px 6px;">Assigned to: All Staff (Unrestricted)</span>`
+                      : `<span class="badge badge-orange text-xs" style="padding:2px 6px;">No reps assigned (Admin only)</span>`
                     }
                   </div>
                 </div>
               </div>
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-                <span class="badge badge-green"><span class="status-dot green"></span> Receiving leads &amp; messages</span>
+                ${(() => {
+                  const healthPages = (this._connectionHealth && Array.isArray(this._connectionHealth.pages)) ? this._connectionHealth.pages : [];
+                  const hp = healthPages.find(x => String(x.pageId) === String(pageIdStr) || String(x.accountId) === String(pageIdStr) || (x.pageName && p.name && x.pageName.toLowerCase() === p.name.toLowerCase()));
+                  if (!hp) return `<span class="badge badge-gray text-xs">Checking live permissions…</span>`;
+                  return `
+                    <span class="badge ${hp.messagingReady ? 'badge-green' : 'badge-orange'}" title="Messenger / IG Direct status">${hp.messagingReady ? '✓ Messaging' : '⚠ Messaging'}</span>
+                    ${!isIg ? `<span class="badge ${hp.leadAdsReady ? 'badge-green' : 'badge-orange'}" title="Lead Ads webhook + leads_retrieval status">${hp.leadAdsReady ? '✓ Lead Ads' : '⚠ Lead Ads'}</span>` : ''}
+                    <span class="badge ${hp.adReportingReady ? 'badge-green' : 'badge-gray'}" title="Meta Ads Insights reporting status">${hp.adReportingReady ? '✓ Ad Reporting' : 'Ad Reporting N/A'}</span>
+                    ${hp.needsReconnection ? `<button class="btn btn-primary btn-sm" style="background:#D97706;border-color:#B45309;" onclick="window.app.connectFacebookOAuth()">Reconnect</button>` : ''}
+                  `;
+                })()}
                 <button class="btn btn-secondary btn-sm" onclick="window.app.openAssignStaffToPageModal('${p.id || p.page_id}')">Assign Staff</button>
                 <button class="btn btn-ghost btn-sm text-red" style="color:var(--danger);" onclick="window.app.disconnectPage('${p.id || p.page_id}')">Disconnect</button>
               </div>
             </div>`;
           }).join('')}
         </div>
+      </div>
+
+      <!-- LEAD ADS INGESTION HEALTH & GUIDED TEST LEAD VERIFICATION -->
+      <div class="card" style="margin-top:16px;">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+          <div>
+            <div class="card-title">Meta Lead Ads Ingestion Health &amp; Guided Test</div>
+            <div class="text-xs text-gray">Distinguishes OAuth connection from live webhook delivery, field mapping, and duplicate replay safety.</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="window.app.loadConnectionHealth(true)">↻ Refresh Health</button>
+            <button class="btn btn-primary btn-sm" onclick="window.app.runGuidedTestLead('${primaryPage ? (primaryPage.page_id || primaryPage.id) : '1342542735606057'}', '${escapeHtml(primaryPage ? primaryPage.name : 'Nova auto nz')}')">🧪 Run Guided Test Lead</button>
+          </div>
+        </div>
+        <div style="padding:16px 20px;">
+          ${(() => {
+            const h = this._connectionHealth;
+            if (!h) {
+              setTimeout(() => this.loadConnectionHealth(false), 30);
+              return '<div class="text-xs text-gray">Checking live Zernio / Meta gateway health…</div>';
+            }
+            const ing = h.ingestion || {};
+            return `
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px;">
+                <div style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:#F8FAFC;">
+                  <div class="text-xs text-gray">Gateway Status</div>
+                  <div style="font-weight:700;font-size:14px;color:${h.status==='ok'?'#059669':'#B45309'};">${h.status==='ok' ? '● Connected' : (h.status==='degraded' ? '⚠ Degraded' : 'Not configured')}</div>
+                </div>
+                <div style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:#F8FAFC;">
+                  <div class="text-xs text-gray">Webhook Verification</div>
+                  <div style="font-weight:700;font-size:14px;">${h.webhookSignatureEnforced ? 'HMAC-SHA256 Enforced' : 'Secret Missing'}</div>
+                </div>
+                <div style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:#F8FAFC;">
+                  <div class="text-xs text-gray">Events Processed / Dupes</div>
+                  <div style="font-weight:700;font-size:14px;">${ing.webhooksProcessed || 0} / ${ing.duplicatesIgnored || 0} ignored</div>
+                </div>
+                <div style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:#F8FAFC;">
+                  <div class="text-xs text-gray">Failed / Retry Queue</div>
+                  <div style="font-weight:700;font-size:14px;color:${(ing.failedCount||0)>0?'#DC2626':'#0F172A'};">${ing.failedCount || 0} / ${ing.recoveryQueueSize || 0}</div>
+                </div>
+              </div>
+              ${h.liveAccountsError ? `<div style="padding:10px 12px;background:#FEF2F2;border:1px solid #FCA5A5;border-radius:8px;color:#991B1B;font-size:12px;margin-bottom:12px;">⚠️ Gateway warning: ${escapeHtml(h.liveAccountsError)}</div>` : ''}
+              <div id="guided-test-lead-result"></div>
+            `;
+          })()}
+        </div>
       </div>` : ''}
     `;
+  }
+
+  async loadConnectionHealth(notify = false) {
+    try {
+      const res = await fetch('/api/zernio?path=health', {
+        headers: (this.svc && this.svc.getAuthHeaders) ? this.svc.getAuthHeaders(false) : {}
+      });
+      if (res.ok) {
+        this._connectionHealth = await res.json();
+        if (notify) this.toast('Connection health refreshed ✓', 'success');
+        if (this.currentRoute === 'connections') this.renderConnections();
+      }
+    } catch (e) {
+      if (notify) this.toast('Could not load connection health: ' + e.message, 'error');
+    }
+  }
+
+  async runGuidedTestLead(pageId, pageName) {
+    const out = document.getElementById('guided-test-lead-result');
+    if (out) out.innerHTML = '<div class="text-xs text-gray">Running guided Lead Ad ingestion + duplicate replay test…</div>';
+    try {
+      const headers = (this.svc && this.svc.getAuthHeaders) ? this.svc.getAuthHeaders() : { 'Content-Type': 'application/json' };
+      const res = await fetch('/api/zernio?path=test-lead', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ page_id: pageId, page_name: pageName })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Test lead failed');
+      const v = data.verification || {};
+      if (data.lead && this.svc && this.svc.handleInboundMetaLead) {
+        this.svc.handleInboundMetaLead(data.lead);
+      }
+      if (out) {
+        out.innerHTML = `
+          <div style="padding:12px 14px;background:#ECFDF5;border:1px solid #6EE7B7;border-radius:8px;font-size:12px;color:#065F46;">
+            <strong>✓ Guided Test Lead Verified (${escapeHtml(pageName)})</strong>
+            <ul style="margin:6px 0 0 18px;line-height:1.6;">
+              <li>Lead created once: <strong>${v.createdOnce ? 'PASS' : 'FAIL'}</strong> · Webhook replay deduplicated: <strong>${v.replayDeduplicated ? 'PASS' : 'FAIL'}</strong></li>
+              <li>Mapped contact: <strong>${escapeHtml(v.mappedStandardFields?.name || '—')}</strong> (${escapeHtml(v.mappedStandardFields?.phone || '—')})</li>
+              <li>Mapped custom answers: Vehicle = <strong>${escapeHtml(v.vehicleInterest || '—')}</strong>, Budget = <strong>${v.budgetNzd ? this.formatMoney(v.budgetNzd) : '—'}</strong>, Payment = <strong>${escapeHtml(v.paymentPreference || '—')}</strong></li>
+              <li>Messenger auto-open blocked (respects Meta rules): <strong>${v.messagingEligible === false ? 'PASS' : 'CHECK'}</strong></li>
+            </ul>
+          </div>
+        `;
+      }
+      this.toast('Guided Test Lead verified and added to Leads ✓', 'success');
+    } catch (err) {
+      if (out) out.innerHTML = `<div style="padding:10px 12px;background:#FEF2F2;border:1px solid #FCA5A5;border-radius:8px;color:#991B1B;font-size:12px;">⚠️ Test lead error: ${escapeHtml(err.message)}</div>`;
+    }
   }
 
   syncPage(pageId) {

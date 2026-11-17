@@ -13,6 +13,7 @@ const {
   registerConversationIdMapping, 
   safeDbUpsert 
 } = require('./_utils/index.js');
+const { ingestLeadAdEvent, logWebhookEvent } = require('./_utils/lead-ingestion.js');
 
 // Structured diagnostics and observability tracker for Zernio & Meta synchronization
 const SYNC_DIAGNOSTICS = {
@@ -132,6 +133,180 @@ async function zernioUnifiedHandler(req, res) {
         hasSupabase: !!getSupabaseAdmin(),
         timestamp: new Date().toISOString()
       }
+    });
+  }
+
+  // 0.2 INTEGRATION & LEAD ADS CAPABILITY HEALTH MATRIX
+  if (path === 'health' || url.includes('/health')) {
+    res.setHeader('Content-Type', 'application/json');
+    const apiKey = process.env.ZERNIO_API_KEY;
+    const hasWebhookSecret = Boolean(process.env.ZERNIO_WEBHOOK_SECRET);
+    const hasMetaToken = Boolean(process.env.META_ACCESS_TOKEN || process.env.META_SYSTEM_USER_ACCESS_TOKEN);
+    const supabase = getSupabaseAdmin();
+
+    let pagesHealth = [];
+    let liveAccountsError = null;
+
+    if (apiKey) {
+      try {
+        const accData = await new Promise((resolve, reject) => {
+          const r = https.get({
+            hostname: 'zernio.com',
+            port: 443,
+            path: '/api/v1/accounts',
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Accept': 'application/json' }
+          }, (resp) => {
+            let d = '';
+            resp.on('data', c => d += c);
+            resp.on('end', () => {
+              try { resolve(JSON.parse(d)); } catch (e) { reject(new Error('Invalid Zernio response')); }
+            });
+          });
+          r.setTimeout(6000, () => { r.destroy(); reject(new Error('Zernio API timeout')); });
+          r.on('error', reject);
+        });
+
+        const accounts = Array.isArray(accData?.accounts) ? accData.accounts : [];
+        pagesHealth = accounts
+          .filter(a => {
+            const n = String(a.displayName || a.username || '').toLowerCase();
+            return !n.includes('jiban') && !n.includes('prakash') && !n.includes('omm');
+          })
+          .map(a => {
+            const perms = Array.isArray(a.permissions) ? a.permissions : [];
+            const hasMessagingPerm = perms.includes('pages_messaging') || perms.includes('instagram_manage_messages');
+            const hasLeadsPerm = perms.includes('leads_retrieval');
+            const hasAdsPerm = perms.includes('ads_read') || perms.includes('ads_management');
+            const leadgenSubscribed = Boolean(a.metadata?.leadgenSubscribed);
+            const messagingSubscribed = a.metadata?.messagingSubscribed !== false;
+            const tokenExpired = a.tokenExpiresAt ? (new Date(a.tokenExpiresAt) < new Date()) : false;
+            const needsReconnection = Boolean(a.needsReconnection || tokenExpired || a.isActive === false);
+
+            const missingPermissions = [];
+            if (!hasMessagingPerm) missingPermissions.push('pages_messaging');
+            if (a.platform === 'facebook' && !hasLeadsPerm) missingPermissions.push('leads_retrieval');
+            if (!hasAdsPerm) missingPermissions.push('ads_read');
+
+            return {
+              accountId: a._id,
+              pageId: a.metadata?.selectedPageId || a.platformUserId || a._id,
+              pageName: (a.metadata?.selectedPageName || a.displayName || a.username || 'Connected Page').trim(),
+              platform: a.platform || 'facebook',
+              oauthConnected: Boolean(a.isActive && !needsReconnection),
+              messagingReady: Boolean(a.isActive && !needsReconnection && hasMessagingPerm && messagingSubscribed),
+              leadAdsReady: Boolean(a.isActive && !needsReconnection && hasLeadsPerm && leadgenSubscribed),
+              adReportingReady: Boolean(a.isActive && !needsReconnection && hasAdsPerm),
+              leadgenSubscribed,
+              needsReconnection,
+              tokenExpiresAt: a.tokenExpiresAt || null,
+              missingPermissions,
+              actionRequired: needsReconnection
+                ? 'Token expired or disconnected — click Reconnect.'
+                : (!leadgenSubscribed && a.platform === 'facebook' ? 'Lead Ads webhook not subscribed — reconnect page with leads_retrieval permission.' : null)
+            };
+          });
+      } catch (hErr) {
+        liveAccountsError = hErr.message;
+      }
+    }
+
+    let recentEvents = (global.CRM_WEBHOOK_LOG || []).slice(0, 10);
+    if (supabase) {
+      try {
+        const { data: dbEvents } = await supabase
+          .from('webhook_events')
+          .select('id, provider, event_type, external_event_id, page_id, status, error_message, processed_at, created_at')
+          .order('created_at', { ascending: false })
+          .limit(10);
+        if (Array.isArray(dbEvents) && dbEvents.length > 0) recentEvents = dbEvents;
+      } catch (e) {}
+    }
+
+    return res.status(200).json({
+      status: apiKey ? (liveAccountsError ? 'degraded' : 'ok') : 'not_configured',
+      gatewayConfigured: Boolean(apiKey),
+      webhookSignatureEnforced: hasWebhookSecret,
+      metaDirectTokenConfigured: hasMetaToken,
+      liveAccountsError,
+      pages: pagesHealth,
+      ingestion: {
+        webhooksReceived: SYNC_DIAGNOSTICS.webhooksReceived,
+        webhooksProcessed: SYNC_DIAGNOSTICS.webhooksProcessed,
+        duplicatesIgnored: SYNC_DIAGNOSTICS.duplicatesIgnored,
+        failedCount: SYNC_DIAGNOSTICS.failedProcessingAttempts,
+        recoveryQueueSize: (global.RECOVERABLE_FAILED_WEBHOOKS || []).length,
+        lastSuccessfulEventAt: recentEvents.find(e => e.status === 'processed')?.processed_at || null,
+        recentEvents
+      },
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // 0.3 GUIDED TEST-LEAD WORKFLOW (Verifies real ingestion, mapping, assignment & duplicate replay)
+  if (path === 'test-lead' || url.includes('/test-lead')) {
+    res.setHeader('Content-Type', 'application/json');
+    const user = resolveUser(req.headers);
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ error: "Forbidden: Admin authorization required to run test-lead verification." });
+    }
+    const body = req.body || {};
+    const supabase = getSupabaseAdmin();
+    const targetPageId = String(body.page_id || body.pageId || '1342542735606057');
+    const targetPageName = body.page_name || body.pageName || 'Nova auto nz';
+    const testLeadgenId = body.meta_lead_id || `test_lead_${Date.now()}`;
+
+    const samplePayload = {
+      leadgen_id: testLeadgenId,
+      page_id: targetPageId,
+      page_name: targetPageName,
+      platform: 'facebook',
+      source: 'Facebook Lead Ad (Guided Test)',
+      form_id: body.form_id || 'form_nz_finance_test',
+      form_name: body.form_name || 'NZ Vehicle Finance Enquiry Form',
+      campaign_id: body.campaign_id || null,
+      campaign_name: body.campaign_name || null,
+      created_time: Math.floor(Date.now() / 1000),
+      field_data: [
+        { name: 'full_name', values: [body.name || 'Aroha Tane (Test Lead)'] },
+        { name: 'email', values: [body.email || `aroha.test.${Date.now()}@example.co.nz`] },
+        { name: 'phone_number', values: [body.phone || '+64 21 555 0199'] },
+        { name: 'preferred_vehicle', values: [body.vehicle || '2019 Toyota Aqua Hybrid'] },
+        { name: 'budget_nzd', values: ['14000'] },
+        { name: 'payment_type', values: ['Finance — Zero Deposit'] },
+        { name: 'buying_timeframe', values: ['This weekend'] }
+      ]
+    };
+
+    const firstRun = await ingestLeadAdEvent(supabase, samplePayload, {
+      provider: 'guided_test',
+      eligibleStaffIds: Array.isArray(body.eligibleStaffIds) ? body.eligibleStaffIds : []
+    });
+    // Immediately replay the identical payload to prove idempotent duplicate protection
+    const replayRun = await ingestLeadAdEvent(supabase, samplePayload, {
+      provider: 'guided_test',
+      eligibleStaffIds: Array.isArray(body.eligibleStaffIds) ? body.eligibleStaffIds : []
+    });
+
+    return res.status(200).json({
+      status: 'success',
+      verification: {
+        createdOnce: !firstRun.isDuplicate,
+        replayDeduplicated: Boolean(replayRun.isDuplicate),
+        mappedStandardFields: {
+          name: firstRun.lead?.full_name || firstRun.lead?.name,
+          phone: firstRun.lead?.phone,
+          email: firstRun.lead?.email
+        },
+        mappedCustomFields: firstRun.lead?.custom_fields || {},
+        vehicleInterest: firstRun.lead?.vehicle_interest || null,
+        budgetNzd: firstRun.lead?.budget_nzd || null,
+        paymentPreference: firstRun.lead?.payment_preference || null,
+        pageId: firstRun.lead?.page_id || targetPageId,
+        assignedStaffId: firstRun.assignedStaffId || null,
+        messagingEligible: firstRun.lead?.messaging_eligible === true
+      },
+      lead: firstRun.lead,
+      timestamp: new Date().toISOString()
     });
   }
 
@@ -814,7 +989,7 @@ async function zernioUnifiedHandler(req, res) {
       id: `lead_meta_${randomId}`,
       meta_lead_id: `meta_lead_${randomId}`,
       name: body.name || `Meta Test Lead ${randomId}`,
-      phone: body.phone || `+91 98${Math.floor(10000000 + Math.random() * 90000000)}`,
+      phone: body.phone || `+64 21 ${Math.floor(1000000 + Math.random() * 9000000)}`,
       email: body.email || `test.lead.${randomId}@example.com`,
       page_id: body.pageId || body.page_id || "page_live",
       pageId: body.pageId || body.page_id || "page_live",
@@ -983,6 +1158,9 @@ async function zernioUnifiedHandler(req, res) {
                 last_message_at: msgTime,
                 status: 'open',
                 is_archived: false,
+                ad_id: payload.adAttribution?.adId || payload.referral?.ad_id || null,
+                campaign_id: payload.adAttribution?.campaignId || payload.referral?.campaign_id || null,
+                ad_referral: payload.adAttribution || payload.referral || null,
                 updated_at: new Date().toISOString()
               };
 
@@ -1086,177 +1264,19 @@ async function zernioUnifiedHandler(req, res) {
         return res.status(200).json({ status: 'success', processed: true, type: 'message' });
       }
 
-      const leadId = payload.leadgen_id || payload.id || payload.lead_id || payload.meta_lead_id || ('zn_lead_' + Date.now());
-      const platform = payload.platform || (payload.source && payload.source.toLowerCase().includes('instagram') ? 'Instagram Ads' : 'Facebook Lead Ad');
-      const pageId = payload.page_id || payload.pageId || (payload.page && payload.page.id) || null;
-      const pageName = payload.page_name || payload.pageName || (payload.page && payload.page.name) || null;
-      const campaignId = payload.campaign_id || payload.campaignId || null;
-      const campaignName = payload.campaign_name || payload.campaignName || null;
-      const formId = payload.form_id || payload.formId || null;
-      const formName = payload.form_name || payload.formName || null;
-      const adId = payload.ad_id || payload.adId || null;
-      const adName = payload.ad_name || payload.adName || null;
-      const adsetId = payload.adset_id || payload.adsetId || null;
-      const adsetName = payload.adset_name || payload.adsetName || null;
-      const createdTime = payload.created_time ? (typeof payload.created_time === 'number' ? new Date(payload.created_time * 1000).toISOString() : new Date(payload.created_time).toISOString()) : (payload.created_at || new Date().toISOString());
-
-      let fullName = (payload.full_name || payload.name || payload.first_name ? `${payload.first_name || ''} ${payload.last_name || ''}`.trim() : '').trim();
-      let email = payload.email || payload.email_address || null;
-      let phone = payload.phone || payload.phone_number || null;
-
-      // Parse nested field_data / answers from Meta Lead Ads form responses
-      const fieldsList = payload.field_data || payload.form_data || payload.answers || [];
-      if (Array.isArray(fieldsList)) {
-        for (const field of fieldsList) {
-          const fname = (field.name || '').toLowerCase();
-          const fval = Array.isArray(field.values) ? field.values[0] : (field.value || field.values);
-          if (!fval) continue;
-          if (!fullName && (fname.includes('full_name') || fname === 'name')) fullName = fval;
-          else if (!fullName && fname.includes('first_name')) fullName = fval;
-          else if (!email && fname.includes('email')) email = fval;
-          else if (!phone && (fname.includes('phone') || fname.includes('mobile'))) phone = fval;
-        }
-      }
-      if (!fullName) fullName = 'Meta Lead';
-
       try {
-        if (supabase) {
-          // Idempotency check: dedupe on Meta leadgen_id
-          const { data: existingLead } = await supabase
-            .from('leads')
-            .select('*')
-            .eq('meta_lead_id', String(leadId))
-            .maybeSingle();
-
-          if (existingLead) {
-            console.log('[Zernio Leadgen]: Duplicate lead ignored for meta_lead_id:', leadId);
-            return res.status(200).json({
-              status: 'success',
-              isDuplicate: true,
-              lead: { ...existingLead, name: existingLead.full_name }
-            });
-          }
-
-          // Resolve page_id to a valid facebook_pages record (UUID) for staff scoping & RLS
-          let resolvedPageId = null;
-          let resolvedPageName = pageName;
-
-          if (pageId) {
-            const { data: matchedPages } = await supabase
-              .from('facebook_pages')
-              .select('id, page_id, page_name')
-              .or(`page_id.eq.${pageId},id.eq.${pageId}`)
-              .limit(1);
-            if (matchedPages && matchedPages.length > 0) {
-              resolvedPageId = matchedPages[0].id;
-              resolvedPageName = resolvedPageName || matchedPages[0].page_name;
-            }
-          }
-
-          if (!resolvedPageId && pageName) {
-            const { data: nameMatches } = await supabase
-              .from('facebook_pages')
-              .select('id, page_id, page_name')
-              .ilike('page_name', pageName)
-              .limit(1);
-            if (nameMatches && nameMatches.length > 0) {
-              resolvedPageId = nameMatches[0].id;
-              resolvedPageName = resolvedPageName || nameMatches[0].page_name;
-            }
-          }
-
-          if (!resolvedPageId) {
-            const { data: anyPage } = await supabase
-              .from('facebook_pages')
-              .select('id, page_id, page_name')
-              .order('connected_at', { ascending: false })
-              .limit(1);
-            if (anyPage && anyPage.length > 0) {
-              resolvedPageId = anyPage[0].id;
-              resolvedPageName = resolvedPageName || anyPage[0].page_name;
-            }
-          }
-
-          // Staff Assignment: match staff assigned to this specific page
-          let assignedStaffId = null;
-          if (resolvedPageId) {
-            const { data: members } = await supabase
-              .from('page_members')
-              .select('user_id')
-              .eq('page_id', resolvedPageId)
-              .limit(1);
-            if (members && members.length > 0) {
-              assignedStaffId = members[0].user_id;
-            }
-          }
-          if (!assignedStaffId) {
-            const { data: staffMembers } = await supabase
-              .from('users')
-              .select('id')
-              .eq('role', 'staff')
-              .limit(1);
-            if (staffMembers && staffMembers.length > 0) {
-              assignedStaffId = staffMembers[0].id;
-            }
-          }
-
-          const insertData = {
-            page_id: resolvedPageId,
-            meta_lead_id: String(leadId),
-            full_name: fullName,
-            email: email ? email.trim() : null,
-            phone: phone ? phone.trim() : null,
-            source: platform,
-            campaign_id: campaignId ? String(campaignId) : null,
-            campaign_name: campaignName,
-            form_id: formId ? String(formId) : null,
-            form_name: formName,
-            ad_id: adId ? String(adId) : null,
-            ad_name: adName,
-            adset_id: adsetId ? String(adsetId) : null,
-            adset_name: adsetName,
-            assigned_to: assignedStaffId,
-            status: 'New',
-            raw_data: payload,
-            created_at: createdTime
-          };
-
-          const { data: created, error: dbErr } = await supabase
-            .from('leads')
-            .upsert(insertData, { onConflict: 'meta_lead_id', ignoreDuplicates: true })
-            .select()
-            .maybeSingle();
-
-          if (dbErr) {
-            console.error('[Zernio Lead Ingest DB Error]:', dbErr);
-            return res.status(500).json({ error: dbErr.message });
-          }
-
-          if (!created) {
-            console.log('[Zernio Lead Ingest]: Ignored duplicate lead for meta_lead_id:', leadId);
-            return res.status(200).json({
-              status: 'success',
-              provider: 'zernio',
-              isDuplicate: true,
-              lead: { meta_lead_id: String(leadId), name: fullName }
-            });
-          }
-
-          console.log('[Zernio Lead Ingest Success]: Stored lead:', leadId, fullName, 'Page:', resolvedPageId);
-
-          return res.status(200).json({
-            status: 'success',
-            provider: 'zernio',
-            lead: { ...created, name: created.full_name }
-          });
-        }
-
+        const result = await ingestLeadAdEvent(supabase, payload, { provider: 'zernio' });
+        SYNC_DIAGNOSTICS.webhooksProcessed++;
+        if (result.isDuplicate) SYNC_DIAGNOSTICS.duplicatesIgnored++;
         return res.status(200).json({
           status: 'success',
           provider: 'zernio',
-          lead: { id: leadId, name: fullName, email, phone, source: platform, page_id: pageId }
+          isDuplicate: Boolean(result.isDuplicate),
+          warning: result.warning || undefined,
+          lead: result.lead
         });
       } catch (err) {
+        recordDiagnosticError('webhook_leadgen_ingest', err);
         console.error('[Zernio Webhook Fatal Error]:', err);
         return res.status(500).json({ error: err.message });
       }
