@@ -82,7 +82,7 @@ async function leadsHandler(req, res) {
           record.autoAckSentAt = nowIso;
         }
         if (supabase) {
-          await supabase.from('leads').update({ auto_ack_sent_at: nowIso }).eq('id', leadId).is('auto_ack_sent_at', null).catch(() => {});
+          try { await supabase.from('leads').update({ auto_ack_sent_at: nowIso }).eq('id', leadId).is('auto_ack_sent_at', null); } catch (e) {}
         }
         return res.status(200).json({
           status: "success",
@@ -104,12 +104,13 @@ async function leadsHandler(req, res) {
         };
         global.CRM_LEADS_SPEED.set(leadId, record);
         if (supabase) {
-          await supabase
-            .from('leads')
-            .update({ first_response_at: nowIso, human_first_response_at: nowIso })
-            .eq('id', leadId)
-            .is('human_first_response_at', null)
-            .catch(() => {});
+          try {
+            await supabase
+              .from('leads')
+              .update({ first_response_at: nowIso, human_first_response_at: nowIso })
+              .eq('id', leadId)
+              .is('human_first_response_at', null);
+          } catch (e) {}
         }
       } else {
         record.writeAttempts += 1;
@@ -148,11 +149,12 @@ async function leadsHandler(req, res) {
       }
 
       if (supabase && leadId && staffId !== undefined) {
-        await supabase
-          .from('leads')
-          .update({ assigned_to: assignRes.assignedStaffId, updated_at: new Date().toISOString() })
-          .eq('id', leadId)
-          .catch(() => {});
+        try {
+          await supabase
+            .from('leads')
+            .update({ assigned_to: assignRes.assignedStaffId, updated_at: new Date().toISOString() })
+            .eq('id', leadId);
+        } catch (e) {}
       }
       return res.status(200).json({
         status: "success",
