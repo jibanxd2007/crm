@@ -159,25 +159,17 @@ class CRMService {
   }
 
   convertAmount(amount, targetCurrency = null, sourceCurrency = null) {
-    const target = targetCurrency || this.getCurrency();
-    const source = sourceCurrency || (this.fxRates && this.fxRates.base) || 'INR';
+    const target = targetCurrency || 'NZD';
+    // Nova Autos NZ stores all monetary figures natively in NZD unless an explicit sourceCurrency is supplied
+    const source = sourceCurrency || 'NZD';
     const num = Number(amount) || 0;
     if (num === 0) return 0;
     if (target === source) return num;
 
-    const rates = this.fxRates || { base: 'INR', INR: 1.0, USD: 0.012, NZD: 0.020 };
-    const base = rates.base || 'INR';
-
-    // 1. Convert source -> base (default: stored in INR)
-    let baseAmount = num;
-    if (source !== base) {
-      const sourceRate = rates[source] || 1;
-      baseAmount = sourceRate !== 0 ? num / sourceRate : num;
-    }
-
-    // 2. Convert base -> target
-    const targetRate = rates[target] !== undefined ? rates[target] : (target === 'USD' ? 0.012 : (target === 'NZD' ? 0.020 : 1.0));
-    return baseAmount * targetRate;
+    const rates = { base: 'NZD', NZD: 1.0, USD: 0.60, AUD: 0.91, INR: 50.0 };
+    const sourceRate = rates[source] || 1.0;
+    const targetRate = rates[target] || 1.0;
+    return (num / sourceRate) * targetRate;
   }
 
   formatMoney(amount, currency = null, sourceCurrency = null) {
@@ -1400,16 +1392,35 @@ class CRMService {
   // ==========================================================================
   // PHASE A — SPEED-TO-LEAD & SLA TRACKING ENGINE
   // ==========================================================================
-  recordFirstResponse(leadId, action = "contact") {
+  recordFirstResponse(leadId, action = "contact", options = {}) {
     const lead = this.leads.find(l => l.id === leadId);
     if (!lead) return null;
 
-    // Strict write-once: only record if not previously set
-    if (lead.first_response_at) {
-      return lead.first_response_at;
+    const nowIso = new Date().toISOString();
+
+    // Automated acknowledgements are tracked separately and MUST NOT improve human response-time metrics
+    if (options && options.isAutomated === true) {
+      if (!lead.auto_ack_sent_at) {
+        lead.auto_ack_sent_at = nowIso;
+        lead.activities = lead.activities || [];
+        lead.activities.unshift({
+          id: "act_" + Date.now(),
+          type: "AUTO_ACK",
+          description: `Automated acknowledgement logged via ${action} (excluded from human response SLA).`,
+          user: "Automation",
+          timestamp: nowIso
+        });
+        this.saveAll();
+      }
+      return lead.auto_ack_sent_at;
     }
 
-    const nowIso = new Date().toISOString();
+    // Strict write-once for human first response
+    if (lead.human_first_response_at || lead.first_response_at) {
+      return lead.human_first_response_at || lead.first_response_at;
+    }
+
+    lead.human_first_response_at = nowIso;
     lead.first_response_at = nowIso;
     lead.first_response_action = action;
     lead.last_contacted_at = nowIso;
@@ -1428,7 +1439,7 @@ class CRMService {
     lead.activities.unshift({
       id: "act_" + Date.now(),
       type: "FIRST_RESPONSE",
-      description: `First response logged via ${action} (${Math.round(responseTimeMs / 1000)}s after lead generation). SLA: ${lead.is_sla_compliant ? 'Compliant' : 'Breached'}.`,
+      description: `Human first response logged via ${action} (${Math.round(responseTimeMs / 1000)}s after enquiry). SLA: ${lead.is_sla_compliant ? 'Compliant' : 'Breached'}.`,
       user: this.currentUser ? (this.currentUser.displayName || this.currentUser.name) : "Staff",
       timestamp: nowIso
     });
@@ -1436,7 +1447,86 @@ class CRMService {
     this.saveAll();
     this.logAudit("FIRST_RESPONSE_RECORDED", lead.name, "SUCCESS", `Action: ${action}, Time: ${Math.round(responseTimeMs / 1000)}s, Compliant: ${lead.is_sla_compliant}`);
     this.notifyChange("lead_response_recorded", { leadId, lead, responseTimeMs, isCompliant: lead.is_sla_compliant });
-    return lead.first_response_at;
+
+    // Best-effort server persistence
+    try {
+      const headers = this.getAuthHeaders ? this.getAuthHeaders() : { 'Content-Type': 'application/json' };
+      fetch('/api/leads?path=first-response', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ leadId, action, isAutomated: false })
+      }).catch(() => {});
+    } catch (e) {}
+
+    return lead.human_first_response_at;
+  }
+
+  getFeatureFlags() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(this.storagePrefix + 'feature_flags') || '{}');
+      return {
+        vehicleStockShare: saved.vehicleStockShare !== false,
+        financeEstimator: saved.financeEstimator !== false,
+        roundRobinAssignment: saved.roundRobinAssignment !== false
+      };
+    } catch (e) {
+      return { vehicleStockShare: true, financeEstimator: true, roundRobinAssignment: true };
+    }
+  }
+
+  getVehicles() {
+    try {
+      const saved = localStorage.getItem(this.storagePrefix + 'vehicles');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {}
+    return [
+      { id: 'veh_1', stockNo: 'NA-401', title: '2019 Toyota Aqua Hybrid', priceNzd: 12990, odometerKm: 64200, fuel: 'Hybrid', transmission: 'Auto', yard: 'Auckland Yard', status: 'available' },
+      { id: 'veh_2', stockNo: 'NA-402', title: '2018 Mazda Demio 1.3L', priceNzd: 11490, odometerKm: 71500, fuel: 'Petrol', transmission: 'Auto', yard: 'Auckland Yard', status: 'available' },
+      { id: 'veh_3', stockNo: 'NA-403', title: '2020 Nissan X-Trail 7-Seater', priceNzd: 21990, odometerKm: 58900, fuel: 'Petrol', transmission: 'Auto', yard: 'Auckland Yard', status: 'available' },
+      { id: 'veh_4', stockNo: 'NA-404', title: '2017 Toyota Hiace Van 3.0D', priceNzd: 26990, odometerKm: 118000, fuel: 'Diesel', transmission: 'Auto', yard: 'Manukau Yard', status: 'available' }
+    ];
+  }
+
+  saveVehicles(list) {
+    try {
+      localStorage.setItem(this.storagePrefix + 'vehicles', JSON.stringify(list || []));
+    } catch (e) {}
+  }
+
+  updateLeadDealershipProfile(leadId, patch = {}) {
+    const lead = this.leads.find(l => String(l.id) === String(leadId));
+    if (!lead) return null;
+    const allowed = [
+      'vehicle_interest', 'budget_nzd', 'payment_preference',
+      'trade_in_info', 'buying_timeframe', 'next_action_at',
+      'next_action_note', 'appointment_at', 'appointment_status',
+      'loss_reason', 'sale_value_nzd', 'lead_value', 'status'
+    ];
+    const serverPatch = { id: lead.id };
+    allowed.forEach(k => {
+      if (patch[k] !== undefined) {
+        lead[k] = patch[k];
+        serverPatch[k] = patch[k];
+      }
+    });
+    if (patch.sale_value_nzd !== undefined) {
+      lead.lead_value = Number(patch.sale_value_nzd) || 0;
+      lead.value = lead.lead_value;
+    }
+    lead.updated_at = new Date().toISOString();
+    this.saveAll();
+    try {
+      const headers = this.getAuthHeaders ? this.getAuthHeaders() : { 'Content-Type': 'application/json' };
+      fetch('/api/leads', {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify(serverPatch)
+      }).catch(() => {});
+    } catch (e) {}
+    return lead;
   }
 
   getLeadSlaStatus(lead) {

@@ -725,7 +725,7 @@ class MetaCRMApp {
     }
 
     // 4. Admin-only Route Guard
-    const adminOnlyRoutes = ['staff', 'settings', 'connections', 'integrations', 'reports'];
+    const adminOnlyRoutes = ['staff', 'settings', 'connections', 'integrations', 'meta-ads'];
     const isAdmin = this.user && (this.user.role === 'admin' || this.user.role === 'super_admin');
     if (adminOnlyRoutes.includes(hash) && !isAdmin) {
       this.currentRoute = hash;
@@ -1297,29 +1297,25 @@ class MetaCRMApp {
 
     const sections = [
       {
-        title: 'WORKSPACE',
+        title: 'DAILY SALES',
         items: [
-          { id: 'dashboard',   icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>`, label: 'Dashboard', shortcut: '' },
+          { id: 'dashboard',   icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>`, label: 'Overview', shortcut: '' },
+          { id: 'inbox',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`, label: 'Inbox', badge: unreadConvs > 0 ? unreadConvs : null, shortcut: '' },
           { id: 'leads',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`, label: 'Leads', badge: newLeads > 0 ? newLeads : null, shortcut: '' },
-          { id: 'inbox',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`, label: 'Messages', badge: unreadConvs > 0 ? unreadConvs : null, shortcut: '' },
-          { id: 'email',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`, label: 'Email', badge: unreadEmails > 0 ? unreadEmails : null, shortcut: '' },
-          { id: 'meta-ads',    icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>`, label: 'Meta Ads', shortcut: '' },
-          { id: 'tasks',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`, label: 'Follow-ups', badge: overdueTasks > 0 ? overdueTasks : null, shortcut: '' },
+          { id: 'pipeline',    icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`, label: 'Pipeline', shortcut: '' },
+          { id: 'tasks',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`, label: 'Tasks &amp; Appointments', badge: overdueTasks > 0 ? overdueTasks : null, shortcut: '' },
+          { id: 'reports',     icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`, label: 'Reports', shortcut: '' },
         ]
       },
-      {
-        title: 'MANAGEMENT',
+      ...(isAdmin ? [{
+        title: 'MANAGER',
         items: [
-          { id: 'pipeline',     icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>`, label: 'Pipeline', shortcut: '' },
-          { id: 'download',     icon: `<svg width="16" height="16" fill="none" stroke="#FF6A00" stroke-width="1.8" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`, label: 'Download App', badge: 'v2.0', shortcut: '' },
-          ...(isAdmin ? [
-            { id: 'integrations', icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`, label: 'Integrations', shortcut: '' },
-            { id: 'connections',  icon: `<svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>`, label: 'Connect Facebook', shortcut: '' },
-            { id: 'staff',      icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`, label: 'Team', shortcut: '' },
-            { id: 'reports',    icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`, label: 'Reports', shortcut: '' },
-          ] : [])
+          { id: 'meta-ads',    icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>`, label: 'Marketing / Meta', shortcut: '' },
+          { id: 'staff',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`, label: 'Team', shortcut: '' },
+          { id: 'connections', icon: `<svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>`, label: 'Connections', shortcut: '' },
+          { id: 'email',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`, label: 'Email', badge: unreadEmails > 0 ? unreadEmails : null, shortcut: '' },
         ]
-      }
+      }] : [])
     ];
 
     const currentWorkspaces = this._getWorkspaces();
@@ -2699,11 +2695,12 @@ class MetaCRMApp {
         <button class="badge badge-duplicate" onclick="window.app.openMergeModal('${lead.id}')">Merge ⇄</button>
       </div>` : ''}
 
-      <!-- ONE-CLICK COMMUNICATION BAR (Hooks first_response_at) -->
-      <div class="lead-actions-bar">
-        <a href="tel:${lead.phone}" onclick="window.crmService.recordFirstResponse('${lead.id}', 'call')" class="btn btn-primary btn-sm">${this._icon('phone', 13)} Call</a>
-        <a href="https://wa.me/${(lead.phone||'').replace(/\D/g,'')}" target="_blank" onclick="window.crmService.recordFirstResponse('${lead.id}', 'whatsapp')" class="btn btn-secondary btn-sm whatsapp-btn">${this._icon('whatsapp', 13)} WhatsApp</a>
-        <a href="mailto:${lead.email}" onclick="window.crmService.recordFirstResponse('${lead.id}', 'email')" class="btn btn-secondary btn-sm">${this._icon('mail', 13)} Email</a>
+      <!-- ONE-CLICK COMMUNICATION & WORKFLOW BAR (Hooks human_first_response_at) -->
+      <div class="lead-actions-bar" style="flex-wrap:wrap;">
+        <button type="button" onclick="window.app.openLeadMessage('${lead.id}')" class="btn btn-primary btn-sm">💬 Open Inbox</button>
+        <button type="button" onclick="window.app.openBookAppointmentModal('${lead.id}')" class="btn btn-secondary btn-sm">📅 Book Yard Visit</button>
+        ${lead.phone ? `<a href="tel:${lead.phone}" onclick="window.crmService.recordFirstResponse('${lead.id}', 'call', {isAutomated:false})" class="btn btn-secondary btn-sm">${this._icon('phone', 13)} Call</a>` : ''}
+        ${lead.email ? `<a href="mailto:${lead.email}" onclick="window.crmService.recordFirstResponse('${lead.id}', 'email', {isAutomated:false})" class="btn btn-secondary btn-sm">${this._icon('mail', 13)} Email</a>` : ''}
       </div>
 
       <!-- SPEED-TO-LEAD & SLA TRACKING (Phase A) -->
@@ -2757,7 +2754,7 @@ class MetaCRMApp {
           <div class="attr-row"><span class="attr-label">Assigned</span>
             <select class="input input-sm" onchange="window.app.reassignLead('${lead.id}', this.value)">
               <option value="">Unassigned</option>
-              ${staff.map(s => `<option value="${s.id}" ${(lead.assigned_staff_id||lead.assignedStaffId)===s.id?'selected':''}>${s.name}</option>`).join('')}
+              ${this._getEligibleStaffForPage(lead.page_id || lead.pageId).map(s => `<option value="${s.id}" ${(lead.assigned_staff_id||lead.assignedStaffId)===s.id?'selected':''}>${escapeHtml(s.displayName || s.name)}</option>`).join('')}
             </select>
           </div>
           <div class="attr-row">
@@ -2781,15 +2778,61 @@ class MetaCRMApp {
           </div>` : ''}
         </div>
 
-        <!-- Technical Meta Ads Attribution Details -->
+        <!-- Dealership Buyer Qualification -->
+        <div class="attribution-block" style="margin-top:10px;background:#F8FAFC;padding:10px 12px;border-radius:var(--radius-sm);border:1px solid var(--border);">
+          <div style="font-size:11px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;">Vehicle &amp; Deal Details</div>
+          <div class="attr-row">
+            <span class="attr-label">Vehicle</span>
+            <input type="text" class="input input-sm" style="flex:1;max-width:210px;" placeholder="Interested vehicle..." value="${escapeHtml(lead.vehicle_interest || '')}" onchange="window.app.saveLeadQualification('${lead.id}', null, 'vehicle_interest', this.value)">
+          </div>
+          <div class="attr-row">
+            <span class="attr-label">Budget (NZD)</span>
+            <input type="number" class="input input-sm" style="width:120px;" placeholder="0" value="${lead.budget_nzd || ''}" onchange="window.app.saveLeadQualification('${lead.id}', null, 'budget_nzd', Number(this.value)||null)">
+          </div>
+          <div class="attr-row">
+            <span class="attr-label">Cash / Finance</span>
+            <select class="input input-sm" style="width:150px;" onchange="window.app.saveLeadQualification('${lead.id}', null, 'payment_preference', this.value)">
+              <option value="">Undecided</option>
+              <option value="Cash" ${lead.payment_preference==='Cash'?'selected':''}>Cash</option>
+              <option value="Finance" ${lead.payment_preference==='Finance'?'selected':''}>Finance</option>
+              <option value="Trade-in + Finance" ${lead.payment_preference==='Trade-in + Finance'?'selected':''}>Trade-in + Finance</option>
+            </select>
+          </div>
+          <div class="attr-row">
+            <span class="attr-label">Trade-in</span>
+            <input type="text" class="input input-sm" style="flex:1;max-width:210px;" placeholder="Vehicle / details..." value="${escapeHtml(lead.trade_in_info || '')}" onchange="window.app.saveLeadQualification('${lead.id}', null, 'trade_in_info', this.value)">
+          </div>
+          <div class="attr-row">
+            <span class="attr-label">Timeframe</span>
+            <input type="text" class="input input-sm" style="flex:1;max-width:210px;" placeholder="e.g. This weekend" value="${escapeHtml(lead.buying_timeframe || '')}" onchange="window.app.saveLeadQualification('${lead.id}', null, 'buying_timeframe', this.value)">
+          </div>
+          ${lead.appointment_at ? `
+          <div class="attr-row">
+            <span class="attr-label">Yard Visit</span>
+            <strong style="font-size:12px;color:#059669;">${new Date(lead.appointment_at).toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} (${escapeHtml(lead.appointment_status || 'scheduled')})</strong>
+          </div>` : ''}
+        </div>
+
+        <!-- Original Meta Lead Ads Form Answers (never discarded) -->
+        ${lead.custom_fields && Object.keys(lead.custom_fields).length > 0 ? `
         <details class="tech-details-toggle" style="margin-top:10px;" open>
-          <summary style="font-size:12px;color:var(--text-muted);cursor:pointer;font-weight:500;">Meta Ads Attribution Details ▾</summary>
+          <summary style="font-size:12px;color:var(--text-secondary);cursor:pointer;font-weight:600;">Submitted Form Answers (${Object.keys(lead.custom_fields).length}) ▾</summary>
+          <div class="attribution-block" style="margin-top:6px;background:#FFFBEB;padding:8px 12px;border-radius:var(--radius-sm);border:1px solid #FDE68A;">
+            ${Object.entries(lead.custom_fields).map(([k, v]) => `
+              <div class="attr-row"><span class="attr-label">${escapeHtml(String(k).replace(/_/g, ' '))}</span><strong>${escapeHtml(Array.isArray(v) ? v.join(', ') : String(v || '—'))}</strong></div>
+            `).join('')}
+          </div>
+        </details>` : ''}
+
+        <!-- Honest Meta Ads Attribution Details (never fabricated) -->
+        <details class="tech-details-toggle" style="margin-top:10px;">
+          <summary style="font-size:12px;color:var(--text-muted);cursor:pointer;font-weight:500;">Meta Ads Source &amp; Attribution ▾</summary>
           <div class="attribution-block" style="margin-top:8px;background:#f8fafc;padding:8px 12px;border-radius:var(--radius-sm);">
-            <div class="attr-row"><span class="attr-label">Campaign</span><strong style="color:var(--primary);">${lead.campaign_name || lead.campaign_id || lead.campaignId || 'Enterprise Lead Gen'}</strong></div>
-            <div class="attr-row"><span class="attr-label">Ad Set</span><span>${lead.adset_name || lead.adset_id || lead.adsetId || 'Tech Decision Makers 25-54'}</span></div>
-            <div class="attr-row"><span class="attr-label">Ad Creative</span><span>${lead.ad_name || lead.ad_id || lead.adId || 'Single Image - Value Prop'}</span></div>
-            <div class="attr-row"><span class="attr-label">Lead Form</span><span>${lead.form_name || lead.form_id || lead.formId || 'Instant Quote Form'}</span></div>
-            <div class="attr-row"><span class="attr-label">Meta Lead ID</span><span class="text-xs text-gray font-mono">${lead.meta_leadgen_id || lead.meta_lead_id || lead.id}</span></div>
+            <div class="attr-row"><span class="attr-label">Campaign</span><strong>${escapeHtml(lead.campaign_name || lead.campaign_id || lead.campaignId || 'Unknown / Not supplied')}</strong></div>
+            <div class="attr-row"><span class="attr-label">Ad Set</span><span>${escapeHtml(lead.adset_name || lead.adset_id || lead.adsetId || 'Unknown / Not supplied')}</span></div>
+            <div class="attr-row"><span class="attr-label">Ad Creative</span><span>${escapeHtml(lead.ad_name || lead.ad_id || lead.adId || 'Unknown / Not supplied')}</span></div>
+            <div class="attr-row"><span class="attr-label">Lead Form</span><span>${escapeHtml(lead.form_name || lead.form_id || lead.formId || 'Unknown / Not supplied')}</span></div>
+            <div class="attr-row"><span class="attr-label">Meta Lead ID</span><span class="text-xs text-gray font-mono">${escapeHtml(lead.meta_leadgen_id || lead.meta_lead_id || 'N/A')}</span></div>
           </div>
         </details>
       </div>
@@ -3327,11 +3370,11 @@ class MetaCRMApp {
       };
     });
 
-    // Clean, unified top action bar (eliminates duplicate page dropdown from topbar)
+    const livePageCount = accessiblePages.length;
     this.el.actions.innerHTML = `
-      <div class="inbox-topbar-meta-status" title="Connected Meta Facebook Pages &amp; Instagram Accounts">
+      <div class="inbox-topbar-meta-status" title="Authorised connected Meta pages">
         <span class="status-live-pulse"></span>
-        <span>4 Accounts Live</span>
+        <span>${livePageCount} ${livePageCount === 1 ? 'Page' : 'Pages'} Active</span>
       </div>
       <button class="topbar-pill-btn" id="btn-inbox-refresh" onclick="window.app.refreshRealInbox()" title="Fetch newest messages from Meta">
         <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
@@ -3362,9 +3405,42 @@ class MetaCRMApp {
       ? pageScopedConvs.filter(c => c.is_archived === true)
       : pageScopedConvs.filter(c => !c.is_archived);
 
-    // Filter by channel, unread or starred
-    if (activeTab === 'unread') {
+    // Helper: "Needs Reply" = last message is from customer (distinct from Unread, which only tracks opening the thread)
+    const convNeedsReply = (c) => {
+      if (c.is_archived) return false;
+      if (Array.isArray(c.messages) && c.messages.length > 0) {
+        const last = c.messages[c.messages.length - 1];
+        return last.incoming === true || last.sender_type === 'customer' || last.direction === 'inbound';
+      }
+      const prev = String(c.preview || c.last_message || '');
+      if (prev.startsWith('You:')) return false;
+      return true;
+    };
+
+    const convHasDueFollowup = (c) => {
+      if (!this.svc || !this.svc.tasks) return false;
+      const nowMs = Date.now();
+      const matchedLead = (this.svc.leads || []).find(l => l.name === c.name || (c.phone && l.phone === c.phone) || String(l.id) === String(c.lead_id));
+      if (!matchedLead) return false;
+      return this.svc.tasks.some(t => String(t.lead_id || t.leadId) === String(matchedLead.id) && t.status !== 'Done' && t.dueDate && new Date(t.dueDate).getTime() <= nowMs + 24 * 3600 * 1000);
+    };
+
+    const needsReplyCount = pageScopedConvs.filter(c => !c.is_archived && convNeedsReply(c)).length;
+    const unassignedCount = pageScopedConvs.filter(c => !c.is_archived && !(c.assigned_staff_id || c.assignedStaffId || c.assigned_to)).length;
+    const mineCount = pageScopedConvs.filter(c => !c.is_archived && this.user && String(c.assigned_staff_id || c.assignedStaffId || c.assigned_to) === String(this.user.id)).length;
+    const followupDueCount = pageScopedConvs.filter(c => !c.is_archived && convHasDueFollowup(c)).length;
+
+    // Filter by Work Queue / Channel / Archived
+    if (activeTab === 'needs_reply') {
+      filteredConvs = filteredConvs.filter(c => convNeedsReply(c));
+    } else if (activeTab === 'unread') {
       filteredConvs = filteredConvs.filter(c => (c.unread || c.unread_count || 0) > 0);
+    } else if (activeTab === 'unassigned') {
+      filteredConvs = filteredConvs.filter(c => !(c.assigned_staff_id || c.assignedStaffId || c.assigned_to));
+    } else if (activeTab === 'mine') {
+      filteredConvs = filteredConvs.filter(c => this.user && String(c.assigned_staff_id || c.assignedStaffId || c.assigned_to) === String(this.user.id));
+    } else if (activeTab === 'followup_due') {
+      filteredConvs = filteredConvs.filter(c => convHasDueFollowup(c));
     } else if (activeTab === 'starred') {
       filteredConvs = filteredConvs.filter(c => c.starred === true);
     } else if (activeTab === 'facebook' || activeTab === 'messenger') {
@@ -3406,7 +3482,13 @@ class MetaCRMApp {
     const igCount = activeScopedConvs.filter(c => c.channel && c.channel.toLowerCase().includes('insta')).length;
 
     const convList = filteredConvs;
-    const activeConv = convList.find(c => c.id === this.activeConvId) || convList[0] || null;
+    // Preserve the currently open conversation across page filter switches so a rep never accidentally sends from the wrong page
+    let activeConv = accessibleConvs.find(c => String(c.id) === String(this.activeConvId)) || convList.find(c => String(c.id) === String(this.activeConvId)) || null;
+    if (!activeConv && convList.length > 0) {
+      activeConv = convList[0];
+      this.activeConvId = activeConv.id;
+    }
+    const activeConvOutsideFilter = Boolean(activeConv && this.selectedInboxPage !== 'all' && !convMatchesPage(activeConv, this.selectedInboxPage));
     if (activeConv && (!activeConv.messages || activeConv.messages.length === 0) && !activeConv._fetchingMsgs) {
       activeConv._fetchingMsgs = true;
       setTimeout(() => this.fetchRealConversationMessages(activeConv), 50);
@@ -3425,94 +3507,80 @@ class MetaCRMApp {
     const activeDisplayTime = activeConv ? this._formatMessageTime(activeConv.last_message_at || activeConv.time) : '10:24 AM';
     const selectedPageObj = (this.selectedInboxPage !== 'all') ? accessiblePages.find(p => String(p.id) === String(this.selectedInboxPage) || String(p.page_id) === String(this.selectedInboxPage)) : null;
 
+    const isAdminUser = this.user && (this.user.role === 'admin' || this.user.role === 'super_admin');
+    const allPagesLabel = isAdminUser ? 'All Pages' : 'All Assigned Pages';
+    const activeScopeLabel = this.selectedInboxPage === 'all' ? allPagesLabel : (selectedPageObj ? selectedPageObj.name : this._pageName(this.selectedInboxPage));
+
     this.el.content.innerHTML = `
       <div class="inbox-layout ${this.mobileInboxView === 'chat' ? 'view-chat' : 'view-list'} ${sessionStorage.getItem('inbox_details_collapsed') === 'true' ? 'details-collapsed' : ''}">
-        <!-- LEFT: CONVERSATIONS LIST (320px) -->
-        <div class="inbox-sidebar">
-          <div class="inbox-sidebar-header" style="position:relative;">
-            <div class="inbox-sidebar-title-row">
-              <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
-                <h2 class="inbox-sidebar-title">Inbox</h2>
-                ${this.selectedInboxPage !== 'all' ? `
-                  <span class="inbox-active-page-pill" title="Filtered to: ${escapeHtml(selectedPageObj ? selectedPageObj.name : this.selectedInboxPage)}">
-                    <span class="text-truncate">${escapeHtml(selectedPageObj ? selectedPageObj.name : this.selectedInboxPage)}</span>
-                    <button class="inbox-active-page-clear" onclick="window.app.setInboxPageFilter('all')" title="Clear filter (show all pages)">✕</button>
+        <!-- COLUMN 0: STABLE PAGE / ACCOUNT RAIL -->
+        <aside class="inbox-page-rail" aria-label="Pages and channels">
+          <div class="inbox-rail-header">
+            <span class="inbox-rail-title">Pages (${accessiblePages.length})</span>
+            ${isAdminUser ? `<button type="button" class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:11px;" onclick="window.app.navigate('connections')" title="Manage connected pages">+ Manage</button>` : ''}
+          </div>
+          <div class="inbox-rail-list" role="tablist" aria-label="Filter inbox by page">
+            <button type="button" role="tab" aria-selected="${this.selectedInboxPage === 'all'}" class="inbox-rail-item ${this.selectedInboxPage === 'all' ? 'active' : ''}" onclick="window.app.setInboxPageFilter('all')" title="${allPagesLabel} [Shortcut: Alt+0]">
+              <span class="inbox-rail-item-left">
+                <span class="inbox-rail-channel all">🌐</span>
+                <span class="inbox-rail-name">${allPagesLabel}</span>
+              </span>
+              <span class="inbox-rail-counts">
+                ${allPagesUnreadCount > 0 ? `<span class="inbox-rail-unread" title="${allPagesUnreadCount} unread">${allPagesUnreadCount}</span>` : ''}
+                <span class="inbox-rail-total">${allPagesTotalCount}</span>
+              </span>
+            </button>
+            ${pageMetrics.length === 0 ? `
+              <div style="padding:12px 8px;font-size:11.5px;color:#64748B;line-height:1.45;">
+                ${isAdminUser ? 'No pages connected yet. Go to Connections to connect Facebook or Instagram.' : 'No pages have been assigned to your account. Ask your manager to assign pages in Team.'}
+              </div>
+            ` : pageMetrics.map((pm, idx) => {
+              const isSelected = String(this.selectedInboxPage) === String(pm.page.id);
+              const isIg = pm.page.channel === 'instagram' || (pm.page.name && pm.page.name.startsWith('@'));
+              return `
+                <button type="button" role="tab" aria-selected="${isSelected}" class="inbox-rail-item ${isSelected ? 'active' : ''}" onclick="window.app.setInboxPageFilter('${pm.page.id}')" title="${escapeHtml(pm.page.name)} — ${pm.total} conversations, ${pm.unread} unread [Alt+${idx + 1}]">
+                  <span class="inbox-rail-item-left">
+                    <span class="inbox-rail-channel ${isIg ? 'ig' : 'fb'}">${isIg ? 'IG' : 'FB'}</span>
+                    <span class="inbox-rail-name">${escapeHtml(pm.page.name)}</span>
                   </span>
-                ` : ''}
+                  <span class="inbox-rail-counts">
+                    ${pm.unread > 0 ? `<span class="inbox-rail-unread" title="${pm.unread} unread">${pm.unread}</span>` : ''}
+                    <span class="inbox-rail-total">${pm.total}</span>
+                  </span>
+                </button>
+              `;
+            }).join('')}
+          </div>
+          <div class="inbox-rail-footer">
+            Scope: <strong>${escapeHtml(activeScopeLabel)}</strong>
+          </div>
+        </aside>
+
+        <!-- COLUMN 1: CONVERSATIONS LIST -->
+        <div class="inbox-sidebar">
+          <div class="inbox-sidebar-header" style="position:relative;padding:12px 12px 10px;gap:8px;">
+            <div class="inbox-sidebar-title-row">
+              <div style="min-width:0;flex:1;">
+                <h2 class="inbox-sidebar-title" style="font-size:16px;">${escapeHtml(activeScopeLabel)}</h2>
+                <div style="font-size:11px;color:#64748B;margin-top:1px;">${convList.length} shown · ${needsReplyCount} need reply</div>
               </div>
               <div style="display:flex;align-items:center;gap:6px;">
-                <button class="inbox-action-btn-sm" onclick="window.app.toggleInboxFilterMenu(event)" title="Filter channels, pages &amp; sort">
+                <button class="inbox-action-btn-sm" onclick="window.app.toggleInboxFilterMenu(event)" title="Filter channel &amp; sort order">
                   <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
                 </button>
               </div>
             </div>
 
-            <!-- Instant Page Selector Dropdown (Quick 1-Click Access to Every Page) -->
-            <div class="inbox-page-selector-bar">
-              <div class="inbox-page-dropdown-wrap">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="inbox-page-dropdown-icon">
-                  <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>
-                </svg>
-                <select id="inbox-page-quick-select" class="inbox-page-quick-select" onchange="window.app.setInboxPageFilter(this.value)" title="Select active page to view conversations">
-                  <option value="all" ${this.selectedInboxPage === 'all' ? 'selected' : ''}>🌐 All Pages (${allPagesTotalCount} total${allPagesUnreadCount > 0 ? ` · ${allPagesUnreadCount} new` : ''})</option>
-                  ${pageMetrics.map(pm => {
-                    const isIg = pm.page.channel === 'instagram' || (pm.page.name && pm.page.name.startsWith('@'));
-                    const isSel = String(this.selectedInboxPage) === String(pm.page.id);
-                    return `<option value="${pm.page.id}" ${isSel ? 'selected' : ''}>${isIg ? '📸' : '📄'} ${escapeHtml(pm.page.name)} (${pm.total} msgs${pm.unread > 0 ? ` · ${pm.unread} new` : ''})</option>`;
-                  }).join('')}
-                </select>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="inbox-page-dropdown-arrow">
-                  <polyline points="6 9 12 15 18 9"/>
-                </svg>
-              </div>
+            <!-- Compact Page Selector (ONLY visible on tablet/mobile <= 1024px where left rail hides) -->
+            <div class="inbox-mobile-page-bar">
+              <select class="input input-sm w-full" aria-label="Select Page" onchange="window.app.setInboxPageFilter(this.value)">
+                <option value="all" ${this.selectedInboxPage === 'all' ? 'selected' : ''}>🌐 ${allPagesLabel} (${allPagesTotalCount})</option>
+                ${pageMetrics.map(pm => `<option value="${pm.page.id}" ${String(this.selectedInboxPage) === String(pm.page.id) ? 'selected' : ''}>${pm.page.channel === 'instagram' ? 'IG' : 'FB'} · ${escapeHtml(pm.page.name)} (${pm.total}${pm.unread > 0 ? ` · ${pm.unread} unread` : ''})</option>`).join('')}
+              </select>
             </div>
 
-            <!-- Enhanced Movable Horizontal Chips Bar Carousel with Scroll Buttons & Drag-Pan -->
-            <div class="inbox-page-chips-wrapper">
-              <button type="button" class="chips-arrow-btn chips-arrow-left" id="chips-arrow-left" onclick="window.app.scrollInboxChips(-1)" title="Scroll left to view previous pages">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
-              </button>
-              <div class="inbox-page-chips-bar" id="inbox-page-chips-bar" role="tablist" aria-label="Filter conversations by page">
-                <button class="inbox-page-chip ${this.selectedInboxPage === 'all' ? 'active' : ''}" onclick="if(!window.app._isDraggingChips) window.app.setInboxPageFilter('all')" title="All Pages (${allPagesTotalCount} total) [Shortcut: Alt+0]">
-                  <span class="chip-dot">🌐</span>
-                  <span class="chip-text">All Pages</span>
-                  <span class="chip-badge">${allPagesTotalCount}</span>
-                  ${allPagesUnreadCount > 0 ? `<span class="chip-unread-dot" title="${allPagesUnreadCount} unread"></span>` : ''}
-                </button>
-                ${pageMetrics.map((pm, idx) => {
-                  const isSelected = String(this.selectedInboxPage) === String(pm.page.id);
-                  const isIg = pm.page.channel === 'instagram' || (pm.page.name && pm.page.name.startsWith('@'));
-                  return `
-                    <button class="inbox-page-chip ${isSelected ? 'active' : ''} ${isIg ? 'chip-ig' : 'chip-fb'}" 
-                            onclick="if(!window.app._isDraggingChips) window.app.setInboxPageFilter('${pm.page.id}')" 
-                            title="${escapeHtml(pm.page.name)} (${pm.total} messages, ${pm.unread} unread) [Shortcut: Alt+${idx + 1}]">
-                      <span class="chip-dot">${isIg ? '📸' : '📄'}</span>
-                      <span class="chip-text text-truncate">${escapeHtml(pm.page.name)}</span>
-                      <span class="chip-badge">${pm.total}</span>
-                      ${pm.unread > 0 ? `<span class="chip-unread-badge">${pm.unread}</span>` : ''}
-                    </button>
-                  `;
-                }).join('')}
-              </div>
-              <button type="button" class="chips-arrow-btn chips-arrow-right" id="chips-arrow-right" onclick="window.app.scrollInboxChips(1)" title="Scroll right to view more pages">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
-              </button>
-            </div>
-
-            <!-- Channels, Pages & Sorting Popover Menu -->
+            <!-- Channel & Sort Popover Menu (Page switching stays exclusively in the Rail) -->
             <div id="inbox-filter-menu-popover" class="inbox-filter-menu-popover" style="display:none;" onclick="event.stopPropagation()">
-              <div class="filter-menu-section-title">PAGES</div>
-              <div class="filter-menu-item ${this.selectedInboxPage === 'all' ? 'active' : ''}" onclick="window.app.setInboxPageFilter('all'); window.app.toggleInboxFilterMenu();">
-                <span>🌐 All Pages</span>
-                <span class="filter-menu-badge">${allPagesTotalCount}</span>
-              </div>
-              ${pageMetrics.map(pm => `
-                <div class="filter-menu-item ${String(this.selectedInboxPage) === String(pm.page.id) ? 'active' : ''}" onclick="window.app.setInboxPageFilter('${pm.page.id}'); window.app.toggleInboxFilterMenu();">
-                  <span>${pm.page.channel === 'instagram' || (pm.page.name && pm.page.name.startsWith('@')) ? '📸' : '📄'} ${escapeHtml(pm.page.name)}</span>
-                  <span class="filter-menu-badge">${pm.total}${pm.unread > 0 ? ` (${pm.unread} new)` : ''}</span>
-                </div>
-              `).join('')}
-              <div class="filter-menu-divider"></div>
               <div class="filter-menu-section-title">CHANNELS</div>
               <div class="filter-menu-item ${activeTab === 'all' ? 'active' : ''}" onclick="window.app.setInboxTab('all'); window.app.toggleInboxFilterMenu();">
                 <span>All Channels</span>
@@ -3525,6 +3593,10 @@ class MetaCRMApp {
               <div class="filter-menu-item ${activeTab === 'instagram' ? 'active' : ''}" onclick="window.app.setInboxTab('instagram'); window.app.toggleInboxFilterMenu();">
                 <span>Instagram Direct</span>
                 <span class="filter-menu-badge">${igCount}</span>
+              </div>
+              <div class="filter-menu-item ${activeTab === 'starred' ? 'active' : ''}" onclick="window.app.setInboxTab('starred'); window.app.toggleInboxFilterMenu();">
+                <span>Starred</span>
+                <span class="filter-menu-badge">${starredCount}</span>
               </div>
               <div class="filter-menu-item ${activeTab === 'archived' ? 'active' : ''}" onclick="window.app.setInboxTab('archived'); window.app.toggleInboxFilterMenu();">
                 <span>Archived</span>
@@ -3546,32 +3618,39 @@ class MetaCRMApp {
               </div>
             </div>
 
-            <div class="inbox-filter-tabs" id="inbox-filter-tabs">
-              <div class="inbox-tab ${activeTab === 'all' ? 'active' : ''}" onclick="window.app.setInboxTab('all')">
-                <span>All</span>
-                <span class="inbox-tab-count">${totalCount}</span>
-              </div>
-              <div class="inbox-tab ${activeTab === 'unread' ? 'active' : ''}" onclick="window.app.setInboxTab('unread')">
+            <!-- Dealership Work Queues -->
+            <div class="inbox-work-queues" id="inbox-filter-tabs" role="tablist" aria-label="Conversation work queues">
+              <button type="button" class="inbox-queue-pill queue-urgent ${activeTab === 'needs_reply' ? 'active' : ''}" onclick="window.app.setInboxTab('needs_reply')" title="Needs Reply: Last message is from the customer and no rep has answered yet (different from Unread, which only tracks opening the chat).">
+                <span>Needs Reply</span>
+                <span class="inbox-queue-count">${needsReplyCount}</span>
+              </button>
+              <button type="button" class="inbox-queue-pill ${activeTab === 'unread' ? 'active' : ''}" onclick="window.app.setInboxTab('unread')" title="Unread: Threads with unopened incoming messages.">
                 <span>Unread</span>
-                ${unreadInboxCount > 0 ? `<span class="inbox-tab-count">${unreadInboxCount}</span>` : ''}
-              </div>
-              <div class="inbox-tab ${activeTab === 'starred' ? 'active' : ''}" onclick="window.app.setInboxTab('starred')">
-                <span>Starred</span>
-                ${starredCount > 0 ? `<span class="inbox-tab-count">${starredCount}</span>` : ''}
-              </div>
-              ${(activeTab === 'facebook' || activeTab === 'messenger' || activeTab === 'instagram' || activeTab === 'archived') ? `
-                <div class="inbox-tab active" onclick="window.app.setInboxTab('all')" title="Click to clear channel filter">
-                  <span>${activeTab === 'archived' ? 'Archived' : (activeTab === 'instagram' ? 'Instagram' : 'Facebook')}</span>
-                  <span class="inbox-tab-count" style="margin-left:3px;font-size:10px;">✕</span>
-                </div>
-              ` : ''}
+                <span class="inbox-queue-count">${unreadInboxCount}</span>
+              </button>
+              <button type="button" class="inbox-queue-pill ${activeTab === 'unassigned' ? 'active' : ''}" onclick="window.app.setInboxTab('unassigned')" title="Conversations with no assigned salesperson yet.">
+                <span>Unassigned</span>
+                <span class="inbox-queue-count">${unassignedCount}</span>
+              </button>
+              <button type="button" class="inbox-queue-pill ${activeTab === 'mine' ? 'active' : ''}" onclick="window.app.setInboxTab('mine')" title="Conversations assigned to you.">
+                <span>Mine</span>
+                <span class="inbox-queue-count">${mineCount}</span>
+              </button>
+              <button type="button" class="inbox-queue-pill ${activeTab === 'followup_due' ? 'active' : ''}" onclick="window.app.setInboxTab('followup_due')" title="Conversations whose lead has a follow-up task due today or overdue.">
+                <span>Follow-up Due</span>
+                <span class="inbox-queue-count">${followupDueCount}</span>
+              </button>
+              <button type="button" class="inbox-queue-pill ${activeTab === 'all' ? 'active' : ''}" onclick="window.app.setInboxTab('all')">
+                <span>All</span>
+                <span class="inbox-queue-count">${totalCount}</span>
+              </button>
             </div>
 
             <div class="inbox-search-wrap">
               <span class="inbox-search-icon">
                 <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
               </span>
-              <input type="text" class="inbox-search-input" id="inbox-search-input" placeholder="Search conversations..." value="${escapeHtml(this.inboxSearchQuery || '')}" oninput="window.app.searchInboxConversations(this.value)">
+              <input type="text" class="inbox-search-input" id="inbox-search-input" placeholder="Search in ${escapeHtml(activeScopeLabel)}..." value="${escapeHtml(this.inboxSearchQuery || '')}" oninput="window.app.searchInboxConversations(this.value)">
               ${this.inboxSearchQuery ? `<button class="inbox-search-clear" onclick="window.app.clearInboxSearch()" title="Clear search">✕</button>` : ''}
             </div>
           </div>
@@ -3639,13 +3718,15 @@ class MetaCRMApp {
                     </div>
                   </div>
                   <div class="conv-preview ${isUnread ? 'is-unread' : ''}">${escapeHtml(c.preview || 'No messages yet')}</div>
-                  <div class="conv-channel-row">
-                    <span class="conv-attribution-pill ${isIg ? 'ig' : 'fb'}" title="Page: ${escapeHtml(convPageName)}">
-                      <span class="attribution-dot">${isIg ? '📸' : '📄'}</span>
+                  <div class="conv-channel-row" style="flex-wrap:wrap;gap:4px;">
+                    <span class="conv-attribution-pill ${isIg ? 'ig' : 'fb'}" title="Originating page: ${escapeHtml(convPageName)} (${isIg ? 'Instagram Direct' : 'Facebook Messenger'})">
+                      <span class="attribution-dot">${isIg ? 'IG' : 'FB'}</span>
                       <span class="attribution-name text-truncate">${escapeHtml(convPageName)}</span>
                     </span>
-                    <span class="conv-lead-pill">${escapeHtml(itemLead?.status || 'New Lead')}</span>
-                    ${(c.unread || 0) > 0 ? `<span class="conv-unread-count-bubble">${c.unread}</span>` : ''}
+                    ${this._getConvDraft(c.id) ? `<span class="conv-draft-badge" title="Unsent draft saved">Draft</span>` : ''}
+                    ${convNeedsReply(c) ? `<span class="conv-needs-reply-badge" title="Customer sent the last message — awaiting rep reply">Needs reply</span>` : ''}
+                    ${(c.assigned_staff_id || c.assignedStaffId || c.assigned_to) ? `<span class="conv-lead-pill" title="Assigned owner">${escapeHtml(this._staffName(c.assigned_staff_id || c.assignedStaffId || c.assigned_to))}</span>` : ''}
+                    ${(c.unread || 0) > 0 ? `<span class="conv-unread-count-bubble" title="${c.unread} unread">${c.unread}</span>` : ''}
                   </div>
                 </div>
                 <div id="conv-menu-${c.id}" class="conv-item-dropdown" style="display:none;" onclick="event.stopPropagation()">
@@ -3791,6 +3872,36 @@ class MetaCRMApp {
               </button>
             </div>
 
+            ${(() => {
+              const ownerId = activeConv.assigned_staff_id || activeConv.assignedStaffId || activeConv.assigned_to || (matchingLead && (matchingLead.assigned_staff_id || matchingLead.assignedStaffId));
+              const isOtherOwner = ownerId && this.user && String(ownerId) !== String(this.user.id);
+              const lastCustomerMsg = (messages || []).slice().reverse().find(m => m.incoming === true || m.sender_type === 'customer');
+              const lastCustMs = lastCustomerMsg ? new Date(lastCustomerMsg.created_at || activeConv.last_message_at || Date.now()).getTime() : new Date(activeConv.last_message_at || Date.now()).getTime();
+              const hoursSinceCustomer = Math.max(0, (Date.now() - lastCustMs) / (1000 * 3600));
+              const windowExpired = !isNaN(hoursSinceCustomer) && hoursSinceCustomer > 24;
+              return `
+                ${isOtherOwner ? `
+                  <div class="composer-collision-banner">
+                    <span>⚠️ Owned by <strong>${escapeHtml(this._staffName(ownerId))}</strong> — coordinate before replying to avoid duplicate responses.</span>
+                    <button type="button" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px;color:#991B1B;" onclick="window.app.assignConversation('${activeConv.id}', '${this.user.id}')">Take ownership</button>
+                  </div>
+                ` : ''}
+                <div class="composer-sender-banner ${activeConvOutsideFilter ? 'sender-mismatch' : ''}" id="composer-sender-banner" data-sender-page-id="${escapeHtml(String(activeConv.page_id || activeConv.accountId || ''))}">
+                  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                    <span style="font-weight:700;">Replying as:</span>
+                    <span class="badge ${isIgActive ? 'badge-pink' : 'badge-indigo'}" style="font-size:11px;padding:2px 8px;">${isIgActive ? 'IG' : 'FB'} · ${escapeHtml(activePageName)}</span>
+                    ${activeConvOutsideFilter ? `<span style="font-size:11px;font-weight:600;">(List filtered to ${escapeHtml(activeScopeLabel)} — sender stays locked to ${escapeHtml(activePageName)})</span>` : ''}
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:11px;color:${windowExpired ? '#B45309' : '#059669'};font-weight:600;" title="${windowExpired ? 'Meta 24-hour standard reply window may have closed. Replies require a new customer message or approved template.' : 'Within Meta 24-hour standard messaging window.'}">
+                      ${windowExpired ? '⏱️ 24h window likely closed' : '● Eligible to reply'}
+                    </span>
+                    <button type="button" class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:11px;" onclick="window.app.openVehicleStockPicker('${activeConv.id}')" title="Share a vehicle from dealership stock into this reply">🚗 Share Car</button>
+                  </div>
+                </div>
+              `;
+            })()}
+
             <div class="inbox-composer" ondragover="event.preventDefault(); this.classList.add('drag-over');" ondragleave="this.classList.remove('drag-over');" ondrop="window.app.handleComposerDrop(event)">
               <input type="file" id="inbox-file-input" style="display:none;" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.txt" onchange="window.app.handleFileSelected(event)">
               <div id="inbox-attachment-preview-bar" style="display:none;padding:8px 14px;background:#F8FAFC;border-bottom:1px solid var(--border);align-items:center;gap:10px;"></div>
@@ -3799,7 +3910,7 @@ class MetaCRMApp {
                 <button class="btn-composer-attach" onclick="window.app.handleAttachmentClick()" title="Attach photo, video or document (max 25MB)" type="button">
                   <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                 </button>
-                <textarea class="inbox-msg-textarea" id="inbox-msg-input" placeholder="Type a reply to ${escapeHtml(activeConv.name)} (Enter to send, Shift+Enter for newline)..." rows="1" onkeydown="window.app.handleComposerKeydown(event)" oninput="window.app.handleComposerInput(this)" onpaste="window.app.handleComposerPaste(event)"></textarea>
+                <textarea class="inbox-msg-textarea" id="inbox-msg-input" placeholder="Replying as ${escapeHtml(activePageName)} to ${escapeHtml(activeConv.name)}..." rows="1" onkeydown="window.app.handleComposerKeydown(event)" oninput="window.app.handleComposerInput(this)" onpaste="window.app.handleComposerPaste(event)">${escapeHtml(this._getConvDraft(activeConv.id))}</textarea>
                 <button class="btn-composer-emoji" type="button" onclick="window.app.insertEmoji('😊')" title="Insert emoji">
                   <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
                 </button>
@@ -3895,17 +4006,62 @@ class MetaCRMApp {
                   </span>
                 </div>
                 <div class="idetail-row">
-                  <span class="idetail-label">Assigned Staff</span>
+                  <span class="idetail-label">Owner</span>
                   <span class="idetail-value">
                     <select class="idetail-select" onchange="window.app.assignConversation('${activeConv.id}', this.value)">
-                      <option value="">John Doe</option>
-                      ${(this.svc ? (this.svc.staff || []) : []).map(s => `
-                        <option value="${s.id}" ${(activeConv.assigned_staff_id || activeConv.assignedStaffId || (matchingLead && (matchingLead.assigned_staff_id || matchingLead.assignedStaffId))) === s.id ? 'selected' : ''}>${s.name}</option>
+                      <option value="">Unassigned</option>
+                      ${this._getEligibleStaffForPage(activeConv.page_id || activeConv.accountId).map(s => `
+                        <option value="${s.id}" ${(activeConv.assigned_staff_id || activeConv.assignedStaffId || activeConv.assigned_to || (matchingLead && (matchingLead.assigned_staff_id || matchingLead.assignedStaffId))) === s.id ? 'selected' : ''}>${escapeHtml(s.displayName || s.name)}</option>
                       `).join('')}
                     </select>
                   </span>
                 </div>
+                <div class="idetail-row">
+                  <span class="idetail-label">Last Interaction</span>
+                  <span class="idetail-value">${this._timeAgo(activeConv.last_message_at || activeConv.time)}</span>
+                </div>
+                <div class="idetail-row">
+                  <span class="idetail-label">Next Action</span>
+                  <span class="idetail-value">${matchingLead && matchingLead.next_action_note ? escapeHtml(matchingLead.next_action_note) : '<span style="color:#94A3B8;">None scheduled</span>'}</span>
+                </div>
+                <div style="display:flex;gap:6px;margin-top:8px;">
+                  <button type="button" class="btn btn-secondary btn-sm" style="flex:1;font-size:11px;" onclick="window.app.openBookAppointmentModal('${matchingLead ? matchingLead.id : ''}', '${activeConv.id}')">📅 Book Yard Visit</button>
+                  <button type="button" class="btn btn-secondary btn-sm" style="flex:1;font-size:11px;" onclick="window.app.openQuickFollowupModal('${matchingLead ? matchingLead.id : ''}', '${activeConv.id}')">⏰ Next Action</button>
+                </div>
               </div>
+
+              <!-- DEALERSHIP QUALIFICATION (Progressive Disclosure) -->
+              <details class="idetail-card" ${matchingLead && (matchingLead.vehicle_interest || matchingLead.budget_nzd || matchingLead.payment_preference) ? 'open' : ''}>
+                <summary class="idetail-section-heading" style="cursor:pointer;margin-bottom:0;display:flex;justify-content:space-between;align-items:center;">
+                  <span>VEHICLE &amp; BUYER DETAILS</span>
+                  <span style="font-size:10px;color:#64748B;">▾</span>
+                </summary>
+                <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">
+                  <div>
+                    <label style="font-size:11px;color:#64748B;display:block;margin-bottom:2px;">Interested Vehicle</label>
+                    <input type="text" class="input input-sm w-full" placeholder="e.g. 2019 Toyota Aqua Hybrid" value="${escapeHtml(matchingLead?.vehicle_interest || '')}" onchange="window.app.saveLeadQualification('${matchingLead ? matchingLead.id : ''}', '${activeConv.id}', 'vehicle_interest', this.value)">
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                    <div>
+                      <label style="font-size:11px;color:#64748B;display:block;margin-bottom:2px;">Budget (NZD)</label>
+                      <input type="number" class="input input-sm w-full" placeholder="15000" value="${matchingLead?.budget_nzd || ''}" onchange="window.app.saveLeadQualification('${matchingLead ? matchingLead.id : ''}', '${activeConv.id}', 'budget_nzd', Number(this.value)||null)">
+                    </div>
+                    <div>
+                      <label style="font-size:11px;color:#64748B;display:block;margin-bottom:2px;">Payment</label>
+                      <select class="input input-sm w-full" onchange="window.app.saveLeadQualification('${matchingLead ? matchingLead.id : ''}', '${activeConv.id}', 'payment_preference', this.value)">
+                        <option value="">Undecided</option>
+                        <option value="Cash" ${matchingLead?.payment_preference==='Cash'?'selected':''}>Cash</option>
+                        <option value="Finance" ${matchingLead?.payment_preference==='Finance'?'selected':''}>Finance</option>
+                        <option value="Trade-in + Finance" ${matchingLead?.payment_preference==='Trade-in + Finance'?'selected':''}>Trade-in + Finance</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label style="font-size:11px;color:#64748B;display:block;margin-bottom:2px;">Trade-in / Timeframe</label>
+                    <input type="text" class="input input-sm w-full" placeholder="e.g. 2012 Swift trade-in · Buying this week" value="${escapeHtml(matchingLead?.trade_in_info || matchingLead?.buying_timeframe || '')}" onchange="window.app.saveLeadQualification('${matchingLead ? matchingLead.id : ''}', '${activeConv.id}', 'trade_in_info', this.value)">
+                  </div>
+                </div>
+              </details>
 
               <!-- INTERNAL TEAM NOTES -->
               <div class="idetail-card">
@@ -4086,17 +4242,20 @@ class MetaCRMApp {
       matching = matching.filter(c => convMatchesPage(c, this.selectedInboxPage));
     }
 
-    // Auto-select first matching conversation if current active conversation is outside this page
-    const currentStillVisible = matching.some(c => String(c.id) === String(this.activeConvId));
-    if (!currentStillVisible) {
-      this.activeConvId = matching.length > 0 ? matching[0].id : null;
+    // Save any current draft before re-rendering
+    const curInput = document.getElementById('inbox-msg-input');
+    if (curInput && this.activeConvId) {
+      this._setConvDraft(this.activeConvId, curInput.value);
+    }
+
+    // Only auto-select a conversation if none is currently open.
+    // Switching page filters MUST NEVER silently change the sender of an open conversation!
+    if (!this.activeConvId && matching.length > 0) {
+      this.activeConvId = matching[0].id;
     }
 
     // 0ms instant UI update
     this.renderInbox();
-
-    const pageName = (this.selectedInboxPage === 'all') ? 'All Pages' : this._pageName(this.selectedInboxPage);
-    this.toast(`Page filter: ${pageName} (${matching.length} conversations)`, 'info');
   }
 
   simulateInboundMessageForPage(pageId) {
@@ -4179,7 +4338,7 @@ class MetaCRMApp {
     try {
       await fetch('/api/messages', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: (this.svc && this.svc.getAuthHeaders) ? this.svc.getAuthHeaders() : { 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversation_id: convId, unread_count: 0 })
       });
     } catch (e) {
@@ -4200,7 +4359,7 @@ class MetaCRMApp {
     try {
       await fetch('/api/messages', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: (this.svc && this.svc.getAuthHeaders) ? this.svc.getAuthHeaders() : { 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversation_id: convId, unread_count: 1 })
       });
     } catch (e) {
@@ -4221,7 +4380,7 @@ class MetaCRMApp {
     try {
       await fetch('/api/messages', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: (this.svc && this.svc.getAuthHeaders) ? this.svc.getAuthHeaders() : { 'Content-Type': 'application/json' },
         body: JSON.stringify({ conversation_id: convId, is_archived: newArchived })
       });
       this.toast(newArchived ? 'Conversation archived' : 'Conversation unarchived', 'info');
@@ -4233,6 +4392,10 @@ class MetaCRMApp {
   }
 
   async selectInboxConv(convId) {
+    const prevInput = document.getElementById('inbox-msg-input');
+    if (prevInput && this.activeConvId) {
+      this._setConvDraft(this.activeConvId, prevInput.value);
+    }
     this.activeConvId = convId;
     this.mobileInboxView = 'chat';
 
@@ -4243,9 +4406,10 @@ class MetaCRMApp {
       if (this.svc && this.svc._saveToStorage) this.svc._saveToStorage();
       else if (this.svc && this.svc.saveAll) this.svc.saveAll();
       try {
+        const authH = (this.svc && this.svc.getAuthHeaders) ? this.svc.getAuthHeaders() : { 'Content-Type': 'application/json' };
         fetch('/api/messages', {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authH,
           body: JSON.stringify({ conversation_id: convId, unread_count: 0 })
         }).catch(() => {});
       } catch (e) {}
@@ -4274,7 +4438,7 @@ class MetaCRMApp {
       try {
         await fetch('/api/messages', {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: (this.svc && this.svc.getAuthHeaders) ? this.svc.getAuthHeaders() : { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversation_id: convId, unread_count: newCount })
         });
       } catch (e) {}
@@ -4317,13 +4481,242 @@ class MetaCRMApp {
     }
   }
 
+  _getConvDraft(convId) {
+    if (!convId) return '';
+    this._convDrafts = this._convDrafts || {};
+    if (this._convDrafts[convId] !== undefined) return this._convDrafts[convId];
+    try {
+      const stored = sessionStorage.getItem('metacrm_draft_' + convId);
+      if (stored) {
+        this._convDrafts[convId] = stored;
+        return stored;
+      }
+    } catch (e) {}
+    return '';
+  }
+
+  _setConvDraft(convId, text) {
+    if (!convId) return;
+    this._convDrafts = this._convDrafts || {};
+    const val = text || '';
+    if (val.trim()) {
+      this._convDrafts[convId] = val;
+      try { sessionStorage.setItem('metacrm_draft_' + convId, val); } catch (e) {}
+    } else {
+      delete this._convDrafts[convId];
+      try { sessionStorage.removeItem('metacrm_draft_' + convId); } catch (e) {}
+    }
+  }
+
+  _getEligibleStaffForPage(pageId) {
+    const staff = (this.svc && this.svc.staff) ? this.svc.staff : [];
+    if (!pageId) return staff;
+    const pid = String(pageId);
+    return staff.filter(s => {
+      if (s.status === 'deactivated' || s.status === 'suspended') return false;
+      if (s.role === 'admin' || s.role === 'super_admin') return true;
+      const assigned = s.assignedPageIds || s.assignedPages || [];
+      return assigned.includes('*') || assigned.includes(pid);
+    });
+  }
+
+  saveLeadQualification(leadId, convId, field, value) {
+    if (!this.svc) return;
+    let targetLeadId = leadId;
+    if (!targetLeadId && convId) {
+      const conv = (this.svc.conversations || []).find(c => String(c.id) === String(convId));
+      if (conv) {
+        const created = this.svc.addLead ? this.svc.addLead({
+          name: conv.name,
+          page_id: conv.page_id || conv.accountId,
+          source: conv.channel === 'instagram' ? 'Instagram Direct' : 'Facebook Messenger',
+          status: 'Contacted'
+        }) : null;
+        if (created && created.id) {
+          targetLeadId = created.id;
+          conv.lead_id = created.id;
+        }
+      }
+    }
+    if (targetLeadId && this.svc.updateLeadDealershipProfile) {
+      this.svc.updateLeadDealershipProfile(targetLeadId, { [field]: value });
+      this.toast('Buyer details saved ✓', 'success');
+    }
+  }
+
+  openVehicleStockPicker(convId) {
+    const vehicles = (this.svc && this.svc.getVehicles) ? this.svc.getVehicles() : [];
+    this.el.mTitle.textContent = 'Share Dealership Vehicle Stock';
+    this.el.mBody.innerHTML = `
+      <p class="text-xs text-gray mb-3">Insert a clean vehicle summary into your reply. Always confirm physical yard availability and exact lender terms before promising finance.</p>
+      <div style="display:flex;flex-direction:column;gap:8px;max-height:300px;overflow-y:auto;">
+        ${vehicles.map(v => {
+          const estWeekly = Math.round((v.priceNzd / 260) * 1.18);
+          return `
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:#F8FAFC;">
+              <div>
+                <div style="font-weight:700;font-size:13px;color:var(--text);">${escapeHtml(v.title)} <span class="badge badge-gray" style="font-size:10px;">${escapeHtml(v.stockNo)}</span></div>
+                <div class="text-xs text-gray">${this.formatMoney(v.priceNzd)} NZD · ${(v.odometerKm||0).toLocaleString('en-NZ')} km · ${escapeHtml(v.fuel)} · ${escapeHtml(v.yard)}</div>
+                <div style="font-size:11px;color:#059669;">Indicative estimate: ~$${estWeekly}/wk (subject to lender approval)</div>
+              </div>
+              <button type="button" class="btn btn-primary btn-sm" onclick="window.app.insertVehicleIntoReply('${v.id}')">Insert</button>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+    this.el.mConfirm.style.display = 'none';
+    this.el.mCancel.textContent = 'Close';
+    this.el.mOverlay.classList.add('open');
+  }
+
+  insertVehicleIntoReply(vehId) {
+    const vehicles = (this.svc && this.svc.getVehicles) ? this.svc.getVehicles() : [];
+    const v = vehicles.find(x => x.id === vehId);
+    if (!v) return;
+    const msg = `Hi! Here are the details for the ${v.title} (Stock #${v.stockNo}): ${this.formatMoney(v.priceNzd)} NZD, ${(v.odometerKm||0).toLocaleString('en-NZ')} km, ${v.fuel} ${v.transmission} at our ${v.yard}. Would you like to book a test drive?`;
+    this.el.mConfirm.style.display = '';
+    this.closeModal();
+    this.insertSavedReply(msg);
+  }
+
+  openBookAppointmentModal(leadId, convId = null) {
+    const lead = (this.svc && leadId) ? this.svc.leads.find(l => String(l.id) === String(leadId)) : null;
+    const conv = (this.svc && convId) ? this.svc.conversations.find(c => String(c.id) === String(convId)) : null;
+    const defaultDate = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 16);
+    this.el.mTitle.textContent = 'Book Yard Visit / Test Drive';
+    this.el.mBody.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div>
+          <label class="form-label" style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Customer</label>
+          <input type="text" class="input w-full" id="appt-cust" value="${escapeHtml(lead?.name || conv?.name || '')}" readonly>
+        </div>
+        <div>
+          <label class="form-label" style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Vehicle for Test Drive</label>
+          <input type="text" class="input w-full" id="appt-veh" placeholder="e.g. 2019 Toyota Aqua Hybrid" value="${escapeHtml(lead?.vehicle_interest || '')}">
+        </div>
+        <div>
+          <label class="form-label" style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Date &amp; Time (NZ)</label>
+          <input type="datetime-local" class="input w-full" id="appt-dt" value="${defaultDate}">
+        </div>
+        <div>
+          <label class="form-label" style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Notes</label>
+          <input type="text" class="input w-full" id="appt-note" placeholder="e.g. Bringing trade-in &amp; driver licence">
+        </div>
+      </div>
+    `;
+    this.el.mConfirm.style.display = '';
+    this.el.mConfirm.textContent = 'Book Yard Visit';
+    this.el.mConfirm.onclick = () => {
+      const veh = document.getElementById('appt-veh')?.value?.trim() || 'Yard Visit';
+      const dt = document.getElementById('appt-dt')?.value;
+      const note = document.getElementById('appt-note')?.value?.trim() || '';
+      if (!dt) return this.toast('Select appointment date and time.', 'warning');
+      const isoDt = new Date(dt).toISOString();
+      if (this.svc) {
+        const taskObj = {
+          id: 'appt_' + Date.now(),
+          type: 'appointment',
+          title: `Yard Visit: ${lead?.name || conv?.name || 'Customer'} — ${veh}`,
+          vehicle: veh,
+          notes: note,
+          dueDate: isoDt,
+          lead_id: lead?.id || null,
+          leadId: lead?.id || null,
+          page_id: lead?.page_id || conv?.page_id || null,
+          assigned_to: (this.user && this.user.id) || null,
+          assignedStaffId: (this.user && this.user.id) || null,
+          priority: 'High',
+          status: 'Todo',
+          attendance_status: 'scheduled',
+          created_at: new Date().toISOString()
+        };
+        this.svc.tasks = this.svc.tasks || [];
+        this.svc.tasks.unshift(taskObj);
+        if (lead && this.svc.updateLeadDealershipProfile) {
+          this.svc.updateLeadDealershipProfile(lead.id, {
+            vehicle_interest: veh,
+            appointment_at: isoDt,
+            appointment_status: 'scheduled',
+            next_action_at: isoDt,
+            next_action_note: `Yard Visit: ${veh}`
+          });
+        } else {
+          this.svc.saveAll();
+        }
+      }
+      this.closeModal();
+      this.toast('Yard visit booked! Added to Tasks & Appointments ✓', 'success');
+      if (this.currentRoute === 'inbox') this.renderInbox();
+      else if (this.currentRoute === 'tasks') this.renderTasks();
+      else if (lead && this.el.drawer.classList.contains('open')) this.openLeadDrawer(lead.id);
+    };
+    this.el.mOverlay.classList.add('open');
+  }
+
+  openQuickFollowupModal(leadId, convId = null) {
+    const lead = (this.svc && leadId) ? this.svc.leads.find(l => String(l.id) === String(leadId)) : null;
+    const conv = (this.svc && convId) ? this.svc.conversations.find(c => String(c.id) === String(convId)) : null;
+    const defaultDate = new Date(Date.now() + 24 * 3600 * 1000).toISOString().slice(0, 10);
+    this.el.mTitle.textContent = 'Set Next Action / Follow-up';
+    this.el.mBody.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div>
+          <label class="form-label" style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Next Action</label>
+          <input type="text" class="input w-full" id="fu-title" placeholder="e.g. Call back about finance approval">
+        </div>
+        <div>
+          <label class="form-label" style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Due Date (NZ)</label>
+          <input type="date" class="input w-full" id="fu-date" value="${defaultDate}">
+        </div>
+      </div>
+    `;
+    this.el.mConfirm.style.display = '';
+    this.el.mConfirm.textContent = 'Save Follow-up';
+    this.el.mConfirm.onclick = () => {
+      const title = document.getElementById('fu-title')?.value?.trim();
+      const dt = document.getElementById('fu-date')?.value;
+      if (!title) return this.toast('Enter a next action note.', 'warning');
+      const dueIso = dt ? new Date(dt + 'T09:00:00').toISOString() : new Date().toISOString();
+      if (this.svc) {
+        this.svc.tasks = this.svc.tasks || [];
+        this.svc.tasks.unshift({
+          id: 'task_' + Date.now(),
+          type: 'followup',
+          title: `${lead?.name || conv?.name || 'Lead'}: ${title}`,
+          dueDate: dueIso,
+          lead_id: lead?.id || null,
+          leadId: lead?.id || null,
+          page_id: lead?.page_id || conv?.page_id || null,
+          assigned_to: (this.user && this.user.id) || null,
+          assignedStaffId: (this.user && this.user.id) || null,
+          priority: 'Medium',
+          status: 'Todo',
+          created_at: new Date().toISOString()
+        });
+        if (lead && this.svc.updateLeadDealershipProfile) {
+          this.svc.updateLeadDealershipProfile(lead.id, { next_action_at: dueIso, next_action_note: title });
+        } else {
+          this.svc.saveAll();
+        }
+      }
+      this.closeModal();
+      this.toast('Next action saved ✓', 'success');
+      if (this.currentRoute === 'inbox') this.renderInbox();
+    };
+    this.el.mOverlay.classList.add('open');
+  }
+
   handleComposerInput(el) {
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+    if (this.activeConvId) {
+      this._setConvDraft(this.activeConvId, el.value);
+    }
     const sendBtn = document.getElementById('inbox-send-btn');
     if (sendBtn) {
-      sendBtn.disabled = !el.value.trim();
+      sendBtn.disabled = !el.value.trim() && !this._pendingAttachment;
     }
   }
 
@@ -5199,11 +5592,12 @@ class MetaCRMApp {
       clientMsgId = 'opt_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
       if (this._inFlightSends.has(clientMsgId)) return;
 
-      // Keep composer responsive: clear input immediately and keep enabled
+      // Keep composer responsive: clear input and saved draft immediately
       if (input) {
         input.value = '';
         input.style.height = 'auto';
       }
+      this._setConvDraft(activeConv.id, '');
       this.clearPendingAttachment();
 
       msgObj = {
@@ -5320,7 +5714,14 @@ class MetaCRMApp {
         else if (this.svc.saveAll) this.svc.saveAll();
       }
 
-      this.toast(`Message sent on ${channelName} ✓`, 'success');
+      // Record human first response on linked lead if present
+      if (this.svc && this.svc.leads && this.svc.recordFirstResponse) {
+        const linkedLead = this.svc.leads.find(l => String(l.id) === String(activeConv.lead_id) || l.name === activeConv.name);
+        if (linkedLead) {
+          this.svc.recordFirstResponse(linkedLead.id, isIg ? 'instagram' : 'messenger', { isAutomated: false });
+        }
+      }
+      this.toast(`Sent as ${this._pageName(activeConv.page_id || accountId)} on ${channelName} ✓`, 'success');
 
     } catch (err) {
       console.error('[Send Message Error]:', err);
@@ -6390,24 +6791,30 @@ class MetaCRMApp {
 
   renderTasks(tab) {
     if (tab) this.currentTaskTab = tab;
-    this.el.title.textContent = (this.user && this.user.role === 'staff') ? 'My Follow-ups' : 'Follow-ups & Reminders';
-    this.el.actions.innerHTML = `<button class="btn btn-primary" onclick="window.app.openAddTaskModal()">+ Add Follow-up</button>`;
+    this.el.title.textContent = (this.user && this.user.role === 'staff') ? 'My Tasks & Appointments' : 'Tasks & Appointments';
+    this.el.actions.innerHTML = `
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-secondary btn-sm" onclick="window.app.openBookAppointmentModal()">📅 + Book Yard Visit</button>
+        <button class="btn btn-primary btn-sm" onclick="window.app.openAddTaskModal()">+ Add Follow-up</button>
+      </div>`;
 
     const now = new Date();
+    const todayNZ = this._getNZDate(now);
     const tasks = this._filterUserTasks(this.svc ? this.svc.tasks : []);
 
     const tabs = [
-      { id: 'all',      label: 'All',      fn: t => true },
-      { id: 'today',    label: 'Today',    fn: t => t.dueDate && new Date(t.dueDate).toDateString() === now.toDateString() },
-      { id: 'upcoming', label: 'Upcoming', fn: t => t.dueDate && new Date(t.dueDate) > now },
-      { id: 'overdue',  label: 'Overdue',  fn: t => t.dueDate && new Date(t.dueDate) < now && t.status !== 'Done', cls: 'text-red' },
+      { id: 'all',          label: 'All',          fn: t => true },
+      { id: 'appointments', label: 'Yard Visits',  fn: t => t.type === 'appointment' },
+      { id: 'today',        label: 'Today (NZ)',   fn: t => t.dueDate && this._getNZDate(t.dueDate) === todayNZ },
+      { id: 'upcoming',     label: 'Upcoming',     fn: t => t.dueDate && new Date(t.dueDate) > now },
+      { id: 'overdue',      label: 'Overdue',      fn: t => t.dueDate && new Date(t.dueDate) < now && t.status !== 'Done', cls: 'text-red' },
     ];
 
     const activeTab = tabs.find(t => t.id === this.currentTaskTab) || tabs[0];
     const filtered = tasks.filter(activeTab.fn);
 
     this.el.content.innerHTML = `
-      ${this._renderTip('tasks', 'Set reminders and follow-ups so you never forget to call a lead back.')}
+      ${this._renderTip('tasks', 'Track customer callbacks and scheduled yard visits / test drives in New Zealand time (Pacific/Auckland).')}
 
       <div class="tabs">
         ${tabs.map(t => {
@@ -6419,21 +6826,48 @@ class MetaCRMApp {
       ${filtered.length ? `
       <div class="task-list">
         ${filtered.map(t => {
-          const isOverdue = t.dueDate && new Date(t.dueDate) < now && t.status !== 'Done';
+          const isAppt = t.type === 'appointment';
+          const dueLabel = t.dueDate ? new Date(t.dueDate).toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', weekday: 'short', day: 'numeric', month: 'short', ...(isAppt ? { hour: '2-digit', minute: '2-digit' } : {}) }) : 'No date';
           return `
             <div class="task-card" id="task-${t.id}">
               <input type="checkbox" class="task-check" ${t.status==='Done'?'checked':''} onchange="window.app.completeTask('${t.id}', this)">
               <div class="task-body">
-                <div class="task-title" style="${t.status==='Done'?'text-decoration:line-through;color:#94a3b8;':''}">${t.title}</div>
+                <div class="task-title" style="${t.status==='Done'?'text-decoration:line-through;color:#94a3b8;':''}">
+                  ${isAppt ? '<span class="badge badge-indigo" style="font-size:10px;margin-right:6px;">📅 Yard Visit</span>' : ''}
+                  ${escapeHtml(t.title)}
+                </div>
                 <div class="task-meta">
-                  <span>${this._icon('calendar', 12)} Due: ${t.dueDate ? new Date(t.dueDate).toLocaleDateString('en-IN', {weekday:'short',day:'numeric',month:'short'}) : 'No date'}</span>
-                  <span>${this._icon('user', 12)} ${this._staffName(t.assigned_to || t.assignedStaffId)}</span>
+                  <span>${this._icon('calendar', 12)} ${isAppt ? 'Scheduled' : 'Due'}: ${dueLabel}</span>
+                  <span>${this._icon('user', 12)} ${escapeHtml(this._staffName(t.assigned_to || t.assignedStaffId))}</span>
+                  ${t.lead_id || t.leadId ? `<button type="button" class="btn btn-ghost btn-sm" style="padding:0 4px;font-size:11px;" onclick="window.app.openLeadDrawer('${t.lead_id || t.leadId}')">Open Lead →</button>` : ''}
                 </div>
               </div>
-              ${this._priorityBadge(t.priority)}
+              ${isAppt ? `
+                <select class="input input-sm" style="width:115px;font-size:11px;" onchange="window.app.updateAppointmentStatus('${t.id}', this.value)">
+                  <option value="scheduled" ${(t.attendance_status||'scheduled')==='scheduled'?'selected':''}>Scheduled</option>
+                  <option value="attended" ${t.attendance_status==='attended'?'selected':''}>Attended ✓</option>
+                  <option value="no_show" ${t.attendance_status==='no_show'?'selected':''}>No-Show</option>
+                  <option value="cancelled" ${t.attendance_status==='cancelled'?'selected':''}>Cancelled</option>
+                </select>
+              ` : this._priorityBadge(t.priority)}
             </div>`;
         }).join('')}
-      </div>` : this._empty('No tasks in this view', 'You are all caught up! Create a follow-up or scheduled call.', null, null, '<button class="btn btn-primary" onclick="window.app.openAddTaskModal()">+ New Task</button>')}`;
+      </div>` : this._empty('No tasks or appointments here', 'Schedule a customer callback or book a yard visit / test drive.', null, null, '<button class="btn btn-primary" onclick="window.app.openBookAppointmentModal()">📅 Book Yard Visit</button>')}`;
+  }
+
+  updateAppointmentStatus(taskId, status) {
+    if (!this.svc || !this.svc.tasks) return;
+    const task = this.svc.tasks.find(t => String(t.id) === String(taskId));
+    if (!task) return;
+    task.attendance_status = status;
+    if (status === 'attended') task.status = 'Done';
+    if (task.lead_id || task.leadId) {
+      this.svc.updateLeadDealershipProfile(task.lead_id || task.leadId, { appointment_status: status });
+    } else {
+      this.svc.saveAll();
+    }
+    this.toast(`Appointment marked: ${status}`, 'success');
+    this.renderTasks();
   }
 
   completeTask(taskId, checkbox) {
@@ -7025,13 +7459,16 @@ class MetaCRMApp {
               <div class="card-title mb-4">General Settings</div>
               <label class="settings-label">CRM Organization Name</label>
               <input type="text" class="input mb-4" value="MetaCRM Multi-Page Workspace">
-              <label class="settings-label">Timezone</label>
-              <select class="input mb-4">
-                <option selected>Asia/Kolkata (IST)</option>
-                <option>UTC</option>
-                <option>America/New_York</option>
+              <label class="settings-label">Business Timezone</label>
+              <select class="input mb-4" disabled title="Locked to New Zealand business time (with automatic daylight saving)">
+                <option selected>Pacific/Auckland (NZST / NZDT)</option>
               </select>
               <button class="btn btn-primary" onclick="window.app.toast('Settings saved successfully!')">Save Changes</button>
+            </div>
+            <div class="card mt-4" style="max-width:520px">
+              <div class="card-title mb-2">Desktop Application</div>
+              <p class="text-xs text-gray mb-3">Optional Windows &amp; macOS desktop wrapper synced to your cloud workspace.</p>
+              <a href="download.html" target="_blank" class="btn btn-secondary btn-sm">Download Desktop App ↗</a>
             </div>
           </div>
           <div id="stab-notifications" style="display:none">
@@ -7401,21 +7838,26 @@ class MetaCRMApp {
     return pages.filter(p => assignedIds.includes(p.id) || assignedIds.includes(p.page_id));
   }
 
-  _getISTDate(dateInput = null) {
+  _getNZDate(dateInput = null) {
     const d = dateInput ? new Date(dateInput) : new Date();
     if (isNaN(d.getTime())) return null;
     try {
       const formatter = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Asia/Kolkata',
+        timeZone: 'Pacific/Auckland',
         year: 'numeric',
         month: '2-digit',
         day: '2-digit'
       });
       return formatter.format(d);
     } catch (e) {
-      const istMs = d.getTime() + (5.5 * 60 * 60 * 1000);
-      return new Date(istMs).toISOString().split('T')[0];
+      const nzMs = d.getTime() + (13 * 60 * 60 * 1000);
+      return new Date(nzMs).toISOString().split('T')[0];
     }
+  }
+
+  _getISTDate(dateInput = null) {
+    // Alias kept for backwards compatibility — uses Pacific/Auckland business day
+    return this._getNZDate(dateInput);
   }
 
   _isDateInRangeIST(dateInput, range) {
