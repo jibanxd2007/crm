@@ -386,9 +386,14 @@ async function run() {
 
   await test('10c. Pipeline UI exposes non-drag accessible Stage select & Marketing separates 3 tabs', async () => {
     const appCode = fs.readFileSync(path.join(__dirname, '..', 'js', 'app.js'), 'utf8');
-    assert.ok(appCode.includes('kanban-stage-select'), 'Pipeline cards must include accessible Stage dropdown');
+    const viewsCode = fs.readFileSync(path.join(__dirname, '..', 'js', 'dealership-views.js'), 'utf8');
+    const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+    assert.ok(indexHtml.includes('css/design-system.css'), 'index.html must load unified design-system.css');
+    assert.ok(indexHtml.includes('js/dealership-views.js'), 'index.html must load dealership-views.js');
     assert.ok(appCode.includes('moveLeadStage('), 'Pipeline must provide moveLeadStage non-drag handler');
-    assert.ok(appCode.includes("switchAdsTab('campaigns')") && appCode.includes("switchAdsTab('lead_capture')") && appCode.includes("switchAdsTab('health')"), 'Marketing / Meta must clearly separate Campaigns, Lead Capture, and Connection Health');
+    assert.ok(viewsCode.includes('kanban-stage-select') && viewsCode.includes('finance_status'), 'Pipeline cards must expose non-drag Stage selector and separate finance_status');
+    assert.ok(viewsCode.includes("switchAdsTab('campaigns')") && viewsCode.includes("switchAdsTab('lead_capture')") && viewsCode.includes("switchAdsTab('health')"), 'Marketing / Meta must clearly separate Campaigns, Lead Capture, and Connection Health');
+    assert.ok(viewsCode.includes('ds-diagnostics-disclosure'), 'Technical diagnostics must be placed in expandable disclosure');
   });
 
   console.log('\n====================================================================');
