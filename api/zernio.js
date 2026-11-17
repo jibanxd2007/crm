@@ -14,6 +14,14 @@ const {
   safeDbUpsert 
 } = require('./_utils/index.js');
 const { ingestLeadAdEvent, logWebhookEvent } = require('./_utils/lead-ingestion.js');
+const {
+  getDynamicZernioAccounts,
+  resolveDynamicAccount,
+  syncZernioAdsInsights,
+  fetchZernioLeadForms,
+  syncZernioLeads,
+  inspectZernioHealth
+} = require('./_utils/zernio-client.js');
 
 // Structured diagnostics and observability tracker for Zernio & Meta synchronization
 const SYNC_DIAGNOSTICS = {
@@ -136,79 +144,15 @@ async function zernioUnifiedHandler(req, res) {
     });
   }
 
-  // 0.2 INTEGRATION & LEAD ADS CAPABILITY HEALTH MATRIX
+  // 0.2 INTEGRATION & LEAD ADS CAPABILITY HEALTH MATRIX (Multi-Stage, Honest)
   if (path === 'health' || url.includes('/health')) {
     res.setHeader('Content-Type', 'application/json');
     const apiKey = process.env.ZERNIO_API_KEY;
-    const hasWebhookSecret = Boolean(process.env.ZERNIO_WEBHOOK_SECRET);
     const hasMetaToken = Boolean(process.env.META_ACCESS_TOKEN || process.env.META_SYSTEM_USER_ACCESS_TOKEN);
     const supabase = getSupabaseAdmin();
+    const currentHost = req.headers['x-forwarded-host'] || req.headers.host || process.env.VERCEL_URL || 'crm-mu-three-52.vercel.app';
 
-    let pagesHealth = [];
-    let liveAccountsError = null;
-
-    if (apiKey) {
-      try {
-        const accData = await new Promise((resolve, reject) => {
-          const r = https.get({
-            hostname: 'zernio.com',
-            port: 443,
-            path: '/api/v1/accounts',
-            headers: { 'Authorization': `Bearer ${apiKey}`, 'Accept': 'application/json' }
-          }, (resp) => {
-            let d = '';
-            resp.on('data', c => d += c);
-            resp.on('end', () => {
-              try { resolve(JSON.parse(d)); } catch (e) { reject(new Error('Invalid Zernio response')); }
-            });
-          });
-          r.setTimeout(6000, () => { r.destroy(); reject(new Error('Zernio API timeout')); });
-          r.on('error', reject);
-        });
-
-        const accounts = Array.isArray(accData?.accounts) ? accData.accounts : [];
-        pagesHealth = accounts
-          .filter(a => {
-            const n = String(a.displayName || a.username || '').toLowerCase();
-            return !n.includes('jiban') && !n.includes('prakash') && !n.includes('omm');
-          })
-          .map(a => {
-            const perms = Array.isArray(a.permissions) ? a.permissions : [];
-            const hasMessagingPerm = perms.includes('pages_messaging') || perms.includes('instagram_manage_messages');
-            const hasLeadsPerm = perms.includes('leads_retrieval');
-            const hasAdsPerm = perms.includes('ads_read') || perms.includes('ads_management');
-            const leadgenSubscribed = Boolean(a.metadata?.leadgenSubscribed);
-            const messagingSubscribed = a.metadata?.messagingSubscribed !== false;
-            const tokenExpired = a.tokenExpiresAt ? (new Date(a.tokenExpiresAt) < new Date()) : false;
-            const needsReconnection = Boolean(a.needsReconnection || tokenExpired || a.isActive === false);
-
-            const missingPermissions = [];
-            if (!hasMessagingPerm) missingPermissions.push('pages_messaging');
-            if (a.platform === 'facebook' && !hasLeadsPerm) missingPermissions.push('leads_retrieval');
-            if (!hasAdsPerm) missingPermissions.push('ads_read');
-
-            return {
-              accountId: a._id,
-              pageId: a.metadata?.selectedPageId || a.platformUserId || a._id,
-              pageName: (a.metadata?.selectedPageName || a.displayName || a.username || 'Connected Page').trim(),
-              platform: a.platform || 'facebook',
-              oauthConnected: Boolean(a.isActive && !needsReconnection),
-              messagingReady: Boolean(a.isActive && !needsReconnection && hasMessagingPerm && messagingSubscribed),
-              leadAdsReady: Boolean(a.isActive && !needsReconnection && hasLeadsPerm && leadgenSubscribed),
-              adReportingReady: Boolean(a.isActive && !needsReconnection && hasAdsPerm),
-              leadgenSubscribed,
-              needsReconnection,
-              tokenExpiresAt: a.tokenExpiresAt || null,
-              missingPermissions,
-              actionRequired: needsReconnection
-                ? 'Token expired or disconnected — click Reconnect.'
-                : (!leadgenSubscribed && a.platform === 'facebook' ? 'Lead Ads webhook not subscribed — reconnect page with leads_retrieval permission.' : null)
-            };
-          });
-      } catch (hErr) {
-        liveAccountsError = hErr.message;
-      }
-    }
+    const health = await inspectZernioHealth({ apiKey, supabase, currentHost });
 
     let recentEvents = (global.CRM_WEBHOOK_LOG || []).slice(0, 10);
     if (supabase) {
@@ -223,23 +167,86 @@ async function zernioUnifiedHandler(req, res) {
     }
 
     return res.status(200).json({
-      status: apiKey ? (liveAccountsError ? 'degraded' : 'ok') : 'not_configured',
-      gatewayConfigured: Boolean(apiKey),
-      webhookSignatureEnforced: hasWebhookSecret,
+      ...health,
       metaDirectTokenConfigured: hasMetaToken,
-      liveAccountsError,
-      pages: pagesHealth,
       ingestion: {
         webhooksReceived: SYNC_DIAGNOSTICS.webhooksReceived,
         webhooksProcessed: SYNC_DIAGNOSTICS.webhooksProcessed,
         duplicatesIgnored: SYNC_DIAGNOSTICS.duplicatesIgnored,
         failedCount: SYNC_DIAGNOSTICS.failedProcessingAttempts,
         recoveryQueueSize: (global.RECOVERABLE_FAILED_WEBHOOKS || []).length,
-        lastSuccessfulEventAt: recentEvents.find(e => e.status === 'processed')?.processed_at || null,
+        lastSuccessfulEventAt: recentEvents.find(e => e.status === 'processed')?.processed_at || health.leadsSyncState?.lastLeadReceivedAt || null,
         recentEvents
-      },
-      timestamp: new Date().toISOString()
+      }
     });
+  }
+
+  // 0.25 META ADS INSIGHTS SYNC THROUGH ZERNIO (Admin Only, NZD-Enforced, Paginated & Deduplicated)
+  if (path === 'sync-ads' || path === 'ads-insights' || url.includes('/sync-ads') || url.includes('/ads-insights')) {
+    res.setHeader('Content-Type', 'application/json');
+    const user = resolveUser(req.headers);
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ error: "Forbidden: Admin authorization required for Meta Ads insights." });
+    }
+    const apiKey = process.env.ZERNIO_API_KEY;
+    if (!apiKey) {
+      return res.status(200).json({ status: 'not_configured', error: 'ZERNIO_API_KEY not configured', campaigns: [], adAccounts: [] });
+    }
+    const body = (req.body && typeof req.body === 'object') ? req.body : {};
+    const range = query.range || body.range || 'last_30d';
+    const since = query.since || body.since || null;
+    const until = query.until || body.until || null;
+    const pageId = query.pageId || query.page_id || body.pageId || body.page_id || null;
+    const forceSync = path === 'sync-ads' || url.includes('/sync-ads') || query.refresh === 'true' || req.method === 'POST';
+
+    if (!forceSync && global.ZERNIO_ADS_SYNC_CACHE?.insightsRetrievedSuccessfully && global.ZERNIO_ADS_SYNC_CACHE.lastWindow?.range === range && !pageId) {
+      return res.status(200).json({
+        status: 'success',
+        cached: true,
+        provider: 'zernio',
+        currency: 'NZD',
+        window: global.ZERNIO_ADS_SYNC_CACHE.lastWindow,
+        lastSuccessfulSync: global.ZERNIO_ADS_SYNC_CACHE.lastSuccessfulSync,
+        insightsRetrievedSuccessfully: true,
+        adAccounts: global.ZERNIO_ADS_SYNC_CACHE.adAccounts,
+        excludedNonNzdAccounts: global.ZERNIO_ADS_SYNC_CACHE.excludedNonNzdAccounts,
+        campaigns: global.ZERNIO_ADS_SYNC_CACHE.campaigns,
+        totals: global.ZERNIO_ADS_SYNC_CACHE.totals,
+        providerLimitations: [
+          'Zernio GET /api/v1/ads/campaigns only returns campaigns created inside Zernio; native Meta Ads Manager campaigns are retrieved via GET /api/v1/ads/insights?level=campaign.'
+        ],
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    try {
+      const supabase = getSupabaseAdmin();
+      const result = await syncZernioAdsInsights({ apiKey, supabase, since, until, range, pageId });
+      return res.status(200).json(result);
+    } catch (adsErr) {
+      recordDiagnosticError('sync-ads', adsErr);
+      return res.status(500).json({ status: 'error', error: adsErr.message, campaigns: [], adAccounts: [] });
+    }
+  }
+
+  // 0.26 META LEAD FORMS VIA ZERNIO (Admin Only)
+  if (path === 'lead-forms' || url.includes('/lead-forms')) {
+    res.setHeader('Content-Type', 'application/json');
+    const user = resolveUser(req.headers);
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ error: "Forbidden: Admin authorization required to inspect Meta Lead Forms." });
+    }
+    const apiKey = process.env.ZERNIO_API_KEY;
+    if (!apiKey) {
+      return res.status(200).json({ status: 'not_configured', forms: [] });
+    }
+    try {
+      const pageId = query.pageId || query.page_id || null;
+      const resForms = await fetchZernioLeadForms({ apiKey, pageId });
+      return res.status(200).json({ status: 'success', ...resForms });
+    } catch (fErr) {
+      return res.status(500).json({ status: 'error', error: fErr.message, forms: [] });
+    }
   }
 
   // 0.3 GUIDED TEST-LEAD WORKFLOW (Verifies real ingestion, mapping, assignment & duplicate replay)
@@ -251,8 +258,9 @@ async function zernioUnifiedHandler(req, res) {
     }
     const body = req.body || {};
     const supabase = getSupabaseAdmin();
-    const targetPageId = String(body.page_id || body.pageId || '1342542735606057');
-    const targetPageName = body.page_name || body.pageName || 'Nova auto nz';
+    const resolvedAcc = await resolveDynamicAccount(process.env.ZERNIO_API_KEY, body.page_id || body.pageId || null);
+    const targetPageId = String(body.page_id || body.pageId || resolvedAcc?.pageId || 'unmapped_page');
+    const targetPageName = body.page_name || body.pageName || resolvedAcc?.pageName || 'Connected Page';
     const testLeadgenId = body.meta_lead_id || `test_lead_${Date.now()}`;
 
     const samplePayload = {
@@ -628,9 +636,13 @@ async function zernioUnifiedHandler(req, res) {
       }
     }
 
-    // Resolve accountId fast without slow blocking requests
+    // Resolve accountId dynamically from active Zernio accounts (never hardcoded)
     if (!accountId) {
-      accountId = '6accd8b0d52dc43d8bf6034c'; // default active Facebook/Messenger account
+      const dynamicAcc = await resolveDynamicAccount(apiKey, null);
+      if (dynamicAcc) accountId = dynamicAcc.accountId;
+    }
+    if (!accountId) {
+      return res.status(400).json({ error: "No connected Zernio account found for this conversation." });
     }
 
     if (req.method === 'POST') {
@@ -873,7 +885,9 @@ async function zernioUnifiedHandler(req, res) {
       for (const conv of convList.slice(0, syncBatchLimit)) {
         if (!conv.id) continue;
         try {
-          const accId = conv.accountId || targetAccount || '6accd8b0d52dc43d8bf6034c';
+          const resolvedForConv = conv.accountId || targetAccount ? null : await resolveDynamicAccount(apiKey, conv.pageId || conv.page_id || null);
+          const accId = conv.accountId || targetAccount || resolvedForConv?.accountId || null;
+          if (!accId) continue;
           const msgsResp = await new Promise((resolve) => {
             const mReq = https.get({
               hostname: 'zernio.com',
@@ -1265,7 +1279,20 @@ async function zernioUnifiedHandler(req, res) {
       }
 
       try {
-        const result = await ingestLeadAdEvent(supabase, payload, { provider: 'zernio' });
+        // Resolve page_id & page_name dynamically from Zernio account registry if webhook only provides accountId
+        const rawAccOrPage = payload.page_id || payload.pageId || payload.accountId || payload.account_id || (payload.lead && (payload.lead.pageId || payload.lead.accountId));
+        let enrichedPayload = payload;
+        if (rawAccOrPage && process.env.ZERNIO_API_KEY) {
+          const dynAcc = await resolveDynamicAccount(process.env.ZERNIO_API_KEY, rawAccOrPage).catch(() => null);
+          if (dynAcc) {
+            enrichedPayload = {
+              ...payload,
+              page_id: payload.page_id || payload.pageId || dynAcc.pageId,
+              page_name: payload.page_name || payload.pageName || dynAcc.pageName
+            };
+          }
+        }
+        const result = await ingestLeadAdEvent(supabase, enrichedPayload, { provider: 'zernio' });
         SYNC_DIAGNOSTICS.webhooksProcessed++;
         if (result.isDuplicate) SYNC_DIAGNOSTICS.duplicatesIgnored++;
         return res.status(200).json({
@@ -1283,7 +1310,7 @@ async function zernioUnifiedHandler(req, res) {
     }
   }
 
-  // 5. BACKFILL: SYNC LEADS NOW (Admin Only)
+  // 5. BACKFILL: SYNC LEADS NOW THROUGH ZERNIO /api/v1/ads/leads (Admin Only)
   if (path === 'sync-leads' || url.includes('/sync-leads')) {
     res.setHeader('Content-Type', 'application/json');
     const user = resolveUser(req.headers);
@@ -1292,149 +1319,24 @@ async function zernioUnifiedHandler(req, res) {
     }
 
     const supabase = getSupabaseAdmin();
-    let newLeads = 0;
-    let skippedLeads = 0;
-    const errors = [];
+    const apiKey = process.env.ZERNIO_API_KEY;
+    if (!apiKey) {
+      return res.status(200).json({
+        status: 'not_configured',
+        syncedCount: 0,
+        newLeads: 0,
+        skippedLeads: 0,
+        error: 'ZERNIO_API_KEY is not configured.'
+      });
+    }
 
     try {
-      const apiKey = process.env.ZERNIO_API_KEY;
-      let connectedPages = [];
-
-      if (supabase) {
-        const { data: pages } = await supabase
-          .from('facebook_pages')
-          .select('id, page_id, page_name, page_access_token');
-        if (pages) connectedPages = pages;
-      }
-
-      // Backfill through Zernio accounts API if key configured
-      if (apiKey) {
-        try {
-          const zernioResp = await new Promise((resolve) => {
-            const reqAcc = https.request({
-              hostname: 'zernio.com',
-              port: 443,
-              path: '/api/v1/accounts',
-              method: 'GET',
-              headers: { 'Authorization': `Bearer ${apiKey}`, 'Accept': 'application/json' }
-            }, (resAcc) => {
-              let d = '';
-              resAcc.on('data', c => d += c);
-              resAcc.on('end', () => {
-                try { resolve(JSON.parse(d)); } catch(e) { resolve(null); }
-              });
-            });
-            reqAcc.on('error', () => resolve(null));
-            reqAcc.end();
-          });
-
-          if (zernioResp && Array.isArray(zernioResp.leads)) {
-            for (const item of zernioResp.leads) {
-              const lId = item.id || item.leadgen_id;
-              if (!lId || !supabase) continue;
-
-              const targetPg = connectedPages.find(p => p.page_id === item.page_id || p.id === item.page_id) || connectedPages[0];
-              const { data: upRes, error: insErr } = await supabase
-                .from('leads')
-                .upsert({
-                  page_id: targetPg?.id || null,
-                  meta_lead_id: String(lId),
-                  full_name: item.full_name || item.name || 'Meta Lead',
-                  email: item.email || null,
-                  phone: item.phone || null,
-                  source: 'Facebook Lead Ad',
-                  status: 'New',
-                  raw_data: item,
-                  created_at: item.created_time || item.created_at || new Date().toISOString()
-                }, { onConflict: 'meta_lead_id', ignoreDuplicates: true })
-                .select('id');
-
-              if (!insErr) {
-                if (upRes && upRes.length > 0) newLeads++;
-                else skippedLeads++;
-              }
-            }
-          }
-        } catch (zErr) {
-          console.warn('[Zernio Lead Backfill Warning]:', zErr.message);
-          errors.push(zErr.message);
-        }
-      }
-
-      // Backfill from Meta Graph API for each connected Facebook Page with access token
-      for (const page of connectedPages) {
-        const token = page.page_access_token || process.env.META_ACCESS_TOKEN || process.env.META_SYSTEM_USER_ACCESS_TOKEN;
-        if (!token || !page.page_id) continue;
-
-        try {
-          const formsData = await httpsRequest(`https://graph.facebook.com/v24.0/${page.page_id}/leadgen_forms?access_token=${token}&limit=10`).catch(() => null);
-          const forms = formsData?.data || [];
-
-          for (const form of forms) {
-            const leadsData = await httpsRequest(`https://graph.facebook.com/v24.0/${form.id}/leads?access_token=${token}&limit=25`).catch(() => null);
-            const rawLeads = leadsData?.data || [];
-
-            for (const rLead of rawLeads) {
-              if (!rLead.id || !supabase) continue;
-
-              let lName = '';
-              let lEmail = '';
-              let lPhone = '';
-              if (Array.isArray(rLead.field_data)) {
-                for (const f of rLead.field_data) {
-                  const fn = (f.name || '').toLowerCase();
-                  const fv = Array.isArray(f.values) ? f.values[0] : f.values;
-                  if (!lName && (fn.includes('full_name') || fn === 'name')) lName = fv;
-                  else if (!lName && fn.includes('first_name')) lName = fv;
-                  else if (!lEmail && fn.includes('email')) lEmail = fv;
-                  else if (!lPhone && (fn.includes('phone') || fn.includes('mobile'))) lPhone = fv;
-                }
-              }
-
-              const { data: upRes, error: insErr } = await supabase
-                .from('leads')
-                .upsert({
-                  page_id: page.id,
-                  meta_lead_id: String(rLead.id),
-                  full_name: lName || 'Meta Lead',
-                  email: lEmail || null,
-                  phone: lPhone || null,
-                  source: 'Facebook Lead Ad',
-                  status: 'New',
-                  form_id: form.id,
-                  form_name: form.name,
-                  raw_data: rLead,
-                  created_at: rLead.created_time || new Date().toISOString()
-                }, { onConflict: 'meta_lead_id', ignoreDuplicates: true })
-                .select('id');
-
-              if (!insErr) {
-                if (upRes && upRes.length > 0) newLeads++;
-                else skippedLeads++;
-              } else {
-                console.error('[Meta Lead Backfill Insert Error]:', insErr.message);
-              }
-            }
-          }
-        } catch (pageErr) {
-          console.warn(`[Meta Page Lead Sync Warning for ${page.page_name}]:`, pageErr.message);
-          errors.push(pageErr.message);
-        }
-      }
-
-      console.log(`[Zernio / Meta Lead Backfill Finished]: Synced ${newLeads} new leads, skipped ${skippedLeads} existing leads.`);
-      return res.status(200).json({
-        status: "success",
-        syncedCount: newLeads,
-        newLeads: newLeads,
-        skippedLeads: skippedLeads,
-        totalProcessed: newLeads + skippedLeads,
-        connectedPagesProcessed: connectedPages.length,
-        errors: errors.length > 0 ? errors : undefined,
-        timestamp: new Date().toISOString()
-      });
+      const pageId = query.pageId || query.page_id || (req.body && (req.body.pageId || req.body.page_id)) || null;
+      const limitPerAccount = Math.min(100, Math.max(1, parseInt(query.limit || '50', 10) || 50));
+      const syncRes = await syncZernioLeads({ apiKey, supabase, pageId, limitPerAccount });
+      return res.status(200).json(syncRes);
     } catch (topErr) {
-      console.error('[Zernio Lead Backfill Fatal Error]:', topErr);
+      recordDiagnosticError('sync-leads', topErr);
       return res.status(500).json({ error: topErr.message });
     }
   }
@@ -1442,7 +1344,7 @@ async function zernioUnifiedHandler(req, res) {
   return res.status(200).json({
     status: "ok",
     service: "zernio-gateway",
-    endpoints: ["status", "connect", "simulate-lead", "webhook", "sync-leads"]
+    endpoints: ["status", "accounts", "health", "sync-ads", "ads-insights", "lead-forms", "sync-leads", "test-lead", "connect", "webhook", "inbox-conversations", "inbox-messages", "sync-inbox"]
   });
 }
 

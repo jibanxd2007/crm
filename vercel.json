@@ -206,6 +206,34 @@
       "destination": "/api/zernio.js?path=accounts"
     },
     {
+      "source": "/api/zernio/health",
+      "destination": "/api/zernio.js?path=health"
+    },
+    {
+      "source": "/api/zernio/sync-ads",
+      "destination": "/api/zernio.js?path=sync-ads"
+    },
+    {
+      "source": "/api/zernio/ads-insights",
+      "destination": "/api/zernio.js?path=ads-insights"
+    },
+    {
+      "source": "/api/zernio/lead-forms",
+      "destination": "/api/zernio.js?path=lead-forms"
+    },
+    {
+      "source": "/api/zernio/sync-leads",
+      "destination": "/api/zernio.js?path=sync-leads"
+    },
+    {
+      "source": "/api/zernio/test-lead",
+      "destination": "/api/zernio.js?path=test-lead"
+    },
+    {
+      "source": "/api/zernio/diagnostics",
+      "destination": "/api/zernio.js?path=diagnostics"
+    },
+    {
       "source": "/api/zernio/inbox/conversations/(.*)/messages",
       "destination": "/api/zernio.js?path=inbox-messages&conversationId=$1"
     },

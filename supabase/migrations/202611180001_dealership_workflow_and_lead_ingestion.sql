@@ -87,6 +87,61 @@ ALTER TABLE public.conversations
   ADD COLUMN IF NOT EXISTS ad_referral JSONB,
   ADD COLUMN IF NOT EXISTS linked_lead_id UUID;
 
+-- 5b. Meta Ads Accounts, Campaigns & Daily Insights (Zernio Sync Storage)
+CREATE TABLE IF NOT EXISTS public.ad_accounts (
+  id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL DEFAULT 'zernio',
+  zernio_account_id TEXT,
+  page_id TEXT,
+  name TEXT NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'NZD',
+  account_status TEXT,
+  is_nzd BOOLEAN NOT NULL DEFAULT true,
+  last_synced_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.campaigns (
+  id TEXT PRIMARY KEY,
+  ad_account_id TEXT REFERENCES public.ad_accounts(id) ON DELETE SET NULL,
+  page_id TEXT,
+  name TEXT NOT NULL,
+  status TEXT DEFAULT 'ACTIVE',
+  currency TEXT NOT NULL DEFAULT 'NZD',
+  spend NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  impressions BIGINT NOT NULL DEFAULT 0,
+  clicks BIGINT NOT NULL DEFAULT 0,
+  platform_leads INTEGER NOT NULL DEFAULT 0,
+  messaging_connections INTEGER NOT NULL DEFAULT 0,
+  date_since DATE,
+  date_until DATE,
+  last_synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.ad_insights (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  ad_account_id TEXT NOT NULL,
+  campaign_id TEXT NOT NULL,
+  campaign_name TEXT,
+  page_id TEXT,
+  date_since DATE NOT NULL,
+  date_until DATE NOT NULL,
+  currency TEXT NOT NULL DEFAULT 'NZD',
+  spend NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  impressions BIGINT NOT NULL DEFAULT 0,
+  clicks BIGINT NOT NULL DEFAULT 0,
+  platform_leads INTEGER NOT NULL DEFAULT 0,
+  messaging_connections INTEGER NOT NULL DEFAULT 0,
+  raw_actions JSONB DEFAULT '[]'::jsonb,
+  synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_ad_insights_campaign_window UNIQUE (ad_account_id, campaign_id, date_since, date_until)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ad_insights_window ON public.ad_insights (date_since, date_until);
+CREATE INDEX IF NOT EXISTS idx_campaigns_page_id ON public.campaigns (page_id);
+
 -- 6. Atomic Round-Robin Function (prevents concurrent workers assigning conflicting owners)
 CREATE OR REPLACE FUNCTION public.assign_next_eligible_staff(
   p_page_id TEXT,
@@ -161,9 +216,25 @@ DROP POLICY IF EXISTS page_assignment_cursors_admin_only ON public.page_assignme
 CREATE POLICY page_assignment_cursors_admin_only ON public.page_assignment_cursors
   FOR ALL USING (public.is_admin());
 
+ALTER TABLE public.ad_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.campaigns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ad_insights ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS ad_accounts_admin_only ON public.ad_accounts;
+CREATE POLICY ad_accounts_admin_only ON public.ad_accounts FOR ALL USING (public.is_admin());
+
+DROP POLICY IF EXISTS campaigns_admin_only ON public.campaigns;
+CREATE POLICY campaigns_admin_only ON public.campaigns FOR ALL USING (public.is_admin());
+
+DROP POLICY IF EXISTS ad_insights_admin_only ON public.ad_insights;
+CREATE POLICY ad_insights_admin_only ON public.ad_insights FOR ALL USING (public.is_admin());
+
 -- ==============================================================================
 -- ROLLBACK INSTRUCTIONS (Reversible):
 -- ==============================================================================
+-- DROP TABLE IF EXISTS public.ad_insights;
+-- DROP TABLE IF EXISTS public.campaigns;
+-- DROP TABLE IF EXISTS public.ad_accounts;
 -- DROP FUNCTION IF EXISTS public.assign_next_eligible_staff(TEXT, UUID[]);
 -- DROP TABLE IF EXISTS public.page_assignment_cursors;
 -- DROP TABLE IF EXISTS public.webhook_events;

@@ -1,4 +1,5 @@
 const { resolveUser, createVercelHandler, toDeterministicUuid } = require('./_utils/index.js');
+const { getDynamicZernioAccounts } = require('./_utils/zernio-client.js');
 let createClient = null;
 try {
   createClient = require('@supabase/supabase-js').createClient;
@@ -203,6 +204,47 @@ async function pagesHandler(req, res) {
           });
         }
       }
+    }
+  }
+
+  // 3d. Dynamically merge live Zernio connected accounts (zero hardcoded page IDs)
+  if (process.env.ZERNIO_API_KEY) {
+    try {
+      const zCache = await getDynamicZernioAccounts(process.env.ZERNIO_API_KEY);
+      for (const acc of (zCache.accounts || [])) {
+        if (!acc.isActive) continue;
+        const already = registeredPages.find(rp =>
+          String(rp.id) === String(acc.pageId) ||
+          String(rp.id) === String(acc.accountId) ||
+          String(rp.accountId || '') === String(acc.accountId)
+        );
+        const userHasAccess = user.role === 'admin' ||
+          user.pages.includes('*') ||
+          user.pages.includes(acc.pageId) ||
+          user.pages.includes(acc.accountId);
+        if (!userHasAccess) continue;
+
+        if (already) {
+          already.accountId = already.accountId || acc.accountId;
+          already.zernioAccountId = already.zernioAccountId || acc.accountId;
+          already.page_id = already.page_id || acc.pageId;
+        } else {
+          registeredPages.push({
+            id: acc.pageId,
+            page_id: acc.pageId,
+            accountId: acc.accountId,
+            zernioAccountId: acc.accountId,
+            name: acc.pageName,
+            username: acc.username,
+            picture: acc.profilePicture,
+            platform: acc.platform || 'facebook',
+            channel: acc.platform === 'instagram' ? 'instagram' : 'facebook',
+            connectedAt: acc.raw?.createdAt || new Date().toISOString()
+          });
+        }
+      }
+    } catch (zErr) {
+      console.warn('[Pages Dynamic Zernio Merge Warning]:', zErr.message);
     }
   }
 

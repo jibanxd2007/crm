@@ -423,7 +423,16 @@ async function messagesHandler(req, res) {
             // Non-critical account lookup fallback
           }
         }
-        if (!accountId) accountId = '6accd8b0d52dc43d8bf6034c';
+        if (!accountId) {
+          try {
+            const { resolveDynamicAccount } = require('./_utils/zernio-client.js');
+            const dynAcc = await resolveDynamicAccount(zernioApiKey, body.page_id || body.pageId || null);
+            if (dynAcc) accountId = dynAcc.accountId;
+          } catch (e) {}
+        }
+        if (!accountId) {
+          return res.status(400).json({ error: 'Cannot send message: no connected Zernio account associated with this conversation.' });
+        }
 
         const postBodyPayload = {
           accountId: accountId,

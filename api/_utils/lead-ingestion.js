@@ -42,64 +42,87 @@ function normalizeNzPhone(raw) {
 /**
  * Extracts standard + custom Meta Lead Ads answers without discarding any fields.
  */
-function parseLeadFieldData(payload = {}) {
-  let fullName = (payload.full_name || payload.name || '').trim();
-  let firstName = (payload.first_name || '').trim();
-  let lastName = (payload.last_name || '').trim();
-  let email = payload.email || payload.email_address || null;
-  let phone = payload.phone || payload.phone_number || null;
+function parseLeadFieldData(rawPayload = {}) {
+  // Support Zernio nested { lead: { ... } } as well as flat payloads
+  const payload = (rawPayload && typeof rawPayload.lead === 'object' && rawPayload.lead !== null)
+    ? { ...rawPayload, ...rawPayload.lead }
+    : (rawPayload || {});
 
-  const customFields = { ...(payload.custom_fields || {}) };
-  let vehicleInterest = payload.vehicle_interest || null;
+  let fullName = (payload.full_name || payload.fullName || payload.name || '').trim();
+  let firstName = (payload.first_name || payload.firstName || '').trim();
+  let lastName = (payload.last_name || payload.lastName || '').trim();
+  let email = payload.email || payload.email_address || payload.emailAddress || null;
+  let phone = payload.phone || payload.phone_number || payload.phoneNumber || null;
+
+  const customFields = { ...(payload.custom_fields || payload.customFields || {}) };
+  let vehicleInterest = payload.vehicle_interest || payload.vehicleInterest || null;
   let budgetNzd = payload.budget_nzd ? Number(payload.budget_nzd) : null;
-  let paymentPreference = payload.payment_preference || null;
-  let tradeInInfo = payload.trade_in_info || null;
-  let buyingTimeframe = payload.buying_timeframe || null;
+  let paymentPreference = payload.payment_preference || payload.paymentPreference || null;
+  let tradeInInfo = payload.trade_in_info || payload.tradeInInfo || null;
+  let buyingTimeframe = payload.buying_timeframe || payload.buyingTimeframe || null;
 
-  const fieldsList = payload.field_data || payload.form_data || payload.answers || [];
+  const processKeyValue = (rawKey, fval) => {
+    if (!rawKey || !fval) return;
+    const fname = String(rawKey).trim().toLowerCase();
+
+    if (fname === 'full_name' || fname === 'fullname' || fname === 'name') {
+      if (!fullName) fullName = fval;
+    } else if (fname === 'first_name' || fname === 'firstname') {
+      if (!firstName) firstName = fval;
+    } else if (fname === 'last_name' || fname === 'lastname') {
+      if (!lastName) lastName = fval;
+    } else if (fname.includes('email')) {
+      if (!email) email = fval;
+    } else if (fname.includes('phone') || fname.includes('mobile') || fname === 'tel') {
+      if (!phone) phone = fval;
+    } else {
+      // Preserve EVERY custom answer verbatim
+      customFields[String(rawKey).trim()] = fval;
+
+      // Map dealership-specific answers cleanly (including real Nova/Car4u form questions)
+      const isFinanceQuestion = fname.includes('cash_or_finance') || fname.includes('cash or finance') || fname.includes('finance') || fname.includes('payment');
+      if (!vehicleInterest && !isFinanceQuestion && (fname.includes('vehicle') || fname.includes('what_car') || fname.includes('which_car') || fname.includes('car_you_looking') || fname.includes('model') || fname.includes('stock'))) {
+        vehicleInterest = fval;
+      }
+      if (!budgetNzd && (fname.includes('budget') || fname.includes('price') || fname.includes('spend'))) {
+        const parsedNum = Number(fval.replace(/[^\d.]/g, ''));
+        if (!isNaN(parsedNum) && parsedNum > 0) budgetNzd = parsedNum;
+      }
+      if (!paymentPreference && (isFinanceQuestion || fname.includes('cash'))) {
+        const lv = fval.toLowerCase();
+        if (lv.includes('finance') || (fname.includes('finance') && !fname.includes('cash') && (lv === 'yes' || lv === 'y' || lv === 'true'))) {
+          paymentPreference = 'Finance';
+        } else if (lv.includes('cash') || (fname.includes('finance') && !fname.includes('cash') && (lv === 'no' || lv === 'n' || lv === 'false'))) {
+          paymentPreference = 'Cash';
+        } else {
+          paymentPreference = fval;
+        }
+      }
+      if (!tradeInInfo && (fname.includes('trade') || fname.includes('swap'))) {
+        tradeInInfo = fval;
+      }
+      if (!buyingTimeframe && (fname.includes('time') || fname.includes('when') || fname.includes('soon'))) {
+        buyingTimeframe = fval;
+      }
+    }
+  };
+
+  // 1. Array-style field data (Meta `field_data`, Zernio `fieldData`, `form_data`, `answers`)
+  const fieldsList = payload.field_data || payload.fieldData || payload.form_data || payload.answers || [];
   if (Array.isArray(fieldsList)) {
     for (const field of fieldsList) {
       if (!field || !field.name) continue;
-      const rawKey = String(field.name).trim();
-      const fname = rawKey.toLowerCase();
       const rawVal = Array.isArray(field.values) ? field.values.join(', ') : (field.value ?? field.values ?? '');
       const fval = String(rawVal).trim();
-      if (!fval) continue;
+      processKeyValue(field.name, fval);
+    }
+  }
 
-      if (fname === 'full_name' || fname === 'name') {
-        if (!fullName) fullName = fval;
-      } else if (fname === 'first_name') {
-        if (!firstName) firstName = fval;
-      } else if (fname === 'last_name') {
-        if (!lastName) lastName = fval;
-      } else if (fname.includes('email')) {
-        if (!email) email = fval;
-      } else if (fname.includes('phone') || fname.includes('mobile')) {
-        if (!phone) phone = fval;
-      } else {
-        // Preserve EVERY custom answer verbatim
-        customFields[rawKey] = fval;
-
-        // Also map dealership-specific answers cleanly
-        if (!vehicleInterest && (fname.includes('vehicle') || fname.includes('car') || fname.includes('model') || fname.includes('stock'))) {
-          vehicleInterest = fval;
-        }
-        if (!budgetNzd && (fname.includes('budget') || fname.includes('price'))) {
-          const parsedNum = Number(fval.replace(/[^\d.]/g, ''));
-          if (!isNaN(parsedNum) && parsedNum > 0) budgetNzd = parsedNum;
-        }
-        if (!paymentPreference && (fname.includes('finance') || fname.includes('payment') || fname.includes('cash'))) {
-          if (fval.toLowerCase().includes('finance')) paymentPreference = 'Finance';
-          else if (fval.toLowerCase().includes('cash')) paymentPreference = 'Cash';
-          else paymentPreference = fval;
-        }
-        if (!tradeInInfo && (fname.includes('trade') || fname.includes('swap'))) {
-          tradeInInfo = fval;
-        }
-        if (!buyingTimeframe && (fname.includes('time') || fname.includes('when') || fname.includes('soon'))) {
-          buyingTimeframe = fval;
-        }
-      }
+  // 2. Object-style `fields` map from Zernio `GET /api/v1/ads/leads` and `lead.received` webhooks
+  if (payload.fields && typeof payload.fields === 'object' && !Array.isArray(payload.fields)) {
+    for (const [k, v] of Object.entries(payload.fields)) {
+      const fval = Array.isArray(v) ? v.join(', ').trim() : String(v ?? '').trim();
+      processKeyValue(k, fval);
     }
   }
 
@@ -365,9 +388,11 @@ async function logWebhookEvent(supabase, { provider = 'zernio', eventType = 'lea
  */
 async function ingestLeadAdEvent(supabase, rawPayload = {}, options = {}) {
   const provider = options.provider || 'zernio';
-  const payload = { ...rawPayload };
-  const leadgenId = String(payload.leadgen_id || payload.meta_lead_id || payload.lead_id || payload.id || `zn_lead_${Date.now()}`);
-  const rawPageId = payload.page_id || payload.pageId || (payload.page && payload.page.id) || null;
+  const payload = (rawPayload && typeof rawPayload.lead === 'object' && rawPayload.lead !== null)
+    ? { ...rawPayload, ...rawPayload.lead }
+    : { ...(rawPayload || {}) };
+  const leadgenId = String(payload.leadgen_id || payload.leadgenId || payload.meta_lead_id || payload.lead_id || payload.id || `zn_lead_${Date.now()}`);
+  const rawPageId = payload.page_id || payload.pageId || (payload.page && payload.page.id) || payload.accountId || payload.account_id || null;
   const pageName = payload.page_name || payload.pageName || (payload.page && payload.page.name) || null;
 
   // 1. Fast in-memory idempotency check
@@ -395,8 +420,10 @@ async function ingestLeadAdEvent(supabase, rawPayload = {}, options = {}) {
 
   // 3. Retrieve full lead details from Meta Graph API if webhook only supplied leadgen_id without answers
   const hasAnswers = Boolean(
-    payload.full_name || payload.name || payload.email || payload.phone ||
+    payload.full_name || payload.fullName || payload.name || payload.email || payload.phone || payload.phone_number ||
     (Array.isArray(payload.field_data) && payload.field_data.length > 0) ||
+    (Array.isArray(payload.fieldData) && payload.fieldData.length > 0) ||
+    (payload.fields && typeof payload.fields === 'object' && Object.keys(payload.fields).length > 0) ||
     (Array.isArray(payload.answers) && payload.answers.length > 0)
   );
   let retrievalWarning = null;
@@ -476,9 +503,10 @@ async function ingestLeadAdEvent(supabase, rawPayload = {}, options = {}) {
     ? 'Instagram Lead Ad'
     : (payload.source || 'Facebook Lead Ad');
 
-  const createdTime = payload.created_time
-    ? (typeof payload.created_time === 'number' ? new Date(payload.created_time * 1000).toISOString() : new Date(payload.created_time).toISOString())
-    : (payload.created_at || new Date().toISOString());
+  const rawCreatedTime = payload.created_time || payload.createdTime || payload.created_at || payload.createdAt || null;
+  const createdTime = rawCreatedTime
+    ? (typeof rawCreatedTime === 'number' ? new Date(rawCreatedTime * 1000).toISOString() : new Date(rawCreatedTime).toISOString())
+    : new Date().toISOString();
 
   // 8. Atomic page-scoped assignment (ONLY staff eligible for effectivePageId, else Unassigned null)
   const assignRes = await assignLeadAtomically(supabase, {
