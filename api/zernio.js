@@ -7,6 +7,7 @@ try {
 const { 
   createVercelHandler, 
   resolveUser, 
+  isDeveloperRequest,
   httpsRequest, 
   toDeterministicUuid, 
   resolveExternalConversationId, 
@@ -127,9 +128,12 @@ async function zernioUnifiedHandler(req, res) {
   const query = req.query || {};
   const path = (query.path || '').toLowerCase();
 
-  // 0. DIAGNOSTICS & SYNC STATUS
+  // 0. DEVELOPER-ONLY DIAGNOSTICS & SYNC STATUS (Super Admin & Staff receive HTTP 403)
   if (path === 'diagnostics' || url.includes('/diagnostics')) {
     res.setHeader('Content-Type', 'application/json');
+    if (!isDeveloperRequest(req.headers)) {
+      return res.status(403).json({ error: "Forbidden: Developer authorization required." });
+    }
     return res.status(200).json({
       status: "success",
       service: "zernio-sync-gateway",
@@ -144,9 +148,56 @@ async function zernioUnifiedHandler(req, res) {
     });
   }
 
-  // 0.2 INTEGRATION & LEAD ADS CAPABILITY HEALTH MATRIX (Multi-Stage, Honest)
+  // 0.15 CLIENT-FACING SANITIZED BUSINESS STATUS (Dealership Manager/Owner ONLY — Zero Technical Details)
+  if (path === 'business-status' || url.includes('/business-status')) {
+    res.setHeader('Content-Type', 'application/json');
+    const user = resolveUser(req.headers);
+    const isDev = isDeveloperRequest(req.headers, user);
+    if (!isDev && (!user || (user.role !== 'admin' && user.role !== 'super_admin'))) {
+      return res.status(403).json({ error: "Forbidden: Manager access required." });
+    }
+    const apiKey = process.env.ZERNIO_API_KEY;
+    const supabase = getSupabaseAdmin();
+    const currentHost = req.headers['x-forwarded-host'] || req.headers.host || process.env.VERCEL_URL || 'crm-mu-three-52.vercel.app';
+    const rawHealth = await inspectZernioHealth({ apiKey, supabase, currentHost });
+
+    const safePages = (rawHealth.pages || []).map(p => ({
+      pageId: p.pageId,
+      pageName: p.pageName,
+      platform: p.platform || 'facebook',
+      status: p.accountConnected ? 'connected' : 'reconnect_required',
+      needsReconnect: !p.accountConnected
+    }));
+    const pagesNeedingReconnect = safePages.filter(p => p.needsReconnect);
+    const needsReconnect = pagesNeedingReconnect.length > 0;
+    const enquiriesDelayed = Boolean(!rawHealth.webhookHealth?.active);
+
+    let notice = null;
+    if (needsReconnect) {
+      notice = 'Facebook needs reconnecting to receive new enquiries.';
+    } else if (enquiriesDelayed) {
+      notice = 'New enquiries are delayed. Your existing leads are still available.';
+    }
+
+    return res.status(200).json({
+      status: 'ok',
+      connectedPagesCount: safePages.filter(p => !p.needsReconnect).length,
+      totalPagesCount: safePages.length,
+      enquiriesDelayed,
+      needsReconnect,
+      pages: safePages,
+      adsLastUpdatedAt: rawHealth.adsSyncState?.lastSuccessfulSync || null,
+      notice,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // 0.2 DEVELOPER-ONLY INTEGRATION HEALTH MATRIX (Super Admin & Staff receive HTTP 403)
   if (path === 'health' || url.includes('/health')) {
     res.setHeader('Content-Type', 'application/json');
+    if (!isDeveloperRequest(req.headers)) {
+      return res.status(403).json({ error: "Forbidden: Developer authorization required." });
+    }
     const apiKey = process.env.ZERNIO_API_KEY;
     const hasMetaToken = Boolean(process.env.META_ACCESS_TOKEN || process.env.META_SYSTEM_USER_ACCESS_TOKEN);
     const supabase = getSupabaseAdmin();
@@ -249,12 +300,11 @@ async function zernioUnifiedHandler(req, res) {
     }
   }
 
-  // 0.3 GUIDED TEST-LEAD WORKFLOW (Verifies real ingestion, mapping, assignment & duplicate replay)
+  // 0.3 DEVELOPER-ONLY GUIDED TEST-LEAD WORKFLOW (Super Admin & Staff receive HTTP 403)
   if (path === 'test-lead' || url.includes('/test-lead')) {
     res.setHeader('Content-Type', 'application/json');
-    const user = resolveUser(req.headers);
-    if (!user || user.role !== 'admin') {
-      return res.status(403).json({ error: "Forbidden: Admin authorization required to run test-lead verification." });
+    if (!isDeveloperRequest(req.headers)) {
+      return res.status(403).json({ error: "Forbidden: Developer authorization required to run test-lead verification." });
     }
     const body = req.body || {};
     const supabase = getSupabaseAdmin();
@@ -318,9 +368,12 @@ async function zernioUnifiedHandler(req, res) {
     });
   }
 
-  // 0.5 RECOVERY OF FAILED WEBHOOKS (Criterion 3: Safe queuing & recovery)
+  // 0.5 DEVELOPER-ONLY RECOVERY OF FAILED WEBHOOKS (Super Admin & Staff receive HTTP 403)
   if (path === 'recover-failed-webhooks' || url.includes('/recover-failed-webhooks')) {
     res.setHeader('Content-Type', 'application/json');
+    if (!isDeveloperRequest(req.headers)) {
+      return res.status(403).json({ error: "Forbidden: Developer authorization required." });
+    }
     global.RECOVERABLE_FAILED_WEBHOOKS = global.RECOVERABLE_FAILED_WEBHOOKS || [];
     const queue = [...global.RECOVERABLE_FAILED_WEBHOOKS];
     const supabase = getSupabaseAdmin();
@@ -419,7 +472,6 @@ async function zernioUnifiedHandler(req, res) {
                   verifiedGateway: true,
                   hasAnalyticsAccess: true,
                   appReviewBypassed: true,
-                  apiKey: `${apiKey.substring(0, 12)}...${apiKey.substring(apiKey.length - 6)}`,
                   profile: profile,
                   accounts: liveAccounts,
                   timestamp: new Date().toISOString()
@@ -993,9 +1045,12 @@ async function zernioUnifiedHandler(req, res) {
     });
   }
 
-  // 3. SIMULATE LEAD
+  // 3. DEVELOPER-ONLY SIMULATE LEAD
   if (path === 'simulate-lead' || url.includes('/simulate-lead')) {
     res.setHeader('Content-Type', 'application/json');
+    if (!isDeveloperRequest(req.headers)) {
+      return res.status(403).json({ error: "Forbidden: Developer authorization required." });
+    }
     const randomId = Math.floor(100000 + Math.random() * 900000);
     const body = req.body || {};
 

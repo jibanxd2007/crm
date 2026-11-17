@@ -210,6 +210,10 @@
       "destination": "/api/zernio.js?path=health"
     },
     {
+      "source": "/api/zernio/business-status",
+      "destination": "/api/zernio.js?path=business-status"
+    },
+    {
       "source": "/api/zernio/sync-ads",
       "destination": "/api/zernio.js?path=sync-ads"
     },

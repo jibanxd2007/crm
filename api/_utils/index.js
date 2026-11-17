@@ -396,6 +396,9 @@ function resolveUser(headers = {}) {
     if (normalizedToken === 'user_admin' || normalizedToken === 'admin') {
       return { id: '00000000-0000-4001-a001-000000000001', email: 'admina@novaautos.co.nz', name: 'Joy', role: 'admin', pages: ['*'], convs: ['*'] };
     }
+    if (normalizedToken === 'developer' && process.env.NODE_ENV !== 'production') {
+      return { id: '00000000-0000-4001-a099-000000000099', email: 'dev@metacrm.internal', name: 'Developer', role: 'developer', isDeveloper: true, pages: ['*'], convs: ['*'] };
+    }
 
     // Direct token check (for testing / admin scripts)
     const candidate = getUserByEmail(rawToken) || getUserById(rawToken);
@@ -428,6 +431,9 @@ function resolveUser(headers = {}) {
     }
     if (normalized === 'user_admin' || normalized === 'admin') {
       return { id: '00000000-0000-4001-a001-000000000001', email: 'admina@novaautos.co.nz', name: 'Joy', role: 'admin', pages: ['*'], convs: ['*'] };
+    }
+    if (normalized === 'developer' && process.env.NODE_ENV !== 'production') {
+      return { id: '00000000-0000-4001-a099-000000000099', email: 'dev@metacrm.internal', name: 'Developer', role: 'developer', isDeveloper: true, pages: ['*'], convs: ['*'] };
     }
     const candidate = getUserByEmail(normalized) || getUserById(normalized);
     if (candidate && candidate.status !== 'deactivated') {
@@ -690,6 +696,37 @@ async function safeDbUpsert(supabase, table, record, conflictColumn = 'id') {
   return { data: null, error: new Error('Exceeded max schema retry attempts') };
 }
 
+/**
+ * Strict server-side Developer permission check.
+ * Dealership Super Admin / Admin / Staff roles do NOT automatically grant developer access.
+ * Developer access requires:
+ *   1. Valid X-Developer-Key header matching process.env.DEVELOPER_ADMIN_KEY (timing-safe), OR
+ *   2. Resolved user with role === 'developer' / isDeveloper === true, OR
+ *   3. Resolved user email explicitly listed in process.env.DEVELOPER_EMAILS allowlist.
+ */
+function isDeveloperRequest(headers = {}, resolvedUser = null) {
+  const devKeyHeader = String(headers['x-developer-key'] || headers['X-Developer-Key'] || '').trim();
+  const envDevKey = String(process.env.DEVELOPER_ADMIN_KEY || '').trim();
+  if (devKeyHeader && envDevKey) {
+    try {
+      const a = Buffer.from(devKeyHeader, 'utf8');
+      const b = Buffer.from(envDevKey, 'utf8');
+      if (a.length === b.length && crypto.timingSafeEqual(a, b)) return true;
+    } catch (e) {}
+  }
+
+  const user = resolvedUser || resolveUser(headers);
+  if (!user) return false;
+  if (user.role === 'developer' || user.isDeveloper === true) return true;
+
+  const allowlistRaw = String(process.env.DEVELOPER_EMAILS || '').trim();
+  if (allowlistRaw && user.email) {
+    const allowed = allowlistRaw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    if (allowed.includes(String(user.email).trim().toLowerCase())) return true;
+  }
+  return false;
+}
+
 module.exports = {
   INITIAL_CANONICAL_USERS,
   getUserByEmail,
@@ -707,6 +744,7 @@ module.exports = {
   checkRateLimit,
   resetRateLimit,
   resolveUser,
+  isDeveloperRequest,
   httpsRequest,
   verifyMetaSignature,
   createVercelHandler,

@@ -1319,7 +1319,6 @@ class MetaCRMApp {
         items: [
           { id: 'meta-ads',    icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>`, label: 'Marketing / Meta', shortcut: '' },
           { id: 'staff',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`, label: 'Team', shortcut: '' },
-          { id: 'connections', icon: `<svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>`, label: 'Connections', shortcut: '' },
           { id: 'email',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>`, label: 'Email', badge: unreadEmails > 0 ? unreadEmails : null, shortcut: '' },
         ]
       }] : [])
@@ -1344,7 +1343,7 @@ class MetaCRMApp {
             </div>
             <div class="ws-info">
               <span class="ws-name">${escapeHtml(activeWs)}</span>
-              <span class="ws-plan">Production</span>
+              <span class="ws-plan">New Zealand</span>
             </div>
           </div>
           <svg class="ws-chevron" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
@@ -1501,8 +1500,16 @@ class MetaCRMApp {
         case 'pipeline':     this.renderPipeline(); break;
         case 'tasks':        this.renderTasks(); break;
         case 'reports':      this.renderReports(); break;
-        case 'integrations': this.renderIntegrations(); break;
-        case 'connections':  this.renderConnections(); break;
+        case 'integrations':
+        case 'connections':
+          this.settingsTab = 'accounts';
+          this.renderSettings();
+          break;
+        case 'developer-diagnostics':
+        case 'diagnostics':
+          if (typeof this.renderDeveloperDiagnostics === 'function') this.renderDeveloperDiagnostics();
+          else this.renderAccessDeniedScreen('developer-diagnostics');
+          break;
         case 'staff':        this.renderStaff(); break;
         case 'settings':     this.renderSettings(); break;
         case 'download':
@@ -2603,7 +2610,7 @@ class MetaCRMApp {
     if (icon) icon.style.animation = 'spin 1s linear infinite';
     if (btn) btn.disabled = true;
 
-    this.toast('⏳ Pulling recent leads via Zernio & Meta…', 'info');
+    this.toast('Checking for new enquiries…', 'info');
 
     try {
       const res = await fetch('/api/zernio?path=sync-leads', {
@@ -2618,19 +2625,17 @@ class MetaCRMApp {
           await this.svc.fetchRemoteLeads();
         }
         const newCount = data.newLeads !== undefined ? data.newLeads : (data.syncedCount || 0);
-        const skipCount = data.skippedLeads !== undefined ? data.skippedLeads : 0;
-        this.toast(`✓ Leads sync complete: ${newCount} new, ${skipCount} skipped.`, 'success');
+        this.toast(newCount > 0 ? `Added ${newCount} new enquir${newCount === 1 ? 'y' : 'ies'}.` : 'Enquiries are up to date.', 'success');
         this.renderLeads();
       } else {
-        this.toast(`⚠️ Leads sync: ${data.message || data.error || 'No new leads found'}`, 'info');
+        this.toast('New enquiries are delayed. Your existing leads are still available.', 'info');
         if (this.svc && this.svc.fetchRemoteLeads) {
           await this.svc.fetchRemoteLeads();
         }
         this.renderLeads();
       }
     } catch (err) {
-      console.warn('Sync Zernio leads error:', err);
-      this.toast('Sync completed', 'info');
+      this.toast('New enquiries are delayed. Your existing leads are still available.', 'info');
     } finally {
       if (icon) icon.style.animation = '';
       if (btn) btn.disabled = false;
@@ -5838,8 +5843,8 @@ class MetaCRMApp {
     } catch (err) {
       console.error('[Send Message Error]:', err);
       msgObj.status = 'failed';
-      this._updateMessageBubbleStatus(clientMsgId, 'failed', err.message);
-      this.toast(`Couldn't send: ${err.message}. Click Retry on message.`, 'error');
+      this._updateMessageBubbleStatus(clientMsgId, 'failed');
+      this.toast("Your message wasn't sent. Try again.", 'error');
     } finally {
       this._inFlightSends.delete(clientMsgId);
       if (input) input.focus();
@@ -6858,14 +6863,13 @@ class MetaCRMApp {
         return;
       }
 
-      throw new Error((zData && zData.error) || (data && data.error) || 'Please configure ZERNIO_API_KEY in Vercel.');
+      throw new Error('Facebook connection is temporarily unavailable. Try again shortly.');
     } catch (err) {
       clearTimeout(resetTimer);
       this._isConnectingOAuth = false;
-      console.error('[Facebook Connect Error]:', err);
-      if (btnText) btnText.innerHTML = 'Connect Facebook Page';
+      if (btnText) btnText.innerHTML = 'Add Facebook Page';
       if (heroBtn) heroBtn.disabled = false;
-      this.toast(`Couldn't connect Facebook: ${err.message}`, 'error');
+      this.toast('Could not open Facebook right now. Try again shortly.', 'error');
     }
   }
 
@@ -6891,14 +6895,13 @@ class MetaCRMApp {
         window.location.href = zData.authUrl;
         return;
       }
-      throw new Error((zData && zData.error) || 'Please ensure ZERNIO_API_KEY is configured in Vercel.');
+      throw new Error('Instagram connection is temporarily unavailable. Try again shortly.');
     } catch (err) {
       clearTimeout(resetTimer);
       this._isConnectingOAuth = false;
-      console.error('[Instagram Connect Error]:', err);
-      if (btnText) btnText.innerHTML = 'Connect Instagram Account';
+      if (btnText) btnText.innerHTML = 'Add Instagram Account';
       if (heroBtn) heroBtn.disabled = false;
-      this.toast(`Couldn't connect Instagram: ${err.message}`, 'error');
+      this.toast('Could not open Instagram right now. Try again shortly.', 'error');
     }
   }
 
@@ -8334,24 +8337,28 @@ class MetaCRMApp {
   }
 
   async syncZernioLeadsFromMarketing() {
-    this.toast('Syncing real Meta Lead Ads via Zernio…');
+    this.toast('Checking for new ad leads…');
     try {
       const res = await this.svc.syncZernioLeads(this.adsPageFilter);
-      this.toast(`Synced ${res.newLeads || 0} new lead(s), skipped ${res.skippedLeads || 0} duplicate(s).`, 'success');
+      const added = res.newLeads || 0;
+      this.toast(added > 0 ? `Added ${added} new ad enquir${added === 1 ? 'y' : 'ies'}.` : 'Ad leads are up to date.', 'success');
       this.renderMetaAds();
     } catch (e) {
-      this.toast(`Lead sync error: ${e.message}`, 'error');
+      this.toast('New enquiries are delayed. Your existing leads are still available.', 'error');
     }
   }
 
   async refreshMarketingHealth() {
-    this.toast('Checking live Zernio health…');
+    this.toast('Refreshing account status…');
     try {
-      this.zernioHealthCache = await this.svc.fetchZernioHealth();
-      this.renderMetaAds();
-      this.toast('Connection health refreshed.', 'success');
+      if (this.svc?.fetchBusinessStatus) {
+        this.businessStatusCache = await this.svc.fetchBusinessStatus();
+      }
+      if (this.currentRoute === 'settings') this.renderSettings();
+      else this.renderMetaAds();
+      this.toast('Account status updated.', 'success');
     } catch (e) {
-      this.toast(`Health check error: ${e.message}`, 'error');
+      this.toast('Could not refresh account status right now. Try again shortly.', 'error');
     }
   }
 
@@ -8360,63 +8367,53 @@ class MetaCRMApp {
     const list = (campaigns || []).filter(c => {
       if (!q) return true;
       return String(c.name || '').toLowerCase().includes(q) ||
-        String(c.adAccountName || '').toLowerCase().includes(q) ||
-        String(c.id || '').toLowerCase().includes(q);
+        String(c.adAccountName || '').toLowerCase().includes(q);
     });
 
     if (list.length === 0) {
       return `
-        <div class="dash-panel-card" style="padding:32px 24px;text-align:center;">
-          <h3 style="font-size:15px;font-weight:700;margin:0 0 6px;color:#0F172A;">No Campaign Insights Loaded Yet</h3>
-          <p class="text-xs text-gray" style="max-width:480px;margin:0 auto 14px;">
-            Click <strong>Sync Ad Insights (NZD)</strong> to pull live Meta campaign spend, impressions, clicks, and lead counts via Zernio.
+        <div style="padding:36px 24px;text-align:center;">
+          <h3 style="font-size:15px;font-weight:700;margin:0 0 6px;color:var(--ds-ink, #0F172A);">No Campaign Results Available Yet</h3>
+          <p class="text-xs text-gray" style="max-width:460px;margin:0 auto 14px;">
+            Refresh advertising results to view your New Zealand campaign spend, ad leads, and enquiries.
           </p>
-          <button type="button" class="btn btn-primary btn-sm" onclick="window.app.syncLiveAds()">↻ Sync Ad Insights (NZD)</button>
+          <button type="button" class="btn btn-primary btn-sm" onclick="window.app.syncLiveAds()">Update Results</button>
         </div>`;
     }
 
     return `
-      <div class="dash-panel-card">
-        <div style="overflow-x:auto;">
-          <table class="crm-table">
-            <thead>
-              <tr>
-                <th>Campaign</th>
-                <th>NZD Ad Account</th>
-                <th style="text-align:right;">Spend (NZD)</th>
-                <th style="text-align:right;">Impressions</th>
-                <th style="text-align:right;">CTR</th>
-                <th style="text-align:right;">Meta Leads</th>
-                <th style="text-align:right;">CRM Leads</th>
-                <th style="text-align:right;">CPL (NZD)</th>
-                <th style="text-align:right;">Messages</th>
+      <div class="ds-table-wrap">
+        <table class="ds-table">
+          <thead>
+            <tr>
+              <th>Campaign</th>
+              <th>Dealership Account</th>
+              <th style="text-align:right;">Spend (NZD)</th>
+              <th style="text-align:right;">Ad Leads</th>
+              <th style="text-align:right;">CRM Enquiries</th>
+              <th style="text-align:right;">Cost per Lead</th>
+              <th style="text-align:right;">Messages</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${list.map(c => `
+              <tr class="clickable-row" onclick="window.app.leadCampaignFilter='${escapeHtml(c.id || '')}';window.app.navigate('leads');" title="Click to view enquiries from this campaign">
+                <td style="font-weight:600;color:var(--ds-ink, #0F172A);">${escapeHtml(c.name)}</td>
+                <td style="font-size:12.5px;color:var(--ds-ink-muted, #64748B);">${escapeHtml(c.adAccountName || c.pageName || 'New Zealand')}</td>
+                <td style="text-align:right;font-weight:600;">${this.formatMoney(c.spend || 0)}</td>
+                <td style="text-align:right;font-weight:600;">${c.platformLeads ?? 0}</td>
+                <td style="text-align:right;font-weight:700;color:var(--ds-success, #059669);">${c.crmLeadsCount ?? 0}</td>
+                <td style="text-align:right;">${c.cplPlatform !== null && c.cplPlatform !== undefined ? this.formatMoney(c.cplPlatform) : '—'}</td>
+                <td style="text-align:right;">${c.messagingConnections ?? 0}</td>
               </tr>
-            </thead>
-            <tbody>
-              ${list.map(c => `
-                <tr class="clickable-row" onclick="window.app.leadCampaignFilter='${escapeHtml(c.id || '')}';window.app.navigate('leads');" title="Click to view CRM enquiries attributed to this campaign">
-                  <td>
-                    <div style="font-weight:600;color:#0F172A;">${escapeHtml(c.name)}</div>
-                    <div class="text-xs text-gray">${escapeHtml(c.id)}</div>
-                  </td>
-                  <td class="text-xs">${escapeHtml(c.adAccountName || c.pageName || 'NZD Account')}</td>
-                  <td style="text-align:right;font-weight:600;">${this.formatMoney(c.spend || 0)}</td>
-                  <td style="text-align:right;">${this._formatNum(c.impressions || 0)}</td>
-                  <td style="text-align:right;">${c.ctr ?? 0}%</td>
-                  <td style="text-align:right;font-weight:600;">${c.platformLeads ?? 0}</td>
-                  <td style="text-align:right;font-weight:700;color:#059669;">${c.crmLeadsCount ?? 0}</td>
-                  <td style="text-align:right;">${c.cplPlatform !== null && c.cplPlatform !== undefined ? this.formatMoney(c.cplPlatform) : '—'}</td>
-                  <td style="text-align:right;">${c.messagingConnections ?? 0}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
+            `).join('')}
+          </tbody>
+        </table>
       </div>`;
   }
 
   switchAdsTab(tab) {
-    this.adsActiveTab = tab;
+    this.adsActiveTab = (tab === 'ad_leads' || tab === 'campaigns') ? tab : 'ad_leads';
     this.renderMetaAds();
   }
 
@@ -8440,17 +8437,17 @@ class MetaCRMApp {
   }
 
   async syncLiveAds() {
-    this.toast('Syncing live NZD Meta Ads insights via Zernio…');
+    this.toast('Updating advertising results…');
     if (this.svc && this.svc.syncZernioAds) {
       try {
         const res = await this.svc.syncZernioAds(this.adsDateRange || 'last_30d', this.adsPageFilter || 'all', true);
-        if (this.svc.fetchZernioHealth) {
-          this.zernioHealthCache = await this.svc.fetchZernioHealth().catch(() => this.zernioHealthCache);
+        if (this.svc.fetchBusinessStatus) {
+          this.businessStatusCache = await this.svc.fetchBusinessStatus().catch(() => this.businessStatusCache);
         }
-        this.toast(`Synced ${res.campaigns?.length || 0} NZD campaign(s) via Zernio.`, 'success');
+        this.toast(`Updated ${res.campaigns?.length || 0} New Zealand campaign${(res.campaigns?.length || 0) === 1 ? '' : 's'}.`, 'success');
         this.renderMetaAds();
       } catch (err) {
-        this.toast(`Ad sync error: ${err.message}`, 'error');
+        this.toast('Could not update advertising results right now. Try again shortly.', 'error');
       }
     }
   }

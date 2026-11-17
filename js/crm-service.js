@@ -567,9 +567,17 @@ class CRMService {
     return headers;
   }
 
-  async fetchZernioHealth() {
-    const res = await fetch('/api/zernio?path=health', { headers: this._authHeaders() });
-    if (!res.ok) throw new Error(`Health check failed (HTTP ${res.status})`);
+  async fetchBusinessStatus() {
+    const res = await fetch('/api/zernio?path=business-status', { headers: this._authHeaders() });
+    if (!res.ok) return null;
+    return res.json();
+  }
+
+  async fetchZernioHealth(devKey = null) {
+    const headers = this._authHeaders();
+    if (devKey) headers['X-Developer-Key'] = devKey;
+    const res = await fetch('/api/zernio?path=health', { headers });
+    if (!res.ok) throw new Error(`Developer access required (HTTP ${res.status})`);
     return res.json();
   }
 

@@ -207,24 +207,55 @@ async function run() {
     assert.strictEqual(fallback.fallbackUnassigned, true);
   });
 
-  // 5. Integration Health & Guided Test Lead Endpoint
-  await test('5. Guided test-lead endpoint enforces Admin RBAC and verifies creation + replay deduplication', async () => {
-    const staffRes = mockRes();
-    await zernioApi.zernioUnifiedHandler({ method: 'POST', headers: { 'x-user-id': 'user_a' }, query: { path: 'test-lead' }, body: {}, url: '/api/zernio?path=test-lead' }, staffRes);
-    assert.strictEqual(staffRes.statusCode, 403, 'Staff must not be allowed to run admin test-lead');
+  // 5. Server-Side Developer-Only Diagnostics & Guided Test Lead Endpoint
+  await test('5. Developer diagnostics & test-lead enforce server-side developer auth (403 for Staff AND Dealership Super Admin, 200 for Developer)', async () => {
+    const protectedEndpoints = [
+      { method: 'GET', path: 'health' },
+      { method: 'GET', path: 'diagnostics' },
+      { method: 'POST', path: 'test-lead' },
+      { method: 'POST', path: 'recover-failed-webhooks' },
+      { method: 'POST', path: 'simulate-lead' }
+    ];
 
-    const adminRes = mockRes();
-    await zernioApi.zernioUnifiedHandler({
-      method: 'POST',
-      headers: { 'x-user-id': 'admin' },
-      query: { path: 'test-lead' },
-      body: { page_id: '1342542735606057', page_name: 'Nova auto nz', eligibleStaffIds: ['rep_nz_1'] },
-      url: '/api/zernio?path=test-lead'
-    }, adminRes);
-    assert.strictEqual(adminRes.statusCode, 200);
-    assert.strictEqual(adminRes.body.verification.createdOnce, true);
-    assert.strictEqual(adminRes.body.verification.replayDeduplicated, true);
-    assert.strictEqual(adminRes.body.verification.messagingEligible, false);
+    for (const ep of protectedEndpoints) {
+      const staffRes = mockRes();
+      await zernioApi.zernioUnifiedHandler({ method: ep.method, headers: { 'x-user-id': 'user_a' }, query: { path: ep.path }, body: {}, url: `/api/zernio?path=${ep.path}` }, staffRes);
+      assert.strictEqual(staffRes.statusCode, 403, `Staff must receive 403 on ${ep.path}`);
+
+      const superAdminRes = mockRes();
+      await zernioApi.zernioUnifiedHandler({ method: ep.method, headers: { 'x-user-id': 'admin' }, query: { path: ep.path }, body: {}, url: `/api/zernio?path=${ep.path}` }, superAdminRes);
+      assert.strictEqual(superAdminRes.statusCode, 403, `Dealership Super Admin must receive 403 on developer-only ${ep.path}`);
+    }
+
+    const prevDevKey = process.env.DEVELOPER_ADMIN_KEY;
+    process.env.DEVELOPER_ADMIN_KEY = 'dev_test_key_2026_strict';
+    try {
+      const wrongKeyRes = mockRes();
+      await zernioApi.zernioUnifiedHandler({
+        method: 'POST',
+        headers: { 'x-user-id': 'admin', 'x-developer-key': 'wrong_key' },
+        query: { path: 'test-lead' },
+        body: {},
+        url: '/api/zernio?path=test-lead'
+      }, wrongKeyRes);
+      assert.strictEqual(wrongKeyRes.statusCode, 403, 'Invalid X-Developer-Key must receive 403');
+
+      const devRes = mockRes();
+      await zernioApi.zernioUnifiedHandler({
+        method: 'POST',
+        headers: { 'x-developer-key': 'dev_test_key_2026_strict' },
+        query: { path: 'test-lead' },
+        body: { page_id: '1342542735606057', page_name: 'Nova auto nz', eligibleStaffIds: ['rep_nz_1'] },
+        url: '/api/zernio?path=test-lead'
+      }, devRes);
+      assert.strictEqual(devRes.statusCode, 200, 'Authorized developer with valid X-Developer-Key must receive 200 on test-lead');
+      assert.strictEqual(devRes.body.verification.createdOnce, true);
+      assert.strictEqual(devRes.body.verification.replayDeduplicated, true);
+      assert.strictEqual(devRes.body.verification.messagingEligible, false);
+    } finally {
+      if (prevDevKey === undefined) delete process.env.DEVELOPER_ADMIN_KEY;
+      else process.env.DEVELOPER_ADMIN_KEY = prevDevKey;
+    }
   });
 
   // 6. Outbound Message Retry Idempotency
@@ -384,7 +415,7 @@ async function run() {
     assert.strictEqual(svc.resolvePageRecord('z_acc_brand_new').name, 'New Branch Motors NZ');
   });
 
-  await test('10c. Pipeline UI exposes non-drag accessible Stage select & Marketing separates 3 tabs', async () => {
+  await test('10c. Pipeline exposes accessible Stage select; Marketing has only 2 client-facing tabs (Ad Leads & Campaign Results)', async () => {
     const appCode = fs.readFileSync(path.join(__dirname, '..', 'js', 'app.js'), 'utf8');
     const viewsCode = fs.readFileSync(path.join(__dirname, '..', 'js', 'dealership-views.js'), 'utf8');
     const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
@@ -392,8 +423,30 @@ async function run() {
     assert.ok(indexHtml.includes('js/dealership-views.js'), 'index.html must load dealership-views.js');
     assert.ok(appCode.includes('moveLeadStage('), 'Pipeline must provide moveLeadStage non-drag handler');
     assert.ok(viewsCode.includes('kanban-stage-select') && viewsCode.includes('finance_status'), 'Pipeline cards must expose non-drag Stage selector and separate finance_status');
-    assert.ok(viewsCode.includes("switchAdsTab('campaigns')") && viewsCode.includes("switchAdsTab('lead_capture')") && viewsCode.includes("switchAdsTab('health')"), 'Marketing / Meta must clearly separate Campaigns, Lead Capture, and Connection Health');
-    assert.ok(viewsCode.includes('ds-diagnostics-disclosure'), 'Technical diagnostics must be placed in expandable disclosure');
+    assert.ok(viewsCode.includes("switchAdsTab('ad_leads')") && viewsCode.includes("switchAdsTab('campaigns')"), 'Marketing / Meta must have Ad Leads and Campaign Results tabs');
+    assert.ok(!viewsCode.includes("switchAdsTab('health')"), 'Connection Health tab must be removed from client-facing Marketing');
+    assert.ok(!viewsCode.includes('Technical Diagnostics'), 'Technical Diagnostics must not appear in client-facing Marketing');
+    assert.ok(viewsCode.includes('renderSettings') && viewsCode.includes('Add Facebook Page') && viewsCode.includes('Reconnect Facebook'), 'Settings -> Accounts must provide simple Add/Reconnect Facebook actions');
+    assert.ok(viewsCode.includes('renderDeveloperDiagnostics') && viewsCode.includes('Developer Access Required'), 'Separate developer-only diagnostics view must enforce server-side access denial');
+  });
+
+  // 11. Client-Facing Business Status Endpoint Isolation & Zero Technical Leaks
+  await test('11. GET /api/zernio?path=business-status is Manager-only (403 for Staff) and leaks zero technical/secret fields', async () => {
+    const staffRes = mockRes();
+    await zernioApi.zernioUnifiedHandler({ method: 'GET', headers: { 'x-user-id': 'user_a' }, query: { path: 'business-status' }, url: '/api/zernio?path=business-status' }, staffRes);
+    assert.strictEqual(staffRes.statusCode, 403, 'Sales staff must not access business-status integration endpoint');
+
+    const mgrRes = mockRes();
+    await zernioApi.zernioUnifiedHandler({ method: 'GET', headers: { 'x-user-id': 'admin' }, query: { path: 'business-status' }, url: '/api/zernio?path=business-status' }, mgrRes);
+    assert.strictEqual(mgrRes.statusCode, 200, 'Dealership manager must receive 200 on sanitized business-status');
+    const serialized = JSON.stringify(mgrRes.body).toLowerCase();
+    for (const forbidden of ['webhook', 'secret', 'apikey', 'api_key', 'token', 'scope', 'leadgen', 'failurecount', 'crm-beta-three-36', 'zernio']) {
+      assert.ok(!serialized.includes(forbidden), `business-status must not leak technical/secret string "${forbidden}"`);
+    }
+
+    const statusRes = mockRes();
+    await zernioApi.zernioUnifiedHandler({ method: 'GET', headers: { 'x-user-id': 'admin' }, query: { path: 'status' }, url: '/api/zernio?path=status' }, statusRes);
+    assert.strictEqual(statusRes.body.apiKey, undefined, 'path=status must never return apiKey even masked');
   });
 
   console.log('\n====================================================================');

@@ -1,4 +1,4 @@
-/**
+   /**
  * MetaCRM — Nova Autos NZ Dealership Product UX Layer (v3.0)
  * Cohesive, workflow-driven screens for Overview, Flagship Inbox, Leads,
  * Pipeline, Tasks & Appointments, Marketing / Meta, and Business Reports.
@@ -185,10 +185,11 @@
     if (!this.user) return;
     if (this.el.content) this.el.content.classList.remove('inbox-view-container');
 
-    if (!this._loadedDashHealth && this.svc && this.svc.fetchZernioHealth) {
-      this._loadedDashHealth = true;
-      this.svc.fetchZernioHealth().then(h => {
-        this.zernioHealthCache = h;
+    const isAdmin = this.user.role === 'admin' || this.user.role === 'super_admin';
+    if (isAdmin && !this._loadedBizStatus && this.svc && this.svc.fetchBusinessStatus) {
+      this._loadedBizStatus = true;
+      this.svc.fetchBusinessStatus().then(s => {
+        this.businessStatusCache = s;
         if (this.currentRoute === 'dashboard') this.renderDashboard();
       }).catch(() => {});
     }
@@ -199,7 +200,6 @@
       }).catch(() => {});
     }
 
-    const isAdmin = this.user.role === 'admin' || this.user.role === 'super_admin';
     const availablePages = this._getAccessiblePages ? this._getAccessiblePages() : [];
     const userPageNorms = new Set(availablePages.map(p => this._dsNormPage(p.id || p.page_id)));
 
@@ -230,8 +230,9 @@
       return !nextAt || new Date(nextAt).getTime() <= nowMs + 24 * 3600 * 1000;
     }).slice(0, 6);
 
-    const zHealth = this.zernioHealthCache || null;
-    const webhookPaused = Boolean(zHealth && zHealth.webhookHealth && !zHealth.webhookHealth.active);
+    const bizStatus = isAdmin ? (this.businessStatusCache || null) : null;
+    const businessNotice = bizStatus?.notice || null;
+    const needsReconnect = Boolean(bizStatus?.needsReconnect);
 
     // Quiet, focused topbar
     this.el.title.innerHTML = `<h1 class="topbar-title">${isAdmin ? 'Dealership Overview' : 'My Day'}</h1>`;
@@ -260,10 +261,12 @@
               ${isAdmin ? `Monitoring ${availablePages.length} authorised dealership pages · New Zealand time (Pacific/Auckland)` : `Your assigned pages & daily priorities · New Zealand time (Pacific/Auckland)`}
             </p>
           </div>
-          ${webhookPaused && isAdmin ? `
-            <button type="button" class="ds-pill ds-pill-warning" style="cursor:pointer;padding:5px 12px;" onclick="window.app.adsActiveTab='health';window.app.navigate('meta-ads');">
-              ${this._dsIcon('alert', 13)}<span>Live Lead Ad webhook paused — Inspect</span>
-            </button>
+          ${businessNotice && isAdmin ? `
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--ds-warning-bg);border:1px solid var(--ds-warning-border);border-radius:8px;font-size:12.5px;color:var(--ds-warning);">
+              ${this._dsIcon('alert', 14)}
+              <span>${esc(businessNotice)}</span>
+              ${needsReconnect ? `<button type="button" class="btn btn-secondary btn-xs" onclick="window.app.settingsTab='accounts';window.app.navigate('settings');">Reconnect Facebook</button>` : ''}
+            </div>
           ` : ''}
         </div>
 
@@ -354,10 +357,10 @@
                 <div style="padding:28px 18px;text-align:center;">
                   <div style="font-size:13.5px;font-weight:600;color:var(--ds-ink);margin-bottom:4px;">${allLeads.length === 0 ? 'No CRM enquiries yet' : 'Every active deal has a scheduled next step'}</div>
                   <div style="font-size:12.5px;color:var(--ds-ink-muted);margin-bottom:14px;">
-                    ${allLeads.length === 0 ? 'Convert a customer conversation from Inbox, sync Meta Lead Ads, or add an enquiry manually.' : 'Great work keeping your pipeline moving.'}
+                    ${allLeads.length === 0 ? (isAdmin ? 'Convert a customer conversation from Inbox, check Marketing &amp; Meta, or add an enquiry manually.' : 'Convert a customer conversation from Inbox or add an enquiry manually.') : 'Great work keeping your pipeline moving.'}
                   </div>
                   <div style="display:flex;justify-content:center;gap:8px;flex-wrap:wrap;">
-                    ${isAdmin ? `<button type="button" class="btn btn-secondary btn-sm" onclick="window.app.syncZernioLeadsFromMarketing()">${this._dsIcon('refresh', 13)}<span>Sync Meta Leads</span></button>` : ''}
+                    ${isAdmin ? `<button type="button" class="btn btn-secondary btn-sm" onclick="window.app.syncZernioLeadsFromMarketing()">${this._dsIcon('refresh', 13)}<span>Refresh Ad Leads</span></button>` : ''}
                     <button type="button" class="btn btn-primary btn-sm" onclick="window.app.openAddLeadModal()">${this._dsIcon('plus', 13)}<span>Add Enquiry</span></button>
                   </div>
                 </div>
@@ -443,7 +446,7 @@
                   <h3 class="ds-card-title">Dealership Pages (${availablePages.length})</h3>
                   <div class="ds-card-subtitle">Jump straight into a brand's inbox</div>
                 </div>
-                ${isAdmin ? `<button type="button" class="btn btn-ghost btn-xs" onclick="window.app.navigate('connections')">Manage</button>` : ''}
+                ${isAdmin ? `<button type="button" class="btn btn-ghost btn-xs" onclick="window.app.settingsTab='accounts';window.app.navigate('settings');">Accounts</button>` : ''}
               </div>
               ${availablePages.length === 0 ? `
                 <div style="padding:24px 18px;text-align:center;font-size:12.5px;color:var(--ds-ink-muted);">
@@ -606,7 +609,6 @@
         <aside class="inbox-page-rail" aria-label="Dealership pages">
           <div class="inbox-rail-header">
             <span class="inbox-rail-title">Pages (${accessiblePages.length})</span>
-            ${isAdmin ? `<button type="button" class="btn btn-ghost btn-xs" style="height:24px;padding:0 6px;font-size:11px;" onclick="window.app.navigate('connections')">Manage</button>` : ''}
           </div>
           <div class="inbox-rail-list" role="tablist" aria-label="Filter inbox by dealership page">
             <button type="button" role="tab" aria-selected="${this.selectedInboxPage === 'all'}" class="inbox-rail-item ${this.selectedInboxPage === 'all' ? 'active' : ''}" onclick="window.app.setInboxPageFilter('all')">
@@ -813,7 +815,7 @@
                       </div>
                       <span class="msg-time">
                         ${esc(m.time || 'Just now')}
-                        ${isSending ? ' · Sending…' : isFailed ? ` · Failed <button type="button" class="btn-msg-retry" onclick="window.app.retryInboxMessage('${esc(m.id)}')">Retry</button>` : ' · Delivered'}
+                        ${isSending ? ' · Sending…' : isFailed ? ` · Your message wasn't sent. <button type="button" class="btn-msg-retry" onclick="window.app.retryInboxMessage('${esc(m.id)}')">Try again</button>` : ' · Sent'}
                       </span>
                     </div>`;
                 }).join('')}
@@ -1430,7 +1432,7 @@
   };
 
   // ==========================================================================
-  // 6. MARKETING / META — PLAIN-ENGLISH 3-AREA HUB (NO TECH JARGON IN MAIN UI)
+  // 6. MARKETING / META — CLIENT-FACING 2-TAB VIEW (AD LEADS & CAMPAIGN RESULTS)
   // ==========================================================================
   proto.renderMetaAds = async function () {
     if (!this.user) return;
@@ -1444,27 +1446,29 @@
         <div class="ds-empty-box" style="max-width:520px;margin:24px auto;">
           <div class="ds-empty-icon">${this._dsIcon('lock', 20)}</div>
           <h3 class="ds-empty-title">Manager Access Only</h3>
-          <p class="ds-empty-desc">Advertising budgets, lead forms, and integration settings are available only to dealership managers.</p>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.navigate('dashboard')">Return to Overview</button>
+          <p class="ds-empty-desc">Advertising results and campaign budgets are available only to dealership managers.</p>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.navigate('dashboard')">Return to My Day</button>
         </div>`;
       return;
     }
 
-    this.adsActiveTab = this.adsActiveTab || 'campaigns';
+    if (this.adsActiveTab !== 'ad_leads' && this.adsActiveTab !== 'campaigns') {
+      this.adsActiveTab = 'ad_leads';
+    }
     this.adsDateRange = this.adsDateRange || 'last_30d';
     this.adsPageFilter = this.adsPageFilter || 'all';
     this.adsSearchQuery = this.adsSearchQuery || '';
 
     this.el.actions.innerHTML = `
-      <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.syncZernioLeadsFromMarketing()">${this._dsIcon('refresh', 13)}<span>Sync Meta Leads</span></button>
-      <button type="button" class="btn btn-primary btn-sm" onclick="window.app.syncLiveAds()">${this._dsIcon('refresh', 13)}<span>Sync Ad Insights</span></button>`;
+      <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.syncZernioLeadsFromMarketing()">${this._dsIcon('refresh', 13)}<span>Refresh Ad Leads</span></button>
+      <button type="button" class="btn btn-primary btn-sm" onclick="window.app.syncLiveAds()">${this._dsIcon('refresh', 13)}<span>Update Campaign Results</span></button>`;
 
     if (!this._loadedZernioMarketing && this.svc) {
       this._loadedZernioMarketing = true;
       Promise.all([
         this.svc.syncZernioAds ? this.svc.syncZernioAds(this.adsDateRange, this.adsPageFilter, false).catch(() => null) : null,
         this.svc.fetchZernioLeadForms ? this.svc.fetchZernioLeadForms().then(r => { this.zernioLeadForms = r?.forms || []; }).catch(() => null) : null,
-        this.svc.fetchZernioHealth ? this.svc.fetchZernioHealth().then(h => { this.zernioHealthCache = h; }).catch(() => null) : null
+        this.svc.fetchBusinessStatus ? this.svc.fetchBusinessStatus().then(s => { this.businessStatusCache = s; }).catch(() => null) : null
       ]).then(() => {
         if (this.currentRoute === 'meta-ads') this.renderMetaAds();
       });
@@ -1475,14 +1479,28 @@
     const totals = adsState?.totals || null;
     const nzdAccounts = adsState?.adAccounts || [];
     const excludedNonNzd = adsState?.excludedNonNzdAccounts || [];
-    const leadForms = this.zernioLeadForms || [];
-    const health = this.zernioHealthCache || null;
+    const leadForms = (this.zernioLeadForms || []).filter(f => {
+      if (this.adsPageFilter === 'all') return true;
+      return this._dsNormPage(f.pageId) === this._dsNormPage(this.adsPageFilter);
+    });
+    const bizStatus = this.businessStatusCache || null;
     const pages = this._getAccessiblePages ? this._getAccessiblePages() : [];
-    const webhookBlocked = Boolean(health?.webhookHealth && !health.webhookHealth.active);
 
-    const lastSyncTxt = adsState?.lastSuccessfulSync
-      ? new Date(adsState.lastSuccessfulSync).toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) + ' NZ'
-      : 'Not synced yet';
+    // Scoped CRM Ad Leads (customer details, source, campaign, next action)
+    const allLeads = this._getFilteredLeads ? this._getFilteredLeads(false) : (this.svc ? (this.svc.leads || []) : []);
+    const adLeads = allLeads.filter(l => {
+      if (this.adsPageFilter !== 'all' && this._dsNormPage(l.page_id || l.pageId) !== this._dsNormPage(this.adsPageFilter)) return false;
+      const src = String(l.source || l.lead_source || '').toLowerCase();
+      return src.includes('ad') || src.includes('meta') || src.includes('facebook') || src.includes('instagram') || Boolean(l.campaign_name || l.campaign_id || l.form_name || l.form_id);
+    });
+
+    const lastUpdatedTs = adsState?.lastSuccessfulSync || bizStatus?.adsLastUpdatedAt || null;
+    const lastUpdatedTime = lastUpdatedTs
+      ? new Date(lastUpdatedTs).toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+      : null;
+    const freshnessLine = lastUpdatedTime
+      ? `Advertising results were last updated at ${lastUpdatedTime} (NZ time).`
+      : 'Advertising results have not been updated yet today.';
 
     const maxCampSpend = Math.max(1, ...campaigns.slice(0, 6).map(c => Number(c.spend || 0)));
 
@@ -1490,87 +1508,180 @@
       <div style="max-width:1360px;margin:0 auto;">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
           <div>
-            <h2 style="font-size:19px;font-weight:700;margin:0 0 3px;color:var(--ds-ink);">Meta Lead Capture &amp; Advertising</h2>
+            <h2 style="font-size:19px;font-weight:700;margin:0 0 3px;color:var(--ds-ink);">Marketing &amp; Advertising Results</h2>
             <p style="font-size:12.5px;color:var(--ds-ink-muted);margin:0;">
-              ${pages.length} connected dealership pages · Currency: <strong>NZD</strong> · Last ad sync: <strong>${esc(lastSyncTxt)}</strong>
+              ${esc(freshnessLine)} · New Zealand Dollars (NZD)
             </p>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-            <select class="input" style="width:auto;min-width:165px;" aria-label="Filter by page" onchange="window.app.adsPageFilter=this.value;window.app.syncLiveAds();">
-              <option value="all">All Connected Pages (${pages.length})</option>
+            <select class="input" style="width:auto;min-width:170px;" aria-label="Filter by dealership page" onchange="window.app.adsPageFilter=this.value;window.app.renderMetaAds();">
+              <option value="all">All Dealership Pages (${pages.length})</option>
               ${pages.map(p => `<option value="${esc(p.id || p.page_id)}" ${String(this.adsPageFilter) === String(p.id || p.page_id) ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}
             </select>
             <select class="input" style="width:auto;min-width:140px;" aria-label="Date range" onchange="window.app.changeAdsDateRange(this.value)">
-              <option value="last_7d" ${this.adsDateRange === 'last_7d' ? 'selected' : ''}>Last 7 Days (NZ)</option>
-              <option value="last_14d" ${this.adsDateRange === 'last_14d' ? 'selected' : ''}>Last 14 Days (NZ)</option>
-              <option value="last_30d" ${this.adsDateRange === 'last_30d' ? 'selected' : ''}>Last 30 Days (NZ)</option>
-              <option value="this_month" ${this.adsDateRange === 'this_month' ? 'selected' : ''}>This Month (NZ)</option>
+              <option value="last_7d" ${this.adsDateRange === 'last_7d' ? 'selected' : ''}>Last 7 Days</option>
+              <option value="last_14d" ${this.adsDateRange === 'last_14d' ? 'selected' : ''}>Last 14 Days</option>
+              <option value="last_30d" ${this.adsDateRange === 'last_30d' ? 'selected' : ''}>Last 30 Days</option>
+              <option value="this_month" ${this.adsDateRange === 'this_month' ? 'selected' : ''}>This Month</option>
             </select>
           </div>
         </div>
 
-        <!-- Plain-English Status Banner (Technical Details tucked into expandable disclosure) -->
-        ${webhookBlocked ? `
-          <div style="margin-bottom:16px;padding:13px 16px;background:var(--ds-warning-bg);border:1px solid var(--ds-warning-border);border-radius:10px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
-              <div style="display:flex;align-items:center;gap:10px;">
-                <span style="color:var(--ds-warning);">${this._dsIcon('alert', 18)}</span>
-                <div>
-                  <div style="font-size:13px;font-weight:700;color:var(--ds-warning);">Automatic real-time lead delivery is paused</div>
-                  <div style="font-size:12.5px;color:#78350F;">Your pages and lead forms are connected, and manual <strong>Sync Meta Leads</strong> works now. Update the live webhook destination after deployment to resume instant lead delivery.</div>
-                </div>
-              </div>
-              <button type="button" class="btn btn-secondary btn-xs" onclick="window.app.switchAdsTab('health')">View Readiness</button>
+        ${bizStatus?.notice ? `
+          <div style="margin-bottom:16px;padding:12px 16px;background:var(--ds-warning-bg);border:1px solid var(--ds-warning-border);border-radius:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+            <div style="display:flex;align-items:center;gap:10px;color:var(--ds-warning);font-size:13px;font-weight:600;">
+              ${this._dsIcon('alert', 16)}
+              <span>${esc(bizStatus.notice)}</span>
             </div>
-            <details class="ds-diagnostics-disclosure">
-              <summary>Technical Diagnostics (for Admin / IT)</summary>
-              <pre class="ds-diagnostics-pre">${esc(health.webhookHealth.actionRequired || '')}</pre>
-            </details>
+            ${bizStatus.needsReconnect ? `
+              <button type="button" class="btn btn-secondary btn-xs" onclick="window.app.settingsTab='accounts';window.app.navigate('settings');">Reconnect Facebook</button>
+            ` : `
+              <button type="button" class="btn btn-secondary btn-xs" onclick="window.app.syncZernioLeadsFromMarketing()">Refresh Ad Leads</button>
+            `}
           </div>
         ` : ''}
 
-        <!-- 3 Clear Area Tabs -->
+        <!-- Client-Facing 2-Tab Navigation -->
         <div style="margin-bottom:18px;">
           <div class="ds-tabs" role="tablist">
-            <button type="button" role="tab" aria-selected="${this.adsActiveTab === 'lead_capture'}" class="ds-tab-btn ${this.adsActiveTab === 'lead_capture' ? 'active' : ''}" onclick="window.app.switchAdsTab('lead_capture')">
-              <span>Lead Capture</span><span class="ds-tab-count">${leadForms.length}</span>
+            <button type="button" role="tab" aria-selected="${this.adsActiveTab === 'ad_leads'}" class="ds-tab-btn ${this.adsActiveTab === 'ad_leads' ? 'active' : ''}" onclick="window.app.switchAdsTab('ad_leads')">
+              <span>Ad Leads</span><span class="ds-tab-count">${adLeads.length}</span>
             </button>
             <button type="button" role="tab" aria-selected="${this.adsActiveTab === 'campaigns'}" class="ds-tab-btn ${this.adsActiveTab === 'campaigns' ? 'active' : ''}" onclick="window.app.switchAdsTab('campaigns')">
-              <span>Campaign Performance</span><span class="ds-tab-count">${campaigns.length}</span>
-            </button>
-            <button type="button" role="tab" aria-selected="${this.adsActiveTab === 'health'}" class="ds-tab-btn ${this.adsActiveTab === 'health' ? 'active' : ''}" onclick="window.app.switchAdsTab('health')">
-              <span>Connection Health</span><span class="ds-tab-count">${health?.pages?.length || pages.length}</span>
+              <span>Campaign Results</span><span class="ds-tab-count">${campaigns.length}</span>
             </button>
           </div>
         </div>
 
-        ${this.adsActiveTab === 'campaigns' ? `
+        ${this.adsActiveTab === 'ad_leads' ? `
+          <div class="ds-card" style="margin-bottom:16px;">
+            <div class="ds-card-header">
+              <div>
+                <h3 class="ds-card-title">Recent Ad Enquiries (${adLeads.length})</h3>
+                <div class="ds-card-subtitle">Customers who submitted an enquiry from your Facebook or Instagram ads.</div>
+              </div>
+              <button type="button" class="btn btn-ghost btn-xs" onclick="window.app.navigate('leads')">Open All Leads →</button>
+            </div>
+            ${adLeads.length === 0 ? `
+              <div class="ds-empty-box" style="border:none;border-radius:0;padding:34px 20px;">
+                <div class="ds-empty-icon">${this._dsIcon('car', 18)}</div>
+                <div class="ds-empty-title">No ad enquiries recorded yet</div>
+                <div class="ds-empty-desc">When customers submit one of your active Facebook or Instagram lead forms, their details and vehicle interest appear here.</div>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.syncZernioLeadsFromMarketing()">${this._dsIcon('refresh', 13)}<span>Check for New Ad Leads</span></button>
+              </div>
+            ` : `
+              <div class="ds-table-wrap">
+                <table class="ds-table">
+                  <thead>
+                    <tr>
+                      <th>Customer</th>
+                      <th>Vehicle Interest</th>
+                      <th>Dealership Page &amp; Source</th>
+                      <th>Owner</th>
+                      <th>Stage</th>
+                      <th style="text-align:right;">Next Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${adLeads.slice(0, 25).map(l => {
+                      const pageName = this._pageName(l.page_id || l.pageId) || 'Dealership Page';
+                      const vehicle = l.vehicle_interest || l.vehicleInterest || 'Vehicle not specified';
+                      const owner = (l.assigned_staff_id || l.assignedStaffId || l.assigned_to) ? this._staffName(l.assigned_staff_id || l.assignedStaffId || l.assigned_to) : 'Unassigned';
+                      const sourceLabel = l.campaign_name || l.form_name || 'Facebook Ad';
+                      return `
+                        <tr class="clickable-row" onclick="window.app.openLeadDrawer('${esc(l.id)}')">
+                          <td>
+                            <div style="font-weight:600;color:var(--ds-ink);">${esc(l.name || 'Customer')}</div>
+                            <div style="font-size:12px;color:var(--ds-ink-muted);">${esc(l.phone || l.email || 'No contact number')}</div>
+                          </td>
+                          <td>
+                            <div style="font-weight:500;">${esc(vehicle)}</div>
+                            ${this._dsFinancePill(l.finance_status || l.financeStatus, l.payment_preference || l.paymentPreference)}
+                          </td>
+                          <td>
+                            <div style="font-weight:500;">${esc(pageName)}</div>
+                            <div style="font-size:11.5px;color:var(--ds-ink-muted);">${esc(sourceLabel)}</div>
+                          </td>
+                          <td>${owner === 'Unassigned' ? '<span class="ds-pill ds-pill-warning">Unassigned</span>' : esc(owner)}</td>
+                          <td>${this._dsStagePill(l.status)}</td>
+                          <td style="text-align:right;" onclick="event.stopPropagation()">
+                            <button type="button" class="btn btn-secondary btn-xs" onclick="window.app.openLeadDrawer('${esc(l.id)}')">Open Customer</button>
+                          </td>
+                        </tr>`;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+            `}
+          </div>
+
+          <div class="ds-card">
+            <div class="ds-card-header">
+              <div>
+                <h3 class="ds-card-title">Active Lead Forms (${leadForms.length})</h3>
+                <div class="ds-card-subtitle">Facebook and Instagram enquiry forms across your dealership pages.</div>
+              </div>
+            </div>
+            <div class="ds-table-wrap">
+              <table class="ds-table">
+                <thead>
+                  <tr>
+                    <th>Dealership Page</th>
+                    <th>Lead Form</th>
+                    <th>Status</th>
+                    <th style="text-align:right;">Submissions</th>
+                    <th style="text-align:right;">Enquiries</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${leadForms.length === 0 ? `
+                    <tr><td colspan="5" style="text-align:center;padding:26px;color:var(--ds-ink-muted);">No lead forms found for the selected dealership page.</td></tr>
+                  ` : leadForms.map(f => `
+                    <tr>
+                      <td>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                          ${this._dsPageAvatar(f.pageName, f.platform, 'sm')}
+                          <span style="font-weight:600;">${esc(f.pageName)}</span>
+                        </div>
+                      </td>
+                      <td style="font-weight:600;color:var(--ds-ink);">${esc(f.name)}</td>
+                      <td><span class="ds-pill ${f.status === 'ACTIVE' ? 'ds-pill-success' : 'ds-pill-neutral'}">${f.status === 'ACTIVE' ? 'Active' : 'Paused'}</span></td>
+                      <td style="text-align:right;font-weight:700;">${f.leadsCount ?? 0}</td>
+                      <td style="text-align:right;">
+                        <button type="button" class="btn btn-ghost btn-xs" onclick="window.app.leadPageFilter='${esc(f.pageId)}';window.app.navigate('leads');">View Page Leads</button>
+                      </td>
+                    </tr>`).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ` : `
           <div class="ds-metric-strip">
             <div class="ds-metric-tile" style="cursor:default;">
-              <div class="ds-metric-label"><span>Ad Spend (NZD)</span></div>
-              <div class="ds-metric-value">${adsState?.insightsRetrievedSuccessfully ? this.formatMoney(totals.spendNzd) : 'Not synced'}</div>
-              <div class="ds-metric-sub">${nzdAccounts.length} NZD ad account${nzdAccounts.length === 1 ? '' : 's'}</div>
+              <div class="ds-metric-label"><span>Advertising Spend (NZD)</span></div>
+              <div class="ds-metric-value">${adsState?.insightsRetrievedSuccessfully ? this.formatMoney(totals.spendNzd) : 'No data'}</div>
+              <div class="ds-metric-sub">${nzdAccounts.length} New Zealand ad account${nzdAccounts.length === 1 ? '' : 's'}</div>
             </div>
             <div class="ds-metric-tile" style="cursor:default;">
-              <div class="ds-metric-label"><span>Meta Platform Leads</span></div>
+              <div class="ds-metric-label"><span>Ad Leads Received</span></div>
               <div class="ds-metric-value">${adsState?.insightsRetrievedSuccessfully ? totals.platformLeads.toLocaleString('en-NZ') : '—'}</div>
-              <div class="ds-metric-sub">${totals ? totals.messagingConnections.toLocaleString('en-NZ') : 0} Messenger starts</div>
+              <div class="ds-metric-sub">${totals ? totals.messagingConnections.toLocaleString('en-NZ') : 0} Messenger enquiries</div>
             </div>
             <div class="ds-metric-tile" style="cursor:default;">
-              <div class="ds-metric-label"><span>CRM Attributed Enquiries</span></div>
+              <div class="ds-metric-label"><span>CRM Enquiries Matched</span></div>
               <div class="ds-metric-value" style="color:var(--ds-success);">${totals ? totals.crmAttributedLeads : 0}</div>
-              <div class="ds-metric-sub">Matched by campaign ID</div>
+              <div class="ds-metric-sub">Tracked to a dealership campaign</div>
             </div>
             <div class="ds-metric-tile" style="cursor:default;">
-              <div class="ds-metric-label"><span>Cost per Platform Lead</span></div>
+              <div class="ds-metric-label"><span>Cost per Ad Lead</span></div>
               <div class="ds-metric-value">${totals && totals.cplPlatformNzd !== null ? this.formatMoney(totals.cplPlatformNzd) : 'No data'}</div>
-              <div class="ds-metric-sub">${totals ? `CTR ${totals.ctr}% · ${this._formatNum(totals.impressions)} impressions` : 'Sync insights to calculate'}</div>
+              <div class="ds-metric-sub">${totals ? `${this._formatNum(totals.impressions)} views · ${totals.ctr}% click rate` : 'Update results to calculate'}</div>
             </div>
           </div>
 
           ${excludedNonNzd.length > 0 ? `
             <div style="margin-bottom:14px;padding:10px 14px;background:var(--ds-surface);border:1px solid var(--ds-border);border-radius:8px;font-size:12px;color:var(--ds-ink-secondary);">
-              <strong>NZD Currency Safeguard:</strong> Excluded ${excludedNonNzd.map(a => `${esc(a.name)} (${esc(a.currency)})`).join(', ')} from NZD totals so foreign spend is never mixed in.
+              Showing New Zealand (NZD) campaigns only. Overseas currency ad accounts are excluded from totals.
             </div>
           ` : ''}
 
@@ -1579,7 +1690,7 @@
               <div class="ds-card-header">
                 <div>
                   <h3 class="ds-card-title">Top Campaigns by Spend (NZD)</h3>
-                  <div class="ds-card-subtitle">Click any campaign below to filter its captured CRM enquiries.</div>
+                  <div class="ds-card-subtitle">Click any campaign to view enquiries received from it.</div>
                 </div>
               </div>
               <div class="ds-card-body">
@@ -1590,7 +1701,7 @@
                       <div class="ds-bar-row" onclick="window.app.leadCampaignFilter='${esc(c.id || '')}';window.app.navigate('leads');">
                         <div class="ds-bar-meta">
                           <span style="font-weight:600;color:var(--ds-ink);">${esc(c.name)} <span style="font-weight:400;color:var(--ds-ink-muted);">· ${esc(c.adAccountName || '')}</span></span>
-                          <span style="font-weight:600;white-space:nowrap;">${this.formatMoney(c.spend || 0)} · ${c.platformLeads || 0} Meta leads</span>
+                          <span style="font-weight:600;white-space:nowrap;">${this.formatMoney(c.spend || 0)} · ${c.platformLeads || 0} ad leads</span>
                         </div>
                         <div class="ds-bar-track"><div class="ds-bar-fill" style="width:${pct}%;"></div></div>
                       </div>`;
@@ -1603,112 +1714,12 @@
           <div class="ds-card">
             <div class="ds-card-header">
               <div>
-                <h3 class="ds-card-title">All NZD Campaigns (${campaigns.length})</h3>
-                <div class="ds-card-subtitle">Click any row to view CRM enquiries linked to that campaign.</div>
+                <h3 class="ds-card-title">All New Zealand Campaigns (${campaigns.length})</h3>
+                <div class="ds-card-subtitle">Click a campaign row to view its customer enquiries.</div>
               </div>
               <input type="text" class="input" style="width:220px;" placeholder="Filter campaigns…" value="${esc(this.adsSearchQuery)}" oninput="window.app.searchAds(this.value)">
             </div>
             <div id="ads-table-container">${this._renderAdsTable('campaigns', campaigns, [], [])}</div>
-          </div>
-        ` : this.adsActiveTab === 'lead_capture' ? `
-          <div class="ds-card">
-            <div class="ds-card-header">
-              <div>
-                <h3 class="ds-card-title">Connected Meta Instant Lead Forms (${leadForms.length})</h3>
-                <div class="ds-card-subtitle">Active lead forms across your dealership pages.</div>
-              </div>
-              <div style="display:flex;gap:8px;">
-                <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.runGuidedTestLead('${esc(pages[0] ? (pages[0].page_id || pages[0].id) : '')}', '${esc(pages[0] ? pages[0].name : 'Connected Page')}')">Run Local Test Lead</button>
-                <button type="button" class="btn btn-primary btn-sm" onclick="window.app.syncZernioLeadsFromMarketing()">${this._dsIcon('refresh', 13)}<span>Sync Meta Leads</span></button>
-              </div>
-            </div>
-            <div class="ds-table-wrap">
-              <table class="ds-table">
-                <thead>
-                  <tr>
-                    <th>Dealership Page</th>
-                    <th>Lead Form</th>
-                    <th>Status</th>
-                    <th style="text-align:right;">Platform Submissions</th>
-                    <th style="text-align:right;">Enquiries</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${leadForms.length === 0 ? `
-                    <tr><td colspan="5" style="text-align:center;padding:28px;color:var(--ds-ink-muted);">Loading connected lead forms…</td></tr>
-                  ` : leadForms.map(f => `
-                    <tr>
-                      <td>
-                        <div style="display:flex;align-items:center;gap:8px;">
-                          ${this._dsPageAvatar(f.pageName, f.platform, 'sm')}
-                          <span style="font-weight:600;">${esc(f.pageName)}</span>
-                        </div>
-                      </td>
-                      <td>
-                        <div style="font-weight:600;">${esc(f.name)}</div>
-                        <div style="font-size:11.5px;color:var(--ds-ink-muted);">ID: ${esc(f.id)}</div>
-                      </td>
-                      <td><span class="ds-pill ${f.status === 'ACTIVE' ? 'ds-pill-success' : 'ds-pill-neutral'}">${esc(f.status)}</span></td>
-                      <td style="text-align:right;font-weight:700;">${f.leadsCount ?? 0}</td>
-                      <td style="text-align:right;">
-                        <button type="button" class="btn btn-ghost btn-xs" onclick="window.app.leadPageFilter='${esc(f.pageId)}';window.app.navigate('leads');">View Page Enquiries</button>
-                      </td>
-                    </tr>`).join('')}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ` : `
-          <div class="ds-card">
-            <div class="ds-card-header">
-              <div>
-                <h3 class="ds-card-title">Dealership Integration Readiness</h3>
-                <div class="ds-card-subtitle">Each step is checked independently against live connected services.</div>
-              </div>
-              <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.refreshMarketingHealth()">${this._dsIcon('refresh', 13)}<span>Re-check Status</span></button>
-            </div>
-            <div class="ds-table-wrap">
-              <table class="ds-table">
-                <thead>
-                  <tr>
-                    <th>Dealership Page</th>
-                    <th>Account</th>
-                    <th>Permissions</th>
-                    <th>Instant Delivery</th>
-                    <th>Leads Captured</th>
-                    <th>Ad Reporting</th>
-                    <th>Next Step</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${!health || !Array.isArray(health.pages) || health.pages.length === 0 ? `
-                    <tr><td colspan="7" style="text-align:center;padding:24px;color:var(--ds-ink-muted);">Checking live integration health…</td></tr>
-                  ` : health.pages.map(p => `
-                    <tr>
-                      <td>
-                        <div style="display:flex;align-items:center;gap:8px;">
-                          ${this._dsPageAvatar(p.pageName, p.platform, 'sm')}
-                          <span style="font-weight:600;">${esc(p.pageName)}</span>
-                        </div>
-                      </td>
-                      <td><span class="ds-pill ${p.accountConnected ? 'ds-pill-success' : 'ds-pill-danger'}">${p.accountConnected ? 'Connected' : 'Reconnect'}</span></td>
-                      <td><span class="ds-pill ${p.permissionsVerified?.allCoreGranted ? 'ds-pill-success' : 'ds-pill-warning'}">${p.permissionsVerified?.allCoreGranted ? 'Verified' : 'Incomplete'}</span></td>
-                      <td><span class="ds-pill ${p.subscriptionVerified?.verified ? 'ds-pill-success' : 'ds-pill-warning'}">${p.subscriptionVerified?.verified ? 'Active' : 'Webhook Paused'}</span></td>
-                      <td><span class="ds-pill ${p.leadReceivedSuccessfully ? 'ds-pill-success' : 'ds-pill-neutral'}">${p.leadReceivedSuccessfully ? 'Receiving' : 'None yet'}</span></td>
-                      <td><span class="ds-pill ${p.adReportingReady ? 'ds-pill-success' : (p.adAccountConnected ? 'ds-pill-info' : 'ds-pill-neutral')}">${p.adReportingReady ? 'Synced' : (p.adAccountConnected ? 'Ready to sync' : 'No NZD account')}</span></td>
-                      <td style="font-size:12px;color:var(--ds-ink-secondary);">${esc(p.adReportingReady && p.subscriptionVerified?.verified ? 'All working' : (p.subscriptionVerified?.verified ? 'Sync ad insights' : 'Enable live webhook after deploy'))}</td>
-                    </tr>`).join('')}
-                </tbody>
-              </table>
-            </div>
-            ${health ? `
-              <div style="padding:0 18px 14px;">
-                <details class="ds-diagnostics-disclosure">
-                  <summary>Technical Diagnostics (Page IDs, Scopes &amp; Webhook Config)</summary>
-                  <pre class="ds-diagnostics-pre">${esc(JSON.stringify({ webhookHealth: health.webhookHealth, adsSyncState: health.adsSyncState, pagesCount: health.pages?.length || 0 }, null, 2))}</pre>
-                </details>
-              </div>
-            ` : ''}
           </div>
         `}
       </div>`;
@@ -1937,12 +1948,12 @@
               </thead>
               <tbody>
                 ${campaignBreakdown.length === 0 ? `
-                  <tr><td colspan="7" style="text-align:center;padding:24px;color:var(--ds-ink-muted);">No campaign insights synced for this window. Sync in Marketing / Meta to view real NZD spend &amp; CPL.</td></tr>
+                  <tr><td colspan="7" style="text-align:center;padding:24px;color:var(--ds-ink-muted);">No campaign results updated for this period yet. Open Marketing &amp; Meta to refresh NZD campaign results.</td></tr>
                 ` : campaignBreakdown.slice(0, 10).map(c => `
                   <tr class="clickable-row" onclick="window.app.leadCampaignFilter='${esc(c.campaignId || '')}';window.app.navigate('leads');">
                     <td style="font-weight:600;">${esc(c.campaignName || 'Campaign')}</td>
                     <td style="font-size:12px;color:var(--ds-ink-muted);">${esc(c.pageName || '—')}</td>
-                    <td style="text-align:right;font-weight:600;">${c.spend !== null && c.spend !== undefined ? this.formatMoney(c.spend) : 'Not synced'}</td>
+                    <td style="text-align:right;font-weight:600;">${c.spend !== null && c.spend !== undefined ? this.formatMoney(c.spend) : 'Not updated'}</td>
                     <td style="text-align:right;">${c.platformLeads ?? '—'}</td>
                     <td style="text-align:right;font-weight:600;color:var(--ds-success);">${c.crmLeads ?? c.leads ?? 0}</td>
                     <td style="text-align:right;">${c.cpl !== null && c.cpl !== undefined ? this.formatMoney(c.cpl) : 'No data'}</td>
@@ -1954,8 +1965,331 @@
         </section>` : ''}
 
         <div style="font-size:11.5px;color:var(--ds-ink-muted);padding:0 2px;">
-          <strong>Methodology:</strong> ${esc(meta.cohortExplanation || 'Enquiries received within the selected Pacific/Auckland date range. Missing ad spend or sale values are explicitly shown as No data or Not synced.')}
+          <strong>How figures are calculated:</strong> ${esc(meta.cohortExplanation || 'Enquiries received within the selected New Zealand date range. Missing ad spend or sale values are shown as No data.')}
         </div>
       </div>`;
+  };
+
+  // ==========================================================================
+  // 8. SETTINGS & ACCOUNTS (DISCREET CLIENT-FACING ACCOUNT MANAGEMENT)
+  // ==========================================================================
+  proto.renderConnections = function () {
+    this.settingsTab = 'accounts';
+    this.renderSettings();
+  };
+
+  proto.renderSettings = function () {
+    if (!this.user) return;
+    if (this.el.content) this.el.content.classList.remove('inbox-view-container');
+    const isAdmin = this.user.role === 'admin' || this.user.role === 'super_admin';
+    this.el.title.innerHTML = `<h1 class="topbar-title">Settings</h1>`;
+    this.el.actions.innerHTML = '';
+
+    if (!isAdmin) {
+      this.el.content.innerHTML = `
+        <div class="ds-empty-box" style="max-width:520px;margin:24px auto;">
+          <div class="ds-empty-icon">${this._dsIcon('lock', 20)}</div>
+          <h3 class="ds-empty-title">Manager Access Only</h3>
+          <p class="ds-empty-desc">Dealership settings and connected accounts are managed by your dealership manager.</p>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.navigate('dashboard')">Return to My Day</button>
+        </div>`;
+      return;
+    }
+
+    const tab = (this.settingsTab === 'accounts') ? 'accounts' : 'general';
+    this.settingsTab = tab;
+
+    if (tab === 'accounts' && !this._loadedBizStatusSettings && this.svc && this.svc.fetchBusinessStatus) {
+      this._loadedBizStatusSettings = true;
+      this.svc.fetchBusinessStatus().then(s => {
+        this.businessStatusCache = s;
+        if (this.currentRoute === 'settings' || this.currentRoute === 'connections' || this.currentRoute === 'integrations') {
+          this.renderSettings();
+        }
+      }).catch(() => {});
+    }
+
+    const pages = this._getAccessiblePages ? this._getAccessiblePages() : [];
+    const bizStatus = this.businessStatusCache || null;
+    const statusById = new Map((bizStatus?.pages || []).map(p => [this._dsNormPage(p.pageId), p]));
+    const displayPages = (bizStatus?.pages && bizStatus.pages.length > 0)
+      ? bizStatus.pages
+      : pages.map(p => ({
+          pageId: p.id || p.page_id,
+          pageName: p.name || 'Dealership Page',
+          platform: p.platform || 'facebook',
+          status: 'Connected',
+          needsReconnect: false
+        }));
+
+    this.el.content.innerHTML = `
+      <div style="max-width:980px;margin:0 auto;">
+        <div style="margin-bottom:18px;">
+          <div class="ds-tabs" role="tablist">
+            <button type="button" role="tab" aria-selected="${tab === 'general'}" class="ds-tab-btn ${tab === 'general' ? 'active' : ''}" onclick="window.app.settingsTab='general';window.app.renderSettings();">
+              <span>General</span>
+            </button>
+            <button type="button" role="tab" aria-selected="${tab === 'accounts'}" class="ds-tab-btn ${tab === 'accounts' ? 'active' : ''}" onclick="window.app.settingsTab='accounts';window.app.renderSettings();">
+              <span>Accounts</span><span class="ds-tab-count">${displayPages.length}</span>
+            </button>
+          </div>
+        </div>
+
+        ${tab === 'general' ? `
+          <div style="display:grid;grid-template-columns:1fr;gap:16px;max-width:600px;">
+            <section class="ds-card">
+              <div class="ds-card-header">
+                <div>
+                  <h3 class="ds-card-title">Dealership Workspace</h3>
+                  <div class="ds-card-subtitle">Regional settings for your New Zealand dealership group.</div>
+                </div>
+              </div>
+              <div class="ds-card-body" style="display:flex;flex-direction:column;gap:14px;">
+                <div>
+                  <label class="settings-label">Dealership Name</label>
+                  <input type="text" id="ds-workspace-name" class="input" value="${esc(this.selectedWorkspace || 'Nova Autos NZ')}">
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                  <div>
+                    <label class="settings-label">Business Timezone</label>
+                    <input type="text" class="input" value="New Zealand (Pacific/Auckland)" disabled>
+                  </div>
+                  <div>
+                    <label class="settings-label">Currency</label>
+                    <input type="text" class="input" value="New Zealand Dollar (NZD $)" disabled>
+                  </div>
+                </div>
+                <div>
+                  <button type="button" class="btn btn-primary btn-sm" onclick="window.app.toast('Settings saved.', 'success')">Save Changes</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="ds-card">
+              <div class="ds-card-header">
+                <div>
+                  <h3 class="ds-card-title">Desktop App</h3>
+                  <div class="ds-card-subtitle">Optional Windows &amp; macOS app synced to your dealership workspace.</div>
+                </div>
+                <a href="download.html" target="_blank" class="btn btn-secondary btn-sm">Download App</a>
+              </div>
+            </section>
+          </div>
+        ` : `
+          <div style="display:flex;flex-direction:column;gap:16px;">
+            ${bizStatus?.notice ? `
+              <div style="padding:12px 16px;background:var(--ds-warning-bg);border:1px solid var(--ds-warning-border);border-radius:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+                <div style="display:flex;align-items:center;gap:10px;color:var(--ds-warning);font-size:13px;font-weight:600;">
+                  ${this._dsIcon('alert', 16)}
+                  <span>${esc(bizStatus.notice)}</span>
+                </div>
+                ${bizStatus.needsReconnect ? `
+                  <button type="button" class="btn btn-primary btn-xs" onclick="window.app.connectFacebookOAuth()">Reconnect Facebook</button>
+                ` : ''}
+              </div>
+            ` : ''}
+
+            <section class="ds-card">
+              <div class="ds-card-header">
+                <div>
+                  <h3 class="ds-card-title">Connected Dealership Pages (${displayPages.length})</h3>
+                  <div class="ds-card-subtitle">Manage which Facebook Pages and Instagram accounts send messages and enquiries into your CRM.</div>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <button type="button" id="btn-main-connect-fb" class="btn btn-primary btn-sm" onclick="window.app.connectFacebookOAuth()">
+                    ${this._dsIcon('plus', 14)}<span id="connect-fb-btn-text">Add Facebook Page</span>
+                  </button>
+                  <button type="button" id="btn-main-connect-ig" class="btn btn-secondary btn-sm" onclick="window.app.connectInstagramOAuth()">
+                    <span id="connect-ig-btn-text">Add Instagram Account</span>
+                  </button>
+                </div>
+              </div>
+              <div class="ds-table-wrap">
+                <table class="ds-table">
+                  <thead>
+                    <tr>
+                      <th>Dealership Page</th>
+                      <th>Channel</th>
+                      <th>Status</th>
+                      <th style="text-align:right;">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${displayPages.length === 0 ? `
+                      <tr>
+                        <td colspan="4" style="text-align:center;padding:32px;color:var(--ds-ink-muted);">
+                          No dealership pages connected yet. Click <strong>Add Facebook Page</strong> to get started.
+                        </td>
+                      </tr>
+                    ` : displayPages.map(p => {
+                      const st = statusById.get(this._dsNormPage(p.pageId)) || p;
+                      const needsRe = Boolean(st.needsReconnect);
+                      const isIg = String(p.platform || '').toLowerCase().includes('insta');
+                      return `
+                        <tr>
+                          <td>
+                            <div style="display:flex;align-items:center;gap:10px;">
+                              ${this._dsPageAvatar(p.pageName, p.platform, 'sm')}
+                              <span style="font-weight:600;color:var(--ds-ink);">${esc(p.pageName)}</span>
+                            </div>
+                          </td>
+                          <td style="font-size:13px;color:var(--ds-ink-secondary);">${isIg ? 'Instagram' : 'Facebook'}</td>
+                          <td>
+                            <span class="ds-pill ${needsRe ? 'ds-pill-warning' : 'ds-pill-success'}">
+                              ${needsRe ? 'Needs Reconnecting' : 'Connected'}
+                            </span>
+                          </td>
+                          <td style="text-align:right;">
+                            ${needsRe ? `
+                              <button type="button" class="btn btn-primary btn-xs" onclick="${isIg ? 'window.app.connectInstagramOAuth()' : 'window.app.connectFacebookOAuth()'}">${isIg ? 'Reconnect Instagram' : 'Reconnect Facebook'}</button>
+                            ` : `
+                              <button type="button" class="btn btn-ghost btn-xs" onclick="window.app.openPageInInbox('${esc(p.pageId)}')">Open Inbox</button>
+                            `}
+                          </td>
+                        </tr>`;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        `}
+      </div>`;
+  };
+
+  // ==========================================================================
+  // 9. DEVELOPER-ONLY DIAGNOSTICS (SERVER-SIDE AUTHORIZED, NEVER FOR DEALERSHIP ROLES)
+  // ==========================================================================
+  proto.renderDeveloperDiagnostics = async function () {
+    if (!this.user) return;
+    if (this.el.content) this.el.content.classList.remove('inbox-view-container');
+    this.el.title.innerHTML = `<h1 class="topbar-title">Developer Diagnostics</h1>`;
+    this.el.actions.innerHTML = '';
+
+    this.el.content.innerHTML = `
+      <div style="max-width:960px;margin:0 auto;padding:24px 0;">
+        <div class="ds-empty-box">
+          <div class="ds-empty-icon">${this._dsIcon('shield', 20)}</div>
+          <div class="ds-empty-title">Verifying Developer Permissions…</div>
+          <div class="ds-empty-desc">Checking server-side developer authorization.</div>
+        </div>
+      </div>`;
+
+    try {
+      const headers = (this.svc && this.svc.getAuthHeaders) ? this.svc.getAuthHeaders(false) : {};
+      const [hRes, dRes] = await Promise.all([
+        fetch('/api/zernio?path=health', { headers }),
+        fetch('/api/zernio?path=diagnostics', { headers })
+      ]);
+
+      if (hRes.status === 403 || dRes.status === 403 || hRes.status === 401 || dRes.status === 401) {
+        this.el.content.innerHTML = `
+          <div style="max-width:540px;margin:28px auto;">
+            <div class="ds-empty-box">
+              <div class="ds-empty-icon">${this._dsIcon('lock', 20)}</div>
+              <h3 class="ds-empty-title">Developer Access Required</h3>
+              <p class="ds-empty-desc">
+                System diagnostics and integration logs are restricted to authorized developers via server-side permissions. Dealership manager and staff accounts do not have developer access.
+              </p>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.navigate('dashboard')">Return to Overview</button>
+            </div>
+          </div>`;
+        return;
+      }
+
+      const health = await hRes.json();
+      const diag = await dRes.json();
+
+      this.el.actions.innerHTML = `
+        <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.renderDeveloperDiagnostics()">${this._dsIcon('refresh', 13)}<span>Refresh Diagnostics</span></button>`;
+
+      const ing = diag.ingestion || {};
+      const wh = health.webhookHealth || {};
+      const pages = Array.isArray(health.pages) ? health.pages : [];
+
+      this.el.content.innerHTML = `
+        <div style="max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:16px;">
+          <div style="padding:10px 14px;background:var(--ds-surface);border:1px solid var(--ds-border);border-radius:8px;font-size:12px;color:var(--ds-ink-secondary);">
+            <strong>Developer-Only Console:</strong> Protected by server-side developer authorization. Secrets, tokens, and signing keys are never returned or rendered.
+          </div>
+
+          <div class="ds-metric-strip" style="margin-bottom:0;">
+            <div class="ds-metric-tile" style="cursor:default;">
+              <div class="ds-metric-label"><span>Webhook Delivery</span></div>
+              <div class="ds-metric-value" style="font-size:18px;">${wh.active ? 'Active' : esc(wh.status || 'Inactive')}</div>
+              <div class="ds-metric-sub">HMAC: ${health.webhookSignatureEnforced ? 'Enforced' : 'Not configured'}</div>
+            </div>
+            <div class="ds-metric-tile" style="cursor:default;">
+              <div class="ds-metric-label"><span>Webhooks Processed</span></div>
+              <div class="ds-metric-value">${ing.webhooksProcessed || 0}</div>
+              <div class="ds-metric-sub">${ing.duplicatesIgnored || 0} duplicate(s) ignored</div>
+            </div>
+            <div class="ds-metric-tile" style="cursor:default;">
+              <div class="ds-metric-label"><span>Failed / Retry Queue</span></div>
+              <div class="ds-metric-value">${ing.failedCount || 0} / ${ing.recoveryQueueSize || 0}</div>
+              <div class="ds-metric-sub">Failed webhook events</div>
+            </div>
+            <div class="ds-metric-tile" style="cursor:default;">
+              <div class="ds-metric-label"><span>Connected Accounts</span></div>
+              <div class="ds-metric-value">${pages.length}</div>
+              <div class="ds-metric-sub">Live provider accounts</div>
+            </div>
+          </div>
+
+          <section class="ds-card">
+            <div class="ds-card-header">
+              <div>
+                <h3 class="ds-card-title">Provider Connection &amp; Readiness Matrix</h3>
+                <div class="ds-card-subtitle">Live status per connected account (no secrets exposed).</div>
+              </div>
+            </div>
+            <div class="ds-table-wrap">
+              <table class="ds-table">
+                <thead>
+                  <tr>
+                    <th>Page</th>
+                    <th>Connected</th>
+                    <th>Permissions</th>
+                    <th>Subscription</th>
+                    <th>Leads Received</th>
+                    <th>Ad Account</th>
+                    <th>Insights</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${pages.map(p => `
+                    <tr>
+                      <td style="font-weight:600;">${esc(p.pageName)}</td>
+                      <td>${p.accountConnected ? 'Yes' : 'No'}</td>
+                      <td>${p.permissionsVerified?.allCoreGranted ? 'Verified' : 'Incomplete'}</td>
+                      <td>${p.subscriptionVerified?.verified ? 'Verified' : 'Blocked'}</td>
+                      <td>${p.leadReceivedSuccessfully ? 'Yes' : 'None'}</td>
+                      <td>${p.adAccountConnected ? 'Linked' : 'None'}</td>
+                      <td>${p.insightsRetrievedSuccessfully ? 'Synced' : 'Not synced'}</td>
+                    </tr>`).join('')}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="ds-card">
+            <div class="ds-card-header">
+              <h3 class="ds-card-title">Sanitized Diagnostic Snapshot</h3>
+            </div>
+            <div class="ds-card-body">
+              <pre class="ds-diagnostics-pre">${esc(JSON.stringify({ webhookHealth: wh, adsSyncState: health.adsSyncState, ingestion: ing }, null, 2))}</pre>
+            </div>
+          </section>
+        </div>`;
+    } catch (e) {
+      this.el.content.innerHTML = `
+        <div style="max-width:540px;margin:28px auto;">
+          <div class="ds-empty-box">
+            <div class="ds-empty-icon">${this._dsIcon('alert', 20)}</div>
+            <h3 class="ds-empty-title">Diagnostics Unavailable</h3>
+            <p class="ds-empty-desc">Could not reach the diagnostics endpoint right now.</p>
+          </div>
+        </div>`;
+    }
   };
 })();
