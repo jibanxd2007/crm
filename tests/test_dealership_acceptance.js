@@ -330,6 +330,67 @@ async function run() {
     assert.ok(html.includes('js/desktop-bridge.js'), 'index.html must still load desktop-bridge.js');
   });
 
+  // 10. Zernio CamelCase Lead Payload Parsing, Dynamic Page Mapping & Zero Hardcoded IDs
+  await test('10a. Zernio camelCase fieldData & fields object preserve all dealership answers cleanly', async () => {
+    const zernioPayload = {
+      leadgenId: `zn_camel_${Date.now()}`,
+      formId: '2268031970709360',
+      formName: 'nova auto nz',
+      campaignId: '120253146345640334',
+      adId: '120253168976070334',
+      page_id: 'page_dynamic_99',
+      createdTime: '2026-11-16T20:45:40.000Z',
+      fields: {
+        full_name: 'Sione Test',
+        phone_number: '021 555 8899',
+        email: 'sione.test@example.co.nz',
+        'what_car_you_looking_for?': '7-seater SUV',
+        'are_you_looking_for_a_car_on_finance?': 'yes',
+        'do_you_have_a_driving_license?': 'Full NZ'
+      }
+    };
+    const res = await leadIngestion.ingestLeadAdEvent(null, zernioPayload, { provider: 'zernio', eligibleStaffIds: ['rep_dyn_1'] });
+    assert.strictEqual(res.isDuplicate, false);
+    assert.strictEqual(res.lead.vehicle_interest, '7-seater SUV');
+    assert.strictEqual(res.lead.payment_preference, 'Finance');
+    assert.strictEqual(res.lead.custom_fields['do_you_have_a_driving_license?'], 'Full NZ');
+    assert.strictEqual(res.lead.campaign_id, '120253146345640334');
+    assert.strictEqual(res.lead.ad_id, '120253168976070334');
+    assert.strictEqual(res.assignedStaffId, 'rep_dyn_1');
+  });
+
+  await test('10b. Dynamic page mapping resolves newly added pages with zero hardcoded 6-account IDs', async () => {
+    const vm = require('vm');
+    const code = fs.readFileSync(path.join(__dirname, '..', 'js', 'crm-service.js'), 'utf8');
+    const appCode = fs.readFileSync(path.join(__dirname, '..', 'js', 'app.js'), 'utf8');
+    const hardcodedRx = /6accd8b0d52dc43d8bf6034c|6acd4daed19284a3227d7870|6aea527fa5c031c687ccba15|6aea5280a5c031c687ccba16|6aea5280a5c031c687ccba17|6aea5281a5c031c687ccba18/;
+    assert.ok(!hardcodedRx.test(code), 'js/crm-service.js must not hardcode Zernio account IDs');
+    assert.ok(!hardcodedRx.test(appCode), 'js/app.js must not hardcode Zernio account IDs');
+
+    const sandbox = {
+      window: { location: { origin: 'http://localhost', hostname: 'localhost' }, addEventListener: () => {}, dispatchEvent: () => {} },
+      localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+      sessionStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+      CustomEvent: class CustomEvent { constructor(t, d) { this.type = t; this.detail = d?.detail; } },
+      console, Date, Math, JSON, Set, Map, Array, Object, Promise, setTimeout, clearTimeout,
+      fetch: async () => ({ ok: false, json: async () => ({}) })
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(code + '\nthis.__CRMService = CRMService;', sandbox);
+    const svc = new sandbox.__CRMService();
+    svc.pages = [{ id: '998877665544', page_id: '998877665544', accountId: 'z_acc_brand_new', zernioAccountId: 'z_acc_brand_new', name: 'New Branch Motors NZ' }];
+    assert.strictEqual(svc.resolveCanonicalPageId('z_acc_brand_new'), '998877665544');
+    assert.strictEqual(svc.resolveZernioAccountId('998877665544'), 'z_acc_brand_new');
+    assert.strictEqual(svc.resolvePageRecord('z_acc_brand_new').name, 'New Branch Motors NZ');
+  });
+
+  await test('10c. Pipeline UI exposes non-drag accessible Stage select & Marketing separates 3 tabs', async () => {
+    const appCode = fs.readFileSync(path.join(__dirname, '..', 'js', 'app.js'), 'utf8');
+    assert.ok(appCode.includes('kanban-stage-select'), 'Pipeline cards must include accessible Stage dropdown');
+    assert.ok(appCode.includes('moveLeadStage('), 'Pipeline must provide moveLeadStage non-drag handler');
+    assert.ok(appCode.includes("switchAdsTab('campaigns')") && appCode.includes("switchAdsTab('lead_capture')") && appCode.includes("switchAdsTab('health')"), 'Marketing / Meta must clearly separate Campaigns, Lead Capture, and Connection Health');
+  });
+
   console.log('\n====================================================================');
   console.log(` ACCEPTANCE RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('====================================================================\n');

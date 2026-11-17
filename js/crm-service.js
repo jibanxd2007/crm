@@ -215,13 +215,8 @@ class CRMService {
   }
 
   getDefaultPages() {
-    return [
-      { id: '1342542735606057', page_id: '1342542735606057', name: 'Nova auto nz', platform: 'Facebook', channel: 'facebook', is_active: true },
-      { id: '1330954980099743', page_id: '1330954980099743', name: 'Nova cars Samoa nz', platform: 'Facebook', channel: 'facebook', is_active: true },
-      { id: '1217451958128630', page_id: '1217451958128630', name: 'Nova Cars Tongan NZ', platform: 'Facebook', channel: 'facebook', is_active: true },
-      { id: '284138661621993', page_id: '284138661621993', name: 'Zodiac Motor Company', platform: 'Facebook', channel: 'facebook', is_active: true },
-      { id: '1271057346092106', page_id: '1271057346092106', name: 'Car4u Mo Samoa NZ', platform: 'Facebook', channel: 'facebook', is_active: true }
-    ];
+    // Pages are derived dynamically from /api/pages (Supabase + live Zernio connections) — never hardcoded
+    return [];
   }
   loadStaff() {
     try {
@@ -448,69 +443,8 @@ class CRMService {
   }
 
   getDefaultConversations() {
-    const now = Date.now();
-    return [
-      {
-        id: "conv_fb_page1_001",
-        conversationId: "conv_fb_page1_001",
-        name: "Priya Patel",
-        participant_name: "Priya Patel",
-        channel: "messenger",
-        page_id: "1342542735606057",
-        accountId: "1342542735606057",
-        unread: 1,
-        unread_count: 1,
-        starred: true,
-        preview: "Saturday at 10:30 AM would be perfect! Can you send through the pre-inspection report?",
-        last_message: "Saturday at 10:30 AM would be perfect! Can you send through the pre-inspection report?",
-        last_message_at: new Date(now - 12 * 60 * 1000).toISOString(),
-        time: "12m ago",
-        messages: [
-          { id: "msg_p1_1", text: "Hi! Inquiring about the 2021 Toyota Hilux SR5 listed on your Facebook page. Is it still available for a test drive?", incoming: true, time: "10:15 AM" },
-          { id: "msg_p1_2", text: "Hello Priya! Yes, the Hilux is currently on the lot in Auckland. Would Saturday morning suit you for a test drive?", incoming: false, time: "10:20 AM" },
-          { id: "msg_p1_3", text: "Saturday at 10:30 AM would be perfect! Can you send through the pre-inspection report?", incoming: true, time: "10:24 AM" }
-        ]
-      },
-      {
-        id: "conv_fb_page2_002",
-        conversationId: "conv_fb_page2_002",
-        name: "Taufu'i Fa'amatu",
-        participant_name: "Taufu'i Fa'amatu",
-        channel: "messenger",
-        page_id: "1330954980099743",
-        accountId: "1330954980099743",
-        unread: 1,
-        unread_count: 1,
-        starred: false,
-        preview: "Talofa! Looking for a 7-seater family SUV to ship to Apia. What are the freight and compliance costs?",
-        last_message: "Talofa! Looking for a 7-seater family SUV to ship to Apia. What are the freight and compliance costs?",
-        last_message_at: new Date(now - 45 * 60 * 1000).toISOString(),
-        time: "45m ago",
-        messages: [
-          { id: "msg_p2_1", text: "Talofa! Looking for a 7-seater family SUV to ship to Apia. What are the freight and compliance costs?", incoming: true, time: "9:45 AM" }
-        ]
-      },
-      {
-        id: "conv_fb_page3_003",
-        conversationId: "conv_fb_page3_003",
-        name: "Sione Tupou",
-        participant_name: "Sione Tupou",
-        channel: "messenger",
-        page_id: "1217451958128630",
-        accountId: "1217451958128630",
-        unread: 0,
-        unread_count: 0,
-        starred: false,
-        preview: "Malo e lelei Sione! Yes, we have low-deposit finance starting from $85/week with approved credit.",
-        last_message: "Malo e lelei Sione! Yes, we have low-deposit finance starting from $85/week with approved credit.",
-        last_message_at: new Date(now - 2 * 3600 * 1000).toISOString(),
-        time: "2h ago",
-        messages: [
-          { id: "msg_p3_1", text: "Malo e lelei, do you offer low-deposit weekly finance on commercial vans for local transport?", incoming: true, time: "8:10 AM" },
-          { id: "msg_p3_2", text: "Malo e lelei Sione! Yes, we have low-deposit finance starting from $85/week with approved credit.", incoming: false, time: "8:18 AM" }
-        ]
-      }
-    ];
+    // Live conversations are fetched dynamically from /api/messages & Zernio
+    return [];
   }
 
   // ==========================================================================
@@ -561,8 +495,10 @@ class CRMService {
               const isIg = (p.platform === 'instagram') || pName.toLowerCase().includes('insta');
               return {
                 id: pid,
-                page_id: pid,
-                meta_page_id: pid,
+                page_id: String(p.page_id || pid),
+                meta_page_id: String(p.page_id || pid),
+                accountId: p.accountId || p.zernioAccountId || null,
+                zernioAccountId: p.zernioAccountId || p.accountId || null,
                 dbId: p.dbId || pid,
                 name: pName,
                 username: p.username || (isIg ? pName : null),
@@ -576,14 +512,8 @@ class CRMService {
               };
             });
 
-            serverPages.forEach(sp => {
-              const idx = this.pages.findIndex(lp => lp.id === sp.id || lp.page_id === sp.id);
-              if (idx >= 0) {
-                this.pages[idx] = { ...this.pages[idx], ...sp };
-              } else {
-                this.pages.push(sp);
-              }
-            });
+            // Replace with authoritative live/DB page list (eliminates stale/hardcoded ghosts)
+            this.pages = serverPages;
           }
           this.savePages();
           this.notifyChange('pages_updated');
@@ -594,6 +524,85 @@ class CRMService {
       console.warn('[CRMService] fetchRemotePages warning:', e);
     }
     return this.pages;
+  }
+
+  /**
+   * Dynamically resolves ANY provider identifier (Zernio accountId, Meta page_id, or DB id)
+   * to the canonical page record derived from live connected accounts. Zero hardcoded IDs.
+   */
+  resolvePageRecord(rawId) {
+    if (!rawId) return null;
+    const key = String(rawId).trim();
+    if (!key) return null;
+    return (this.pages || []).find(p =>
+      String(p.id) === key ||
+      String(p.page_id || '') === key ||
+      String(p.meta_page_id || '') === key ||
+      String(p.accountId || '') === key ||
+      String(p.zernioAccountId || '') === key ||
+      String(p.dbId || '') === key
+    ) || null;
+  }
+
+  resolveCanonicalPageId(rawId) {
+    if (!rawId) return '';
+    const rec = this.resolvePageRecord(rawId);
+    return rec ? String(rec.page_id || rec.id) : String(rawId).trim();
+  }
+
+  resolveZernioAccountId(rawId) {
+    const rec = this.resolvePageRecord(rawId);
+    if (rec && (rec.zernioAccountId || rec.accountId)) return String(rec.zernioAccountId || rec.accountId);
+    if (rawId) return String(rawId).trim();
+    const first = (this.pages || []).find(p => p.zernioAccountId || p.accountId);
+    return first ? String(first.zernioAccountId || first.accountId) : null;
+  }
+
+  _authHeaders() {
+    const authUser = this.getCurrentUser();
+    const token = this.getSessionToken();
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (authUser && authUser.id) headers['X-User-Id'] = authUser.id;
+    return headers;
+  }
+
+  async fetchZernioHealth() {
+    const res = await fetch('/api/zernio?path=health', { headers: this._authHeaders() });
+    if (!res.ok) throw new Error(`Health check failed (HTTP ${res.status})`);
+    return res.json();
+  }
+
+  async syncZernioAds(range = 'last_30d', pageId = null, forceRefresh = false) {
+    const params = new URLSearchParams({ path: forceRefresh ? 'sync-ads' : 'ads-insights', range });
+    if (pageId && pageId !== 'all') params.set('pageId', pageId);
+    const res = await fetch(`/api/zernio?${params.toString()}`, {
+      method: forceRefresh ? 'POST' : 'GET',
+      headers: this._authHeaders()
+    });
+    const data = await res.json();
+    if (data && Array.isArray(data.campaigns)) {
+      this.campaigns = data.campaigns;
+      this.zernioAdsState = data;
+      this.notifyChange('campaigns_updated');
+    }
+    return data;
+  }
+
+  async fetchZernioLeadForms(pageId = null) {
+    const params = new URLSearchParams({ path: 'lead-forms' });
+    if (pageId && pageId !== 'all') params.set('pageId', pageId);
+    const res = await fetch(`/api/zernio?${params.toString()}`, { headers: this._authHeaders() });
+    return res.json();
+  }
+
+  async syncZernioLeads(pageId = null) {
+    const params = new URLSearchParams({ path: 'sync-leads' });
+    if (pageId && pageId !== 'all') params.set('pageId', pageId);
+    const res = await fetch(`/api/zernio?${params.toString()}`, { method: 'POST', headers: this._authHeaders() });
+    const data = await res.json();
+    await this.fetchRemoteLeads();
+    return data;
   }
 
   async fetchRemoteStaff() {
@@ -659,8 +668,8 @@ class CRMService {
               participant_name: pName,
               participantUsername: c.participantUsername,
               channel: isFb ? 'messenger' : 'instagram',
-              page_id: c.page_id || c.accountId || c.account_id || '6accd8b0d52dc43d8bf6034c',
-              accountId: c.accountId || c.account_id || c.page_id || '6accd8b0d52dc43d8bf6034c',
+              page_id: this.resolveCanonicalPageId(c.page_id || c.accountId || c.account_id) || c.page_id || c.accountId || null,
+              accountId: c.accountId || c.account_id || this.resolveZernioAccountId(c.page_id) || null,
               unread: c.unread_count || c.unread || 0,
               unread_count: c.unread_count || c.unread || 0,
               last_message_at: c.last_message_at || c.updatedTime || c.created_at || new Date().toISOString(),
@@ -700,8 +709,8 @@ class CRMService {
               participant_name: pName,
               participantUsername: c.participantUsername,
               channel: isFb ? 'messenger' : 'instagram',
-              page_id: c.accountId || '6accd8b0d52dc43d8bf6034c',
-              accountId: c.accountId || '6accd8b0d52dc43d8bf6034c',
+              page_id: this.resolveCanonicalPageId(c.accountId || c.pageId) || c.accountId || null,
+              accountId: c.accountId || this.resolveZernioAccountId(c.pageId) || null,
               preview: c.lastMessage || 'Direct message',
               last_message: c.lastMessage || 'Direct message',
               time: c.updatedTime ? new Date(c.updatedTime).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'Recently',
@@ -2776,8 +2785,8 @@ class CRMService {
         name: options.senderName || "New Inquirer",
         participant_name: options.senderName || "New Inquirer",
         channel: options.channel || "messenger",
-        page_id: options.pageId || options.accountId || "6accd8b0d52dc43d8bf6034c",
-        accountId: options.accountId || options.pageId || "6accd8b0d52dc43d8bf6034c",
+        page_id: this.resolveCanonicalPageId(options.pageId || options.accountId) || options.pageId || options.accountId || null,
+        accountId: options.accountId || this.resolveZernioAccountId(options.pageId) || options.pageId || null,
         unread: 1,
         unread_count: 1,
         time: "Just now",

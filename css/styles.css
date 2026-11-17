@@ -6137,3 +6137,601 @@ tbody tr:hover {
 }
 
 
+
+/* ============================================================================
+   NOVA AUTOS NZ — UNIFIED DESIGN SYSTEM & UX OVERHAUL (v2026.11)
+   ============================================================================ */
+
+/* Accessible focus outlines across all interactive elements */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="tab"]:focus-visible {
+  outline: 2px solid #FF6700;
+  outline-offset: 2px;
+}
+
+/* Fix topbar title clipping & spacing */
+.topbar {
+  gap: 12px;
+}
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.topbar-title,
+#page-title {
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: #0F172A;
+  letter-spacing: -0.02em;
+}
+.topbar-search,
+.global-search-wrap {
+  flex: 0 1 280px;
+  min-width: 160px;
+  max-width: 300px;
+}
+.topbar-right,
+#topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Unified KPI Card Grid (Fixes Marketing/Meta & Reports stacked text) */
+.stats-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.stat-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 16px 18px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+.stat-card[onclick]:hover {
+  border-color: #CBD5E1;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+  transform: translateY(-1px);
+}
+.stat-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748B;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: #0F172A;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+.stat-sub {
+  font-size: 11.5px;
+  color: #64748B;
+  margin-top: 6px;
+  line-height: 1.4;
+}
+
+/* Unified Horizontal Filter & Action Toolbar */
+.crm-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.crm-filter-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.crm-filter-group .input,
+.crm-filter-group select {
+  width: auto !important;
+  min-width: 145px;
+  max-width: 240px;
+  height: 34px;
+  padding: 4px 10px;
+  font-size: 12.5px;
+}
+.crm-filter-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  margin-bottom: 14px;
+}
+.crm-filter-bar .input {
+  height: 34px;
+  font-size: 12.5px;
+}
+
+/* Rep "Needs Attention Today" Priority Strip on Overview */
+.attention-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.attention-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-left: 4px solid #CBD5E1;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 140ms ease;
+  text-align: left;
+  width: 100%;
+  font-family: inherit;
+}
+.attention-card:hover {
+  border-color: #CBD5E1;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+  transform: translateY(-1px);
+}
+.attention-card.urgent {
+  border-left-color: #EA580C;
+  background: linear-gradient(90deg, #FFF7ED 0%, #FFFFFF 36%);
+}
+.attention-card.warning {
+  border-left-color: #D97706;
+  background: linear-gradient(90deg, #FFFBEB 0%, #FFFFFF 36%);
+}
+.attention-card.ok {
+  border-left-color: #10B981;
+}
+.attention-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 2px;
+}
+.attention-count {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0F172A;
+  line-height: 1.15;
+}
+.attention-cta {
+  font-size: 12px;
+  font-weight: 600;
+  color: #EA580C;
+  white-space: nowrap;
+}
+
+/* Prevent submetric text clipping on Overview */
+.submetric-label-row {
+  font-size: 11.5px !important;
+  white-space: normal !important;
+  line-height: 1.3;
+}
+
+/* ============================================================================
+   SPACIOUS, NEVER-SQUEEZED MULTI-PAGE INBOX
+   ============================================================================ */
+.inbox-layout {
+  position: relative;
+  display: flex !important;
+  width: 100%;
+  height: calc(100vh - 64px);
+  min-height: 540px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.inbox-page-rail {
+  width: 196px !important;
+  min-width: 196px !important;
+  max-width: 196px !important;
+  flex-shrink: 0;
+  background: #F8FAFC;
+  border-right: 1px solid #E2E8F0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.inbox-rail-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #334155;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.inbox-rail-item:hover {
+  background: #EEF2F6;
+}
+.inbox-rail-item.active {
+  background: #FFF7ED;
+  border-color: #FDBA74;
+  color: #9A3412;
+  font-weight: 700;
+}
+.inbox-rail-item-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex: 1;
+}
+.inbox-rail-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inbox-rail-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.inbox-rail-unread {
+  background: #EA580C;
+  color: #FFFFFF;
+  font-size: 10.5px;
+  font-weight: 700;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.inbox-rail-total {
+  font-size: 11px;
+  color: #64748B;
+  font-weight: 500;
+}
+
+.inbox-sidebar {
+  width: 292px !important;
+  min-width: 270px !important;
+  max-width: 310px !important;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #E2E8F0;
+  background: #FFFFFF;
+  overflow: hidden;
+}
+
+.inbox-main {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  display: flex;
+  flex-direction: column;
+  background: #F8FAFC;
+  overflow: hidden;
+}
+
+/* Thread Header: ZERO overlapping ever */
+.inbox-thread-header {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px !important;
+  background: #FFFFFF;
+  border-bottom: 1px solid #E2E8F0;
+  min-height: 62px;
+  position: relative;
+}
+.inbox-thread-header .thread-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+.inbox-thread-header .thread-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.inbox-thread-header .thread-name {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #0F172A;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inbox-thread-header .thread-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #64748B;
+  margin-top: 2px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.inbox-thread-header .thread-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  position: relative;
+}
+.inbox-details-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid #CBD5E1;
+  background: #FFFFFF;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.inbox-details-toggle-btn:hover,
+.inbox-details-toggle-btn.active {
+  background: #FFF7ED;
+  border-color: #FDBA74;
+  color: #C2410C;
+}
+
+/* Composer Sender Strip + Comfortable Input */
+.composer-sender-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 7px 14px;
+  background: #F8FAFC;
+  border-top: 1px solid #E2E8F0;
+  font-size: 12px;
+  color: #334155;
+}
+.composer-sender-banner.sender-mismatch {
+  background: #FFFBEB;
+  border-top-color: #FDE68A;
+  color: #92400E;
+}
+.inbox-composer {
+  padding: 10px 14px 12px !important;
+  background: #FFFFFF;
+  border-top: 1px solid #E2E8F0;
+}
+.composer-bar-container {
+  display: flex !important;
+  align-items: flex-end;
+  gap: 8px;
+  background: #F8FAFC;
+  border: 1px solid #CBD5E1;
+  border-radius: 10px;
+  padding: 6px 8px;
+}
+.composer-bar-container:focus-within {
+  border-color: #FF6700;
+  background: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(255, 103, 0, 0.1);
+}
+.inbox-msg-textarea {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  min-height: 36px;
+  max-height: 120px;
+  padding: 7px 6px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  border: none !important;
+  background: transparent !important;
+  resize: none;
+  outline: none;
+}
+
+/* Collapsible Customer Details Panel (Never crushes chat!) */
+.inbox-details {
+  width: 315px !important;
+  min-width: 300px !important;
+  flex-shrink: 0;
+  border-left: 1px solid #E2E8F0;
+  background: #FFFFFF;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.inbox-layout.details-collapsed .inbox-details {
+  display: none !important;
+}
+
+/* At <= 1520px, opening Details slides cleanly over the right side so chat keeps full width */
+@media (max-width: 1520px) {
+  .inbox-layout:not(.details-collapsed) .inbox-details {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 35;
+    box-shadow: -10px 0 28px rgba(15, 23, 42, 0.14);
+  }
+}
+
+.inbox-mobile-page-bar {
+  display: none;
+}
+
+/* At <= 1080px, collapse Page Rail cleanly into the top Page Selector bar */
+@media (max-width: 1080px) {
+  .inbox-page-rail {
+    display: none !important;
+  }
+  .inbox-mobile-page-bar {
+    display: block !important;
+    margin-top: 2px;
+  }
+  .inbox-sidebar {
+    width: 270px !important;
+    min-width: 250px !important;
+  }
+}
+
+/* Mobile <= 768px (390px iPhone): 1-panel List -> Conversation -> Details flow */
+@media (max-width: 768px) {
+  .inbox-layout {
+    height: calc(100vh - 60px);
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+  .inbox-layout.view-list .inbox-sidebar {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-right: none;
+  }
+  .inbox-layout.view-list .inbox-main {
+    display: none !important;
+  }
+  .inbox-layout.view-chat .inbox-sidebar {
+    display: none !important;
+  }
+  .inbox-layout.view-chat .inbox-main {
+    width: 100% !important;
+  }
+  .inbox-layout:not(.details-collapsed) .inbox-details {
+    width: 100% !important;
+    min-width: 100% !important;
+  }
+  .inbox-back-btn {
+    display: inline-flex !important;
+    min-width: 40px;
+    min-height: 40px;
+    align-items: center;
+    justify-content: center;
+  }
+  .btn, .inbox-queue-pill, .inbox-details-toggle-btn {
+    min-height: 36px;
+  }
+}
+
+/* Pipeline Accessible Stage Selector & Card Polish */
+.kanban-card-vehicle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1E293B;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.kanban-card-stage-bar {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #F1F5F9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.kanban-stage-select {
+  height: 28px;
+  font-size: 11.5px;
+  padding: 2px 6px;
+  border: 1px solid #CBD5E1;
+  border-radius: 6px;
+  background: #F8FAFC;
+  color: #334155;
+  cursor: pointer;
+  flex: 1;
+}
+
+/* Health Matrix Status Pills */
+.health-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.health-pill.pass {
+  background: #ECFDF5;
+  color: #065F46;
+  border: 1px solid #A7F3D0;
+}
+.health-pill.warn {
+  background: #FFFBEB;
+  color: #92400E;
+  border: 1px solid #FDE68A;
+}
+.health-pill.fail {
+  background: #FEF2F2;
+  color: #991B1B;
+  border: 1px solid #FECACA;
+}
+.health-pill.neutral {
+  background: #F1F5F9;
+  color: #475569;
+  border: 1px solid #E2E8F0;
+}
+
+/* Funnel Visual Progress Bars */
+.funnel-bar-track {
+  height: 5px;
+  border-radius: 999px;
+  background: #E2E8F0;
+  overflow: hidden;
+  margin-top: 6px;
+}
+.funnel-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #FF6700;
+  transition: width 300ms ease;
+}
+
+@media (max-width: 540px) {
+  .inbox-topbar-meta-status,
+  .topbar-search,
+  .global-search-wrap {
+    display: none !important;
+  }
+}

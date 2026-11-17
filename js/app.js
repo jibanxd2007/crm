@@ -1291,7 +1291,14 @@ class MetaCRMApp {
     const tasks = this._filterUserTasks(this.svc ? this.svc.tasks : []);
     const overdueTasks = tasks.filter(t => t.status !== 'Done' && t.dueDate && new Date(t.dueDate) < new Date()).length;
     const activeWs = this.selectedWorkspace || 'MetaCRM Workspace';
-    const unreadConvs = (this.svc ? (this.svc.conversations || []) : []).reduce((s, c) => s + (c.unread || 0), 0);
+    const accessiblePageIds = (this._getAccessiblePages ? this._getAccessiblePages() : []).map(p => String(p.id || p.page_id));
+    const scopedConvs = (this.svc ? (this.svc.conversations || []) : []).filter(c => {
+      if (c.is_archived) return false;
+      if (isAdmin) return true;
+      const cid = this.svc?.resolveCanonicalPageId ? this.svc.resolveCanonicalPageId(c.page_id || c.accountId || c.pageId) : String(c.page_id || c.accountId || '');
+      return !cid || accessiblePageIds.includes(cid);
+    });
+    const unreadConvs = scopedConvs.filter(c => (c.unread || c.unread_count || 0) > 0).length;
 
     const unreadEmails = (this.svc ? (this.svc.emailMessages || []) : []).filter(m => !m.is_read && m.folder === 'inbox').length;
 
@@ -1634,6 +1641,14 @@ class MetaCRMApp {
   // ──────────────────────────────────────────────────────────
 
   renderDashboard() {
+    if (!this.user) return;
+    if (!this._loadedDashHealth && this.svc && this.svc.fetchZernioHealth) {
+      this._loadedDashHealth = true;
+      this.svc.fetchZernioHealth().then(h => {
+        this.zernioHealthCache = h;
+        if (this.currentRoute === 'dashboard') this.renderDashboard();
+      }).catch(() => {});
+    }
     const now = new Date();
     const hour = now.getHours();
     const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -1866,13 +1881,64 @@ class MetaCRMApp {
     ` : '';
 
     const roi = this.svc ? this.svc.getRoiMetrics(this.selectedDateRange, this.selectedPageFilter) : { totalSpend: 0, cpl: 0, cpa: 0, roas: 0, totalLeads: leads.length, totalWonDeals: wonL.length, totalWonValue: 0, activeCampaignsCount: 0 };
-    const speed = this.svc ? this.svc.getSpeedToLeadMetrics(leads) : { medianText: '—', complianceRate: '100%', liveBreachCount: 0, respondedCount: 0 };
+    const speed = this.svc ? this.svc.getSpeedToLeadMetrics(leads) : { medianText: '—', complianceRate: 'No data', liveBreachCount: 0, respondedCount: 0 };
+    const honestSlaRate = (leads.length > 0 && speed.respondedCount > 0) ? (speed.complianceRate || 'No data') : 'No data';
+    const honestSlaSub = (leads.length > 0 && speed.respondedCount > 0)
+      ? (speed.liveBreachCount > 0 ? `${speed.liveBreachCount} breach${speed.liveBreachCount > 1 ? 'es' : ''}` : 'Within SLA')
+      : 'Awaiting responses';
+
+    const needsReplyConvsCount = accessibleConvs.filter(c => {
+      if (c.is_archived) return false;
+      if (Array.isArray(c.messages) && c.messages.length > 0) {
+        const last = c.messages[c.messages.length - 1];
+        return last.incoming === true || last.sender_type === 'customer' || last.direction === 'inbound';
+      }
+      return !String(c.preview || c.last_message || '').startsWith('You:');
+    }).length;
+    const unassignedLeadsCount = allScopedLeads.filter(l => !(l.assigned_staff_id || l.assignedStaffId || l.assigned_to)).length;
+    const todayVisitsCount = allPendingTasks.filter(t => t.type === 'appointment' && t.dueDate && this._getNZDate(t.dueDate) === this._getNZDate(new Date())).length;
+
+    const zHealth = this.zernioHealthCache || null;
+    const connectedPagesCount = zHealth && Array.isArray(zHealth.pages) ? zHealth.pages.filter(p => p.accountConnected).length : availablePages.length;
+    const webhookIsLive = Boolean(zHealth?.webhookHealth?.active);
+    const webhookStatusLabel = !zHealth ? 'Checking…' : (webhookIsLive ? 'Active' : (zHealth.webhookHealth?.status === 'disabled' ? 'Disabled (Action Required)' : 'Needs Setup'));
+    const webhookDotColor = !zHealth ? '#94A3B8' : (webhookIsLive ? '#10B981' : '#EF4444');
+    const tokenHealthy = zHealth && Array.isArray(zHealth.pages) ? (zHealth.pages.length > 0 && zHealth.pages.every(p => p.accountConnected)) : availablePages.length > 0;
 
     this.el.content.innerHTML = `
       ${fbOnboardingHtml}
 
+      <!-- NEEDS ATTENTION TODAY (Daily Sales Priority Strip) -->
+      <div class="dash-section-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span>Needs Attention Today (NZ)</span>
+        <span class="text-xs text-gray" style="font-weight:500;">${greeting}, ${escapeHtml(this.user.displayName || this.user.name || 'Team')}</span>
+      </div>
+      <div class="attention-strip">
+        <button type="button" class="attention-card ${needsReplyConvsCount > 0 ? 'urgent' : 'ok'}" onclick="window.app.navigate('inbox'); setTimeout(() => window.app.setInboxTab('needs_reply'), 60);">
+          <div>
+            <div class="attention-title">Messages Needing Reply</div>
+            <div class="attention-count">${needsReplyConvsCount}</div>
+          </div>
+          <span class="attention-cta">Open Queue →</span>
+        </button>
+        <button type="button" class="attention-card ${unassignedLeadsCount > 0 ? 'warning' : 'ok'}" onclick="window.app.navigate('leads');">
+          <div>
+            <div class="attention-title">Unassigned Enquiries</div>
+            <div class="attention-count">${unassignedLeadsCount}</div>
+          </div>
+          <span class="attention-cta">Review Leads →</span>
+        </button>
+        <button type="button" class="attention-card ${followUpsDueCount > 0 ? 'warning' : 'ok'}" onclick="window.app.navigate('tasks');">
+          <div>
+            <div class="attention-title">Follow-ups &amp; Yard Visits Due</div>
+            <div class="attention-count">${followUpsDueCount}${todayVisitsCount > 0 ? ` <span style="font-size:12px;font-weight:600;color:#475569;">(${todayVisitsCount} visits today)</span>` : ''}</div>
+          </div>
+          <span class="attention-cta">Open Tasks →</span>
+        </button>
+      </div>
+
       <!-- OVERVIEW SECTION & 4 PRIMARY KPIS -->
-      <div class="dash-section-title">Overview</div>
+      <div class="dash-section-title">Performance Summary</div>
       <div class="overview-kpis-row">
         <!-- TOTAL LEADS -->
         <div class="overview-kpi-card" onclick="window.app.navigate('leads')">
@@ -1881,12 +1947,12 @@ class MetaCRMApp {
               <div class="kpi-icon-box blue">
                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
               </div>
-              <span class="kpi-label-text">Total Leads</span><!-- TOTAL LEADS -->
+              <span class="kpi-label-text">Total Enquiries</span>
             </div>
             <span class="kpi-arrow-icon">→</span>
           </div>
           <div class="overview-kpi-val">${leads.length}</div>
-          <div class="overview-kpi-desc">${this.selectedDateRange === 'today' ? 'Arrived today (IST)' : `Filtered by ${this.selectedDateRange.replace('_', ' ')}`}</div>
+          <div class="overview-kpi-desc">${this.selectedDateRange === 'today' ? 'Arrived today (NZ)' : `Filtered by ${this.selectedDateRange.replace('_', ' ')}`}</div>
         </div>
 
         <!-- NEW LEADS -->
@@ -1896,12 +1962,12 @@ class MetaCRMApp {
               <div class="kpi-icon-box green">
                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
               </div>
-              <span class="kpi-label-text">New Leads</span><!-- NEW LEADS -->
+              <span class="kpi-label-text">New Enquiries</span>
             </div>
             <span class="kpi-arrow-icon">→</span>
           </div>
           <div class="overview-kpi-val">${newL.length}</div>
-          <div class="overview-kpi-desc">${todayLeadsCount > 0 ? `${todayLeadsCount} new today (IST)` : '0 new today (IST)'}</div>
+          <div class="overview-kpi-desc">${todayLeadsCount > 0 ? `${todayLeadsCount} new today (NZ)` : '0 new today (NZ)'}</div>
         </div>
 
         <!-- DEALS WON -->
@@ -1911,12 +1977,12 @@ class MetaCRMApp {
               <div class="kpi-icon-box amber">
                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.45 1-1 1H7.5c-.28 0-.5.22-.5.5v1c0 .28.22.5.5.5h9c.28 0 .5-.22.5-.5v-1c0-.28-.22-.5-.5-.5H15c-.55 0-1-.45-1-1v-2.34"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2z"/></svg>
               </div>
-              <span class="kpi-label-text">Deals Won</span><!-- DEALS WON -->
+              <span class="kpi-label-text">Vehicles Sold</span>
             </div>
             <span class="kpi-arrow-icon">→</span>
           </div>
           <div class="overview-kpi-val">${wonL.length}</div>
-          <div class="overview-kpi-desc">No change from last 30 days</div>
+          <div class="overview-kpi-desc">${roi.totalWonValue > 0 ? `${this.formatMoney(roi.totalWonValue)} recorded` : 'No sold value recorded'}</div>
         </div>
 
         <!-- CONVERSION RATE -->
@@ -1926,12 +1992,12 @@ class MetaCRMApp {
               <div class="kpi-icon-box gray">
                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
               </div>
-              <span class="kpi-label-text">Conversion Rate</span><!-- CONVERSION RATE -->
+              <span class="kpi-label-text">Sale Rate</span>
             </div>
             <span class="kpi-arrow-icon">→</span>
           </div>
-          <div class="overview-kpi-val">${leads.length ? ((wonL.length / leads.length) * 100).toFixed(0) : 0}%</div>
-          <div class="overview-kpi-desc">No change from last 30 days</div>
+          <div class="overview-kpi-val">${leads.length ? ((wonL.length / leads.length) * 100).toFixed(0) + '%' : 'No data'}</div>
+          <div class="overview-kpi-desc">${leads.length ? `${wonL.length} of ${leads.length} enquiries` : 'Awaiting enquiries'}</div>
         </div>
       </div>
 
@@ -1939,18 +2005,18 @@ class MetaCRMApp {
       <div class="grouped-metrics-grid">
         <!-- Lead Management -->
         <div class="grouped-panel-column">
-          <div class="grouped-panel-heading">Lead Management</div>
+          <div class="grouped-panel-heading">Response &amp; Follow-up</div>
           <div class="grouped-panel-card">
-            <div class="submetric-col" onclick="window.app.navigate('inbox'); setTimeout(() => window.app.setInboxTab('unread'), 60);">
+            <div class="submetric-col" onclick="window.app.navigate('inbox'); setTimeout(() => window.app.setInboxTab('needs_reply'), 60);">
               <div class="submetric-label-row">
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                <span>Unread Messages</span>
+                <span>Needs Reply</span>
               </div>
-              <div class="submetric-val">${unreadMessagesCount}</div>
-              <div class="submetric-sub">${unreadMessagesCount > 0 ? `${unreadMessagesCount} unread` : 'No new messages'}</div>
+              <div class="submetric-val">${needsReplyConvsCount}</div>
+              <div class="submetric-sub">${needsReplyConvsCount > 0 ? `${needsReplyConvsCount} awaiting rep` : 'All caught up'}</div>
             </div>
 
-            <div class="submetric-col" onclick="${followUpLeads.length > 0 ? `window.app.navigate('leads'); setTimeout(() => window.app.renderLeads('follow-up'), 60);` : `window.app.navigate('tasks');`}">
+            <div class="submetric-col" onclick="${followUpLeads.length > 0 ? `window.app.navigate('leads'); setTimeout(() => window.app.renderLeads('followup'), 60);` : `window.app.navigate('tasks');`}">
               <div class="submetric-label-row">
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
                 <span>Follow-ups Due</span>
@@ -1962,10 +2028,10 @@ class MetaCRMApp {
             <div class="submetric-col">
               <div class="submetric-label-row">
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                <span>Median Response Time</span>
+                <span>Median Response</span>
               </div>
-              <div class="submetric-val">${speed.medianText || '—'}</div>
-              <div class="submetric-sub">Target: 5 mins</div>
+              <div class="submetric-val">${speed.medianText || 'No data'}</div>
+              <div class="submetric-sub">Target: 15 mins</div>
             </div>
 
             <div class="submetric-col">
@@ -1973,50 +2039,50 @@ class MetaCRMApp {
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
                 <span>SLA Compliance</span>
               </div>
-              <div class="submetric-val">${speed.complianceRate || '100%'}</div>
-              <div class="submetric-sub">${speed.liveBreachCount > 0 ? `${speed.liveBreachCount} breach${speed.liveBreachCount > 1 ? 'es' : ''}` : 'Within SLA'}</div>
+              <div class="submetric-val">${honestSlaRate}</div>
+              <div class="submetric-sub">${honestSlaSub}</div>
             </div>
           </div>
         </div>
 
         <!-- Advertising Performance -->
         <div class="grouped-panel-column">
-          <div class="grouped-panel-heading">Advertising Performance</div>
+          <div class="grouped-panel-heading">Meta Advertising (NZD)</div>
           <div class="grouped-panel-card">
-            <div class="submetric-col" onclick="window.app.navigate('reports')">
+            <div class="submetric-col" onclick="window.app.navigate('meta-ads')">
               <div class="submetric-label-row">
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
-                <span>Ad Spend</span><!-- AD SPEND -->
+                <span>Ad Spend (NZD)</span>
               </div>
-              <div class="submetric-val">${this.formatMoney(roi.totalSpend || 0)}</div>
-              <div class="submetric-sub">${roi.totalSpend > 0 ? `${roi.activeCampaignsCount || (campaigns.length || 1)} Active Campaign${(roi.activeCampaignsCount || campaigns.length || 1) === 1 ? '' : 's'}` : 'No spend yet'}</div>
+              <div class="submetric-val">${roi.totalSpend > 0 ? this.formatMoney(roi.totalSpend) : 'Not synced'}</div>
+              <div class="submetric-sub">${roi.totalSpend > 0 ? `${roi.activeCampaignsCount || campaigns.length} active campaigns` : 'Sync in Marketing / Meta'}</div>
             </div>
 
-            <div class="submetric-col" onclick="window.app.navigate('reports')">
+            <div class="submetric-col" onclick="window.app.navigate('meta-ads')">
               <div class="submetric-label-row">
-                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                <span>Cost Per Lead (CPL)</span><!-- COST PER LEAD (CPL) -->
+                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                <span>Cost Per Lead</span>
               </div>
-              <div class="submetric-val">${this.formatMoney(roi.cpl || 0)}</div>
-              <div class="submetric-sub">Live CPL</div>
+              <div class="submetric-val">${roi.cpl > 0 ? this.formatMoney(roi.cpl) : 'No data'}</div>
+              <div class="submetric-sub">NZD / Lead</div>
             </div>
 
             <div class="submetric-col" onclick="window.app.navigate('reports')">
               <div class="submetric-label-row">
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
-                <span>Cost Per Acquisition (CPA)</span><!-- COST PER ACQUISITION (CPA) -->
+                <span>Cost / Sale</span>
               </div>
-              <div class="submetric-val">${this.formatMoney(roi.cpa || 0)}</div>
-              <div class="submetric-sub">Spend / Won Deal</div>
+              <div class="submetric-val">${roi.cpa > 0 ? this.formatMoney(roi.cpa) : 'No data'}</div>
+              <div class="submetric-sub">Spend / Sold Vehicle</div>
             </div>
 
             <div class="submetric-col" onclick="window.app.navigate('reports')">
               <div class="submetric-label-row">
                 <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
-                <span>Return on Ad Spend (ROAS)</span>
+                <span>ROAS</span>
               </div>
-              <div class="submetric-val">${roi.roas || 0}x</div>
-              <div class="submetric-sub">Live ROI</div>
+              <div class="submetric-val">${roi.roas > 0 ? roi.roas + 'x' : 'No data'}</div>
+              <div class="submetric-sub">Attributed Sales</div>
             </div>
           </div>
         </div>
@@ -2109,26 +2175,26 @@ class MetaCRMApp {
                   </svg>
                   <span>Facebook Pages Connected</span>
                 </div>
-                <span class="conn-header-count">${availablePages.length}/6</span>
+                <span class="conn-header-count">${connectedPagesCount} Connected</span>
               </div>
 
               <div class="conn-diag-row">
                 <div class="conn-diag-label">
-                  <span class="conn-diag-dot" style="background:${availablePages.length > 0 ? '#10B981' : '#EF4444'};"></span>
-                  <span>Webhook Ingestion</span>
+                  <span class="conn-diag-dot" style="background:${webhookDotColor};"></span>
+                  <span>Live Lead Webhook</span>
                 </div>
-                <span class="${availablePages.length > 0 ? 'badge-tag-healthy' : 'badge-tag-inactive'}">
-                  ${availablePages.length > 0 ? 'Active' : 'Inactive'}
+                <span class="${webhookIsLive ? 'badge-tag-healthy' : 'badge-tag-inactive'}">
+                  ${webhookStatusLabel}
                 </span>
               </div>
 
               <div class="conn-diag-row">
                 <div class="conn-diag-label">
-                  <span class="conn-diag-dot" style="background:${availablePages.length > 0 ? '#10B981' : '#F59E0B'};"></span>
-                  <span>Access Token Health</span>
+                  <span class="conn-diag-dot" style="background:${tokenHealthy ? '#10B981' : '#F59E0B'};"></span>
+                  <span>OAuth &amp; Permissions</span>
                 </div>
-                <span class="${availablePages.length > 0 ? 'badge-tag-healthy' : 'badge-tag-unverified'}">
-                  ${availablePages.length > 0 ? 'Verified' : 'Not Verified'}
+                <span class="${tokenHealthy ? 'badge-tag-healthy' : 'badge-tag-unverified'}">
+                  ${tokenHealthy ? 'Verified' : 'Needs Check'}
                 </span>
               </div>
 
@@ -2250,18 +2316,15 @@ class MetaCRMApp {
     this.el.title.textContent = (this.user && this.user.role === 'staff') ? 'My Leads' : 'Leads';
 
     const isAdmin = this.user && (this.user.role === 'admin' || this.user.role === 'super_admin');
+    const accessiblePages = this._getAccessiblePages ? this._getAccessiblePages() : [];
     this.el.actions.innerHTML = `
-      <div class="search-wrap">
-        <svg class="search-icon" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" class="input search-input" placeholder="Search leads… (Ctrl+K)" id="lead-search-input" value="${this.leadSearchQuery}" oninput="window.app.onLeadSearch(this.value)">
-      </div>
       ${isAdmin ? `
-      <button class="btn btn-secondary" id="sync-leads-btn" onclick="window.app.syncZernioLeads()" title="Pull recent leads via Zernio & Meta">
+      <button class="btn btn-secondary btn-sm" id="sync-leads-btn" onclick="window.app.syncZernioLeads()" title="Sync recent Meta Lead Ad submissions via Zernio">
         <svg width="13" height="13" id="sync-leads-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
-        <span>Sync Leads Now</span>
+        <span>Sync Meta Leads</span>
       </button>` : ''}
-      <button class="btn btn-secondary" onclick="window.app.exportLeadsCsv()">Export CSV</button>
-      <button class="btn btn-primary" onclick="window.app.openAddLeadModal()">+ Add Lead</button>`;
+      <button class="btn btn-secondary btn-sm" onclick="window.app.exportLeadsCsv()">Export CSV</button>
+      <button class="btn btn-primary btn-sm" onclick="window.app.openAddLeadModal()">+ Add Lead</button>`;
 
     const tabs = [
       { id: 'all',       label: 'All' },
@@ -2269,24 +2332,52 @@ class MetaCRMApp {
       { id: 'contacted', label: 'Contacted' },
       { id: 'qualified', label: 'Qualified' },
       { id: 'followup',  label: 'Follow-up' },
-      { id: 'won',       label: 'Won' },
+      { id: 'won',       label: 'Sold' },
       { id: 'lost',      label: 'Lost' },
     ];
 
     const allLeads = this._getFilteredLeads();
-    const tabFiltered = this._filterLeadsByTab(allLeads, this.currentLeadTab).filter(l =>
+    const activePageFilter = this.leadPageFilter || 'all';
+    const activeCampaignFilter = this.leadCampaignFilter || '';
+    const hasActiveFilters = Boolean(this.leadSearchQuery || activePageFilter !== 'all' || activeCampaignFilter || (this.currentLeadTab && this.currentLeadTab !== 'all'));
+
+    const pageFilteredLeads = allLeads.filter(l => {
+      if (activePageFilter !== 'all') {
+        const normTarget = this.svc?.resolveCanonicalPageId ? this.svc.resolveCanonicalPageId(activePageFilter) : String(activePageFilter);
+        const normLead = this.svc?.resolveCanonicalPageId ? this.svc.resolveCanonicalPageId(l.page_id || l.pageId) : String(l.page_id || l.pageId || '');
+        if (normLead !== normTarget) return false;
+      }
+      if (activeCampaignFilter && String(l.campaign_id || l.campaignId || '') !== String(activeCampaignFilter)) {
+        return false;
+      }
+      return true;
+    });
+
+    const tabFiltered = this._filterLeadsByTab(pageFilteredLeads, this.currentLeadTab).filter(l =>
       !this.leadSearchQuery ||
       (l.name && l.name.toLowerCase().includes(this.leadSearchQuery.toLowerCase())) ||
       (l.phone && l.phone.includes(this.leadSearchQuery)) ||
-      (l.email && l.email.toLowerCase().includes(this.leadSearchQuery.toLowerCase()))
+      (l.email && l.email.toLowerCase().includes(this.leadSearchQuery.toLowerCase())) ||
+      (l.vehicle_interest && l.vehicle_interest.toLowerCase().includes(this.leadSearchQuery.toLowerCase()))
     );
 
     this.el.content.innerHTML = `
-      ${this._renderTip('leads', 'New leads from your Facebook &amp; Instagram ads appear here automatically. Click Call or WhatsApp to reach out immediately.')}
+      <div class="crm-filter-bar" role="region" aria-label="Filter leads">
+        <div style="position:relative;flex:1 1 220px;min-width:180px;max-width:320px;">
+          <input type="text" class="input input-sm w-full" placeholder="Filter by customer, phone, email, or car…" id="lead-search-input" value="${escapeHtml(this.leadSearchQuery || '')}" oninput="window.app.onLeadSearch(this.value)">
+        </div>
+        <select class="input input-sm" style="width:auto;min-width:165px;" aria-label="Filter leads by page" onchange="window.app.leadPageFilter=this.value;window.app.renderLeads();">
+          <option value="all">${isAdmin ? 'All Authorised Pages' : 'All Assigned Pages'}</option>
+          ${accessiblePages.map(p => `<option value="${p.id || p.page_id}" ${String(activePageFilter) === String(p.id || p.page_id) ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
+        </select>
+        ${activeCampaignFilter ? `<span class="health-pill warn">Campaign: ${escapeHtml(activeCampaignFilter)} <button type="button" style="border:none;background:none;cursor:pointer;font-weight:700;margin-left:4px;" onclick="window.app.leadCampaignFilter='';window.app.renderLeads();">✕</button></span>` : ''}
+        ${hasActiveFilters ? `<button type="button" class="btn btn-ghost btn-sm" onclick="window.app.clearLeadFilters()">✕ Clear filters</button>` : ''}
+        <span class="text-xs text-gray" style="margin-left:auto;">${tabFiltered.length} of ${allLeads.length} enquiries</span>
+      </div>
 
       <div class="tabs" id="lead-tabs">
         ${tabs.map(t => {
-          const count = this._filterLeadsByTab(allLeads, t.id).length;
+          const count = this._filterLeadsByTab(pageFilteredLeads, t.id).length;
           return `<div class="tab ${this.currentLeadTab === t.id ? 'active' : ''}" onclick="window.app.renderLeads('${t.id}')">${t.label} <span class="tab-count">${count}</span></div>`;
         }).join('')}
       </div>
@@ -2297,56 +2388,55 @@ class MetaCRMApp {
           <thead>
             <tr>
               <th><input type="checkbox" id="select-all-leads" onchange="window.app.toggleSelectAll(this)"></th>
-              <th>Name</th>
-              <th>Phone / Email</th>
+              <th>Customer</th>
               <th>Source &amp; Page</th>
-              <th>Campaign</th>
-              <th>Status</th>
-              <th>SLA &amp; Speed</th>
-              <th>Assigned To</th>
-              <th>Last Activity</th>
-              <th>Follow-up</th>
+              <th>Vehicle &amp; Budget (NZD)</th>
+              <th>Stage</th>
+              <th>Owner</th>
+              <th>Next Action</th>
               <th>Quick Actions</th>
             </tr>
           </thead>
           <tbody>
             ${tabFiltered.map(l => {
-              const lastAct = l.last_contacted_at || l.lastContactedAt ? this._timeAgo(l.last_contacted_at || l.lastContactedAt) : 'Never';
-              const followUp = l.follow_up_date || l.followUpDate ? new Date(l.follow_up_date || l.followUpDate).toLocaleDateString('en-IN', {day:'numeric',month:'short'}) : '—';
+              const nextDateRaw = l.next_action_at || l.follow_up_date || l.followUpDate;
+              const followUp = nextDateRaw ? new Date(nextDateRaw).toLocaleDateString('en-NZ', { timeZone: 'Pacific/Auckland', day: 'numeric', month: 'short' }) : 'Not set';
+              const isOverdue = nextDateRaw && new Date(nextDateRaw) < new Date() && l.status !== 'Won' && l.status !== 'Lost';
               const pageName = this._pageName(l.page_id || l.pageId);
-              const sla = this.svc ? this.svc.getLeadSlaStatus(l) : { state: 'pending', text: '5m', label: 'Pending' };
-              const isHot = l.is_hot_lead || (l.value && l.value >= 50000) || (l.lead_value && l.lead_value >= 50000);
+              const isHot = l.is_hot_lead || (l.budget_nzd && l.budget_nzd >= 25000) || (l.value && l.value >= 25000);
               const dup = this.findDuplicateLead(l);
               const isChecked = this.selectedLeadIds.has(l.id);
+              const vehicleTxt = l.vehicle_interest || 'Vehicle not specified';
+              const budgetVal = l.budget_nzd || l.value || l.dealValue || l.lead_value || 0;
               return `
                 <tr class="clickable-row ${isHot ? 'hot-lead-card' : ''}" onclick="window.app.openLeadDrawer('${l.id}')">
                   <td onclick="event.stopPropagation()"><input type="checkbox" class="lead-select-box" value="${l.id}" ${isChecked ? 'checked' : ''} onchange="window.app.onLeadSelect(this)"></td>
                   <td>
                     <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                      <strong>${l.name}</strong>
-                      ${isHot ? `<span class="badge badge-hot" style="font-size:10px;">${this._icon('flame', 11)} Hot</span>` : ''}
-                      ${dup ? `<button class="badge badge-duplicate" title="Potential duplicate detected with ${escapeHtml(dup.name)}" onclick="event.stopPropagation(); window.app.openMergeModal('${l.id}')">Duplicate ⇄</button>` : ''}
+                      <strong>${escapeHtml(l.name || l.full_name || 'Unnamed Lead')}</strong>
+                      ${isHot ? `<span class="badge badge-hot" style="font-size:10px;">Hot</span>` : ''}
+                      ${dup ? `<button class="badge badge-duplicate" title="Potential duplicate detected with ${escapeHtml(dup.name)}" onclick="event.stopPropagation(); window.app.openMergeModal('${l.id}')">Duplicate</button>` : ''}
                     </div>
-                  </td>
-                  <td class="text-xs">
-                    <div>${l.phone || '—'}</div>
-                    <div class="text-gray">${l.email || ''}</div>
+                    <div class="text-xs text-gray">${escapeHtml(l.phone || l.email || 'No contact details')}</div>
                   </td>
                   <td>
-                    <div class="text-xs font-semibold">${l.source || 'Facebook Lead Ad'}</div>
-                    <div class="text-xs text-gray">${pageName}</div>
+                    <div class="text-xs font-semibold">${escapeHtml(pageName)}</div>
+                    <div class="text-xs text-gray">${escapeHtml(l.source || 'Facebook Lead Ad')}${l.form_name ? ` · ${escapeHtml(l.form_name)}` : ''}</div>
                   </td>
-                  <td class="text-xs text-gray">${l.campaign_name || l.campaign_id || l.campaignId || '—'}</td>
+                  <td>
+                    <div class="text-xs font-semibold">${escapeHtml(vehicleTxt)}</div>
+                    <div class="text-xs text-gray">${budgetVal > 0 ? this.formatMoney(budgetVal) : 'Budget not set'}${l.payment_preference ? ` · ${escapeHtml(l.payment_preference)}` : ''}</div>
+                  </td>
                   <td>${this._badge(l.status)}</td>
-                  <td><span class="sla-badge ${sla.state}" title="${sla.label}">${sla.text}</span></td>
-                  <td class="text-xs">${this._staffName(l.assigned_staff_id || l.assignedStaffId)}</td>
-                  <td class="text-xs text-gray">${lastAct}</td>
-                  <td class="text-xs ${l.followUpDate && new Date(l.followUpDate) < new Date() ? 'text-red font-semibold' : ''}">${followUp}</td>
+                  <td class="text-xs">${escapeHtml(this._staffName(l.assigned_staff_id || l.assignedStaffId || l.assigned_to))}</td>
+                  <td class="text-xs ${isOverdue ? 'text-red font-semibold' : 'text-gray'}">
+                    <div>${escapeHtml(l.next_action_note || (isOverdue ? 'Overdue follow-up' : 'Follow up'))}</div>
+                    <div>${followUp}</div>
+                  </td>
                   <td onclick="event.stopPropagation()">
                     <div class="row-actions" style="display:flex;align-items:center;gap:6px;">
-                      <button class="btn-direct-call" title="Call lead" onclick="window.app.quickCall('${l.id}')">${this._icon('phone', 12)} Call</button>
-                      ${l.phone ? `<button class="btn-direct-wa" title="WhatsApp message" onclick="window.crmService.recordFirstResponse('${l.id}','whatsapp');window.open('https://wa.me/'+'${l.phone.replace(/\\D/g,'')}','_blank')">${this._icon('whatsapp', 12)} WhatsApp</button>` : ''}
-                      <button class="btn btn-ghost btn-sm" onclick="window.app.openLeadDrawer('${l.id}')">View</button>
+                      ${l.phone ? `<button class="btn-direct-call" title="Call customer" onclick="window.app.quickCall('${l.id}')">${this._icon('phone', 12)} Call</button>` : ''}
+                      <button class="btn btn-secondary btn-sm" onclick="window.app.openLeadDrawer('${l.id}')">Open</button>
                     </div>
                   </td>
                 </tr>`;
@@ -2354,8 +2444,16 @@ class MetaCRMApp {
           </tbody>
         </table>
       </div>
-      <div class="table-footer">Showing <strong>${tabFiltered.length}</strong> of <strong>${allLeads.length}</strong> total leads</div>`
-      : this._empty('No leads found', 'No leads match the selected filter. Connect your Facebook Page to receive leads automatically, or add a lead manually.', null, null, '<button class="btn btn-primary" onclick="window.app.openAddLeadModal()">+ Add New Lead</button>')}`;
+      <div class="table-footer">Showing <strong>${tabFiltered.length}</strong> of <strong>${allLeads.length}</strong> authorised enquiries</div>`
+      : this._empty('No leads match this view', hasActiveFilters ? 'Try clearing your active search or page filters.' : 'Sync Meta Lead Ads from Marketing / Meta, or add a customer enquiry manually.', null, null, `${hasActiveFilters ? '<button class="btn btn-secondary" onclick="window.app.clearLeadFilters()">Clear Filters</button> ' : ''}<button class="btn btn-primary" onclick="window.app.openAddLeadModal()">+ Add New Lead</button>`) }`;
+  }
+
+  clearLeadFilters() {
+    this.leadSearchQuery = '';
+    this.leadPageFilter = 'all';
+    this.leadCampaignFilter = '';
+    this.currentLeadTab = 'all';
+    this.renderLeads();
   }
 
   _filterLeadsByTab(leads, tab) {
@@ -3197,34 +3295,42 @@ class MetaCRMApp {
             <div class="kanban-col-body">
               ${cards.length ? cards.map(c => {
                 const nowMs = Date.now();
-                const createdMs = new Date(c.created_at || c.createdAt || nowMs).getTime();
-                const daysInStage = Math.max(0, Math.floor((nowMs - createdMs) / (1000 * 60 * 60 * 24)));
+                const stageRefMs = new Date(c.updated_at || c.created_at || c.createdAt || nowMs).getTime();
+                const daysInStage = Math.max(0, Math.floor((nowMs - stageRefMs) / (1000 * 60 * 60 * 24)));
                 const isStale = daysInStage >= 3 && (stage === 'New Lead' || stage === 'Contacted' || stage === 'New');
+                const cardVal = c.sale_value_nzd || c.budget_nzd || c.value || c.dealValue || c.lead_value || 0;
+                const nextDt = c.next_action_at || c.follow_up_date || c.followUpDate;
                 return `
                 <div class="kanban-card" draggable="true" ondragstart="window.app.onKanbanDragStart(event, '${c.id}')" onclick="window.app.openLeadDrawer('${c.id}')">
-                  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;">
-                    <div class="kanban-card-name">${escapeHtml(c.name)}</div>
-                    ${isStale ? `<span class="badge-stale" title="Lead has been in this stage for ${daysInStage} days">${this._icon('clock', 11)} ${daysInStage}d</span>` : ''}
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:3px;">
+                    <div class="kanban-card-name">${escapeHtml(c.name || c.full_name || 'Customer')}</div>
+                    <span class="${isStale ? 'badge-stale' : 'badge badge-gray'}" style="font-size:10.5px;white-space:nowrap;" title="${daysInStage} day(s) in ${stage}">${daysInStage}d</span>
                   </div>
                   <div class="kanban-card-meta text-xs text-gray">${escapeHtml(this._pageName(c.page_id || c.pageId))}</div>
+                  ${c.vehicle_interest ? `<div class="kanban-card-vehicle">🚗 ${escapeHtml(c.vehicle_interest)}</div>` : ''}
                   ${c.loss_reason && stage === 'Lost' ? `<div class="text-xs" style="color:#DC2626;margin-top:2px;">Lost: ${escapeHtml(c.loss_reason)}</div>` : ''}
                   <div class="kanban-card-footer">
-                    <div class="staff-chip" title="${this._staffName(c.assigned_staff_id || c.assignedStaffId)}">${(this._staffName(c.assigned_staff_id || c.assignedStaffId)||'?').charAt(0)}</div>
-                    ${(c.value || c.dealValue || c.lead_value) ? `<span class="text-xs font-semibold">${this.formatMoney(c.value || c.dealValue || c.lead_value, c.currency)}</span>` : ''}
-                    <span class="text-xs text-gray ml-auto">${c.follow_up_date || c.followUpDate ? new Date(c.follow_up_date || c.followUpDate).toLocaleDateString('en-IN', {day:'numeric',month:'short'}) : 'No date'}</span>
+                    <div class="staff-chip" title="${escapeHtml(this._staffName(c.assigned_staff_id || c.assignedStaffId || c.assigned_to))}">${(this._staffName(c.assigned_staff_id || c.assignedStaffId || c.assigned_to)||'?').charAt(0)}</div>
+                    ${cardVal ? `<span class="text-xs font-semibold">${this.formatMoney(cardVal)}</span>` : '<span class="text-xs text-gray">No budget</span>'}
+                    <span class="text-xs text-gray ml-auto">${nextDt ? new Date(nextDt).toLocaleDateString('en-NZ', { timeZone: 'Pacific/Auckland', day:'numeric', month:'short' }) : 'No next action'}</span>
+                  </div>
+                  <div class="kanban-card-stage-bar" onclick="event.stopPropagation()">
+                    <select class="kanban-stage-select" aria-label="Change stage for ${escapeHtml(c.name || 'lead')}" onchange="window.app.moveLeadStage('${c.id}', this.value)">
+                      ${stages.map(st => `<option value="${st}" ${(c.status === st || (st === 'New Lead' && c.status === 'New')) ? 'selected' : ''}>Move → ${st}</option>`).join('')}
+                    </select>
                   </div>
                 </div>`;
               }).join('')
-              : `<div class="kanban-empty">Drag leads here</div>`}
+              : `<div class="kanban-empty">No deals in ${stage}</div>`}
             </div>
           </div>`;
       }).join('');
 
       const emptyBanner = leads.length === 0 ? `
-        <div style="background:#FFFFFF;border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:var(--shadow-card);">
+        <div style="background:#FFFFFF;border:1px solid var(--border-subtle);border-radius:10px;padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
           <div style="display:flex;align-items:center;gap:10px;">
             <span style="color:var(--text-secondary);display:inline-flex;">${this._icon('clipboard', 18)}</span>
-            <span style="font-size:13px;color:var(--text-primary);"><strong>Pipeline is currently empty.</strong> Add leads manually or receive inbound Facebook Lead Ads.</span>
+            <span style="font-size:13px;color:var(--text-primary);"><strong>Pipeline is currently empty.</strong> Sync Meta Lead Ads or add your first dealership enquiry.</span>
           </div>
           <button class="btn btn-primary btn-sm" onclick="window.app.openAddLeadModal()">+ Add First Lead</button>
         </div>` : '';
@@ -3232,6 +3338,25 @@ class MetaCRMApp {
       this.el.content.innerHTML = `${emptyBanner}<div class="kanban-board">${colsHtml}</div>`;
     } else {
       this.renderLeads();
+    }
+  }
+
+  moveLeadStage(leadId, newStage) {
+    if (!leadId || !newStage || !this.svc) return;
+    const lead = (this.svc.leads || []).find(l => String(l.id) === String(leadId));
+    if (lead && lead.status !== newStage) {
+      const prev = lead.status;
+      lead.status = newStage;
+      lead.updated_at = new Date().toISOString();
+      if (!lead.activities) lead.activities = [];
+      lead.activities.push({
+        type: 'STAGE_MOVED',
+        description: `Moved from ${prev} → ${newStage}`,
+        timestamp: lead.updated_at
+      });
+      this.svc._saveToStorage ? this.svc._saveToStorage() : this.svc.saveAll();
+      this.toast(`Moved ${lead.name || 'lead'} to ${newStage}`, 'success');
+      this.renderPipeline();
     }
   }
 
@@ -3336,16 +3461,13 @@ class MetaCRMApp {
           return !cPage || userPages.includes(cPage);
         });
 
-    // Helper to test if a conversation belongs to a given page ID
+    // Helper to test if a conversation belongs to a given page ID (100% dynamic — zero hardcoded IDs)
     const normalizePageId = (id) => {
-      const s = String(id || '').trim();
-      if (s === '6acd4daed19284a3227d7870') return '1342542735606057';
-      if (s === '6accd8b0d52dc43d8bf6034c') return '1330954980099743';
-      if (s === '6aea527fa5c031c687ccba15') return '1357368447449594';
-      if (s === '6aea5280a5c031c687ccba16') return '380918975300755';
-      if (s === '6aea5280a5c031c687ccba17') return '284138661621993';
-      if (s === '6aea5281a5c031c687ccba18') return '1271057346092106';
-      return s;
+      if (!id) return '';
+      if (this.svc && typeof this.svc.resolveCanonicalPageId === 'function') {
+        return this.svc.resolveCanonicalPageId(id);
+      }
+      return String(id).trim();
     };
     const convMatchesPage = (c, pageId) => {
       if (!pageId || pageId === 'all') return true;
@@ -3512,8 +3634,9 @@ class MetaCRMApp {
     const allPagesLabel = isAdminUser ? 'All Pages' : 'All Assigned Pages';
     const activeScopeLabel = this.selectedInboxPage === 'all' ? allPagesLabel : (selectedPageObj ? selectedPageObj.name : this._pageName(this.selectedInboxPage));
 
+    const detailsCollapsed = sessionStorage.getItem('inbox_details_collapsed') !== 'false';
     this.el.content.innerHTML = `
-      <div class="inbox-layout ${this.mobileInboxView === 'chat' ? 'view-chat' : 'view-list'} ${sessionStorage.getItem('inbox_details_collapsed') === 'true' ? 'details-collapsed' : ''}">
+      <div class="inbox-layout ${this.mobileInboxView === 'chat' ? 'view-chat' : 'view-list'} ${detailsCollapsed ? 'details-collapsed' : ''}">
         <!-- COLUMN 0: STABLE PAGE / ACCOUNT RAIL -->
         <aside class="inbox-page-rail" aria-label="Pages and channels">
           <div class="inbox-rail-header">
@@ -3521,14 +3644,13 @@ class MetaCRMApp {
             ${isAdminUser ? `<button type="button" class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:11px;" onclick="window.app.navigate('connections')" title="Manage connected pages">+ Manage</button>` : ''}
           </div>
           <div class="inbox-rail-list" role="tablist" aria-label="Filter inbox by page">
-            <button type="button" role="tab" aria-selected="${this.selectedInboxPage === 'all'}" class="inbox-rail-item ${this.selectedInboxPage === 'all' ? 'active' : ''}" onclick="window.app.setInboxPageFilter('all')" title="${allPagesLabel} [Shortcut: Alt+0]">
+            <button type="button" role="tab" aria-selected="${this.selectedInboxPage === 'all'}" class="inbox-rail-item ${this.selectedInboxPage === 'all' ? 'active' : ''}" onclick="window.app.setInboxPageFilter('all')" title="${allPagesLabel} — ${allPagesTotalCount} conversations, ${allPagesUnreadCount} unread [Alt+0]">
               <span class="inbox-rail-item-left">
                 <span class="inbox-rail-channel all">🌐</span>
                 <span class="inbox-rail-name">${allPagesLabel}</span>
               </span>
               <span class="inbox-rail-counts">
-                ${allPagesUnreadCount > 0 ? `<span class="inbox-rail-unread" title="${allPagesUnreadCount} unread">${allPagesUnreadCount}</span>` : ''}
-                <span class="inbox-rail-total">${allPagesTotalCount}</span>
+                ${allPagesUnreadCount > 0 ? `<span class="inbox-rail-unread" title="${allPagesUnreadCount} unread of ${allPagesTotalCount}">${allPagesUnreadCount}</span>` : `<span class="inbox-rail-total">${allPagesTotalCount}</span>`}
               </span>
             </button>
             ${pageMetrics.length === 0 ? `
@@ -3545,8 +3667,7 @@ class MetaCRMApp {
                     <span class="inbox-rail-name">${escapeHtml(pm.page.name)}</span>
                   </span>
                   <span class="inbox-rail-counts">
-                    ${pm.unread > 0 ? `<span class="inbox-rail-unread" title="${pm.unread} unread">${pm.unread}</span>` : ''}
-                    <span class="inbox-rail-total">${pm.total}</span>
+                    ${pm.unread > 0 ? `<span class="inbox-rail-unread" title="${pm.unread} unread of ${pm.total}">${pm.unread}</span>` : `<span class="inbox-rail-total">${pm.total}</span>`}
                   </span>
                 </button>
               `;
@@ -3776,17 +3897,12 @@ class MetaCRMApp {
                 </div>
               </div>
               <div class="thread-header-actions">
-                <button class="btn-thread-star ${activeConv.starred ? 'active' : ''}" onclick="window.app.toggleStarConversation('${activeConv.id}')" title="Star conversation">
-                  <svg width="15" height="15" fill="${activeConv.starred ? '#FF6700' : 'none'}" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                </button>
-                <button class="btn-thread-more" onclick="window.app.toggleConvMenu('${activeConv.id}', event)" title="More actions">
+                <button type="button" class="btn-thread-more" onclick="window.app.toggleConvMenu('${activeConv.id}', event)" title="Thread actions (Star, Mark Read/Unread, Archive)" aria-label="More thread actions">
                   <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="12" r="2"/></svg>
                 </button>
-                <button class="btn-thread-action btn-mark-read" onclick="window.app.toggleConversationUnread('${activeConv.id}')" title="Toggle unread">
-                  ${(activeConv.unread || 0) > 0 ? 'Mark Read' : 'Mark Unread'}
-                </button>
-                <button class="inbox-info-btn" onclick="window.app.toggleInboxDetails()" title="Toggle Customer Context">
-                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                <button type="button" class="inbox-details-toggle-btn ${!detailsCollapsed ? 'active' : ''}" onclick="window.app.toggleInboxDetails()" title="Toggle Customer &amp; CRM Context panel">
+                  <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+                  <span>Details</span>
                 </button>
               </div>
             </div>
@@ -3911,7 +4027,7 @@ class MetaCRMApp {
                 <button class="btn-composer-attach" onclick="window.app.handleAttachmentClick()" title="Attach photo, video or document (max 25MB)" type="button">
                   <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                 </button>
-                <textarea class="inbox-msg-textarea" id="inbox-msg-input" placeholder="Replying as ${escapeHtml(activePageName)} to ${escapeHtml(activeConv.name)}..." rows="1" onkeydown="window.app.handleComposerKeydown(event)" oninput="window.app.handleComposerInput(this)" onpaste="window.app.handleComposerPaste(event)">${escapeHtml(this._getConvDraft(activeConv.id))}</textarea>
+                <textarea class="inbox-msg-textarea" id="inbox-msg-input" placeholder="Reply to ${escapeHtml(activeConv.name)}..." rows="1" onkeydown="window.app.handleComposerKeydown(event)" oninput="window.app.handleComposerInput(this)" onpaste="window.app.handleComposerPaste(event)">${escapeHtml(this._getConvDraft(activeConv.id))}</textarea>
                 <button class="btn-composer-emoji" type="button" onclick="window.app.insertEmoji('😊')" title="Insert emoji">
                   <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
                 </button>
@@ -4221,14 +4337,11 @@ class MetaCRMApp {
         });
 
     const normalizePageId = (id) => {
-      const s = String(id || '').trim();
-      if (s === '6acd4daed19284a3227d7870') return '1342542735606057';
-      if (s === '6accd8b0d52dc43d8bf6034c') return '1330954980099743';
-      if (s === '6aea527fa5c031c687ccba15') return '1357368447449594';
-      if (s === '6aea5280a5c031c687ccba16') return '380918975300755';
-      if (s === '6aea5280a5c031c687ccba17') return '284138661621993';
-      if (s === '6aea5281a5c031c687ccba18') return '1271057346092106';
-      return s;
+      if (!id) return '';
+      if (this.svc && typeof this.svc.resolveCanonicalPageId === 'function') {
+        return this.svc.resolveCanonicalPageId(id);
+      }
+      return String(id).trim();
     };
     const convMatchesPage = (c, pId) => {
       if (!pId || pId === 'all') return true;
@@ -5136,7 +5249,7 @@ class MetaCRMApp {
     }
 
     try {
-      const accountId = conv.accountId || conv.page_id || '6accd8b0d52dc43d8bf6034c';
+      const accountId = (this.svc && this.svc.resolveZernioAccountId(conv.accountId || conv.page_id)) || conv.accountId || conv.page_id || '';
       const externalId = conv.external_id || conv.id;
       let rawMsgs = [];
 
@@ -5290,7 +5403,7 @@ class MetaCRMApp {
           const participantName = c.participantName || c.participantUsername || (isFb ? 'Facebook User' : 'Instagram User');
           const cleanName = isFb ? participantName : (participantName.startsWith('@') ? participantName : `@${participantName}`);
           const channel = isFb ? 'messenger' : 'instagram';
-          const accId = c.accountId || '6accd8b0d52dc43d8bf6034c';
+          const accId = (this.svc && this.svc.resolveZernioAccountId(c.accountId || c.page_id)) || c.accountId || '';
 
           if (existing) {
             existing.name = cleanName;
@@ -5378,15 +5491,12 @@ class MetaCRMApp {
 
   toggleInboxDetails() {
     const layout = document.querySelector('.inbox-layout');
-    const details = document.getElementById('inbox-details');
     if (layout) {
-      if (window.innerWidth <= 1024) {
-        if (details) details.classList.toggle('open');
-      } else {
-        layout.classList.toggle('details-collapsed');
-        const isCollapsed = layout.classList.contains('details-collapsed');
-        sessionStorage.setItem('inbox_details_collapsed', isCollapsed ? 'true' : 'false');
-      }
+      layout.classList.toggle('details-collapsed');
+      const isCollapsed = layout.classList.contains('details-collapsed');
+      sessionStorage.setItem('inbox_details_collapsed', isCollapsed ? 'true' : 'false');
+      const btn = document.querySelector('.inbox-details-toggle-btn');
+      if (btn) btn.classList.toggle('active', !isCollapsed);
     }
   }
 
@@ -5634,7 +5744,7 @@ class MetaCRMApp {
 
     const isIg = activeConv.channel && activeConv.channel.toLowerCase().includes('insta');
     const channelName = isIg ? 'Instagram Direct' : 'Facebook Messenger';
-    const accountId = activeConv.accountId || activeConv.page_id || '6accd8b0d52dc43d8bf6034c';
+    const accountId = (this.svc && this.svc.resolveZernioAccountId(activeConv.accountId || activeConv.page_id)) || activeConv.accountId || activeConv.page_id || '';
     const externalId = activeConv.external_id || activeConv.id;
 
     try {
@@ -5843,8 +5953,8 @@ class MetaCRMApp {
         targetConv = this.svc.receiveIncomingMessage(convId, resolvedText, {
           senderName: msg.sender_name || msg.participantName || 'Contact',
           channel: msg.channel || (msg.platform === 'instagram' ? 'instagram' : 'messenger'),
-          pageId: msg.page_id || msg.accountId || '6accd8b0d52dc43d8bf6034c',
-          accountId: msg.accountId || msg.page_id || '6accd8b0d52dc43d8bf6034c',
+          pageId: msg.page_id || msg.accountId || '',
+          accountId: msg.accountId || msg.page_id || '',
           metaMid: externalMid,
           attachment: att,
           attachments: msg.attachments
@@ -6015,7 +6125,7 @@ class MetaCRMApp {
     } else {
       const isFb = conv.channel === 'messenger' || conv.channel === 'facebook' || conv.platform === 'facebook';
       const pName = conv.customer_name || conv.participant_name || conv.participantName || 'Customer';
-      const accId = conv.page_id || conv.account_id || '6accd8b0d52dc43d8bf6034c';
+      const accId = (this.svc && this.svc.resolveZernioAccountId(conv.account_id || conv.page_id)) || conv.page_id || conv.account_id || '';
       const newConv = {
         id: String(conv.external_id || conv.customer_psid || conv.id),
         conversationId: String(conv.external_id || conv.customer_psid || conv.id),
@@ -6102,7 +6212,7 @@ class MetaCRMApp {
     if (!matchingPage) {
       matchingPage = isIg ? (pages.find(p => p.channel === 'instagram' || (p.name && p.name.startsWith('@'))) || pages[0]) : (pages.find(p => p.channel !== 'instagram') || pages[0]);
     }
-    const pageId = matchingPage ? (matchingPage.id || matchingPage.page_id) : (isIg ? '1330954980099743' : '1342542735606057');
+    const pageId = matchingPage ? (matchingPage.id || matchingPage.page_id) : (pages[0] ? (pages[0].id || pages[0].page_id) : '');
 
     const convId = 'conv_' + Date.now();
     if (this.svc && this.svc.receiveIncomingMessage) {
@@ -6330,7 +6440,7 @@ class MetaCRMApp {
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button class="btn btn-secondary btn-sm" onclick="window.app.loadConnectionHealth(true)">↻ Refresh Health</button>
-            <button class="btn btn-primary btn-sm" onclick="window.app.runGuidedTestLead('${primaryPage ? (primaryPage.page_id || primaryPage.id) : '1342542735606057'}', '${escapeHtml(primaryPage ? primaryPage.name : 'Nova auto nz')}')">🧪 Run Guided Test Lead</button>
+            <button class="btn btn-primary btn-sm" onclick="window.app.runGuidedTestLead('${primaryPage ? (primaryPage.page_id || primaryPage.id) : ''}', '${escapeHtml(primaryPage ? primaryPage.name : 'Connected Page')}')">🧪 Run Guided Test Lead</button>
           </div>
         </div>
         <div style="padding:16px 20px;">
@@ -6950,17 +7060,34 @@ class MetaCRMApp {
                   ${t.lead_id || t.leadId ? `<button type="button" class="btn btn-ghost btn-sm" style="padding:0 4px;font-size:11px;" onclick="window.app.openLeadDrawer('${t.lead_id || t.leadId}')">Open Lead →</button>` : ''}
                 </div>
               </div>
-              ${isAppt ? `
-                <select class="input input-sm" style="width:115px;font-size:11px;" onchange="window.app.updateAppointmentStatus('${t.id}', this.value)">
-                  <option value="scheduled" ${(t.attendance_status||'scheduled')==='scheduled'?'selected':''}>Scheduled</option>
-                  <option value="attended" ${t.attendance_status==='attended'?'selected':''}>Attended ✓</option>
-                  <option value="no_show" ${t.attendance_status==='no_show'?'selected':''}>No-Show</option>
-                  <option value="cancelled" ${t.attendance_status==='cancelled'?'selected':''}>Cancelled</option>
-                </select>
-              ` : this._priorityBadge(t.priority)}
+              <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+                ${t.status !== 'Done' ? `
+                  <button type="button" class="btn btn-ghost btn-sm" style="padding:3px 7px;font-size:11px;" onclick="window.app.rescheduleTask('${t.id}', 1)" title="Move due date to tomorrow">+1d</button>
+                  <button type="button" class="btn btn-ghost btn-sm" style="padding:3px 7px;font-size:11px;" onclick="window.app.rescheduleTask('${t.id}', 3)" title="Move due date +3 days">+3d</button>
+                ` : ''}
+                ${isAppt ? `
+                  <select class="input input-sm" style="width:118px;font-size:11px;" onchange="window.app.updateAppointmentStatus('${t.id}', this.value)">
+                    <option value="scheduled" ${(t.attendance_status||'scheduled')==='scheduled'?'selected':''}>Scheduled</option>
+                    <option value="attended" ${t.attendance_status==='attended'?'selected':''}>Attended ✓</option>
+                    <option value="no_show" ${t.attendance_status==='no_show'?'selected':''}>No-Show</option>
+                    <option value="cancelled" ${t.attendance_status==='cancelled'?'selected':''}>Cancelled</option>
+                  </select>
+                ` : this._priorityBadge(t.priority)}
+              </div>
             </div>`;
         }).join('')}
       </div>` : this._empty('No tasks or appointments here', 'Schedule a customer callback or book a yard visit / test drive.', null, null, '<button class="btn btn-primary" onclick="window.app.openBookAppointmentModal()">📅 Book Yard Visit</button>')}`;
+  }
+
+  rescheduleTask(taskId, addDays = 1) {
+    if (!this.svc || !this.svc.tasks) return;
+    const task = this.svc.tasks.find(t => String(t.id) === String(taskId));
+    if (!task) return;
+    const baseMs = task.dueDate && new Date(task.dueDate).getTime() > Date.now() ? new Date(task.dueDate).getTime() : Date.now();
+    task.dueDate = new Date(baseMs + addDays * 24 * 60 * 60 * 1000).toISOString();
+    this.svc._saveToStorage ? this.svc._saveToStorage() : this.svc.saveAll();
+    this.toast(`Rescheduled +${addDays} day${addDays > 1 ? 's' : ''}`, 'success');
+    this.renderTasks();
   }
 
   updateAppointmentStatus(taskId, status) {
@@ -7693,17 +7820,15 @@ class MetaCRMApp {
   // ──────────────────────────────────────────────────────────
 
   _getAccessiblePages() {
-    let pages = (this.svc && this.svc.pages && this.svc.pages.length > 0) ? this.svc.pages : [];
-    if (!pages || pages.length === 0) {
-      pages = [
-        { id: '1342542735606057', page_id: '1342542735606057', name: 'Nova auto nz', platform: 'Facebook', channel: 'facebook' },
-        { id: '1330954980099743', page_id: '1330954980099743', name: 'Nova cars Samoa nz', platform: 'Facebook', channel: 'facebook' },
-        { id: '1217451958128630', page_id: '1217451958128630', name: 'Nova Cars Tongan NZ', platform: 'Facebook', channel: 'facebook' },
-        { id: '284138661621993', page_id: '284138661621993', name: 'Zodiac Motor Company', platform: 'Facebook', channel: 'facebook' },
-        { id: '1271057346092106', page_id: '1271057346092106', name: 'Car4u Mo Samoa NZ', platform: 'Facebook', channel: 'facebook' }
-      ];
+    let pages = (this.svc && Array.isArray(this.svc.pages) && this.svc.pages.length > 0) ? this.svc.pages : [];
+    if (pages.length === 0 && this.svc && this.svc.fetchRemotePages && !this._fetchingDynamicPages) {
+      this._fetchingDynamicPages = true;
+      this.svc.fetchRemotePages().then(() => {
+        this._fetchingDynamicPages = false;
+        if (this.currentRoute && this.user) this.render();
+      }).catch(() => { this._fetchingDynamicPages = false; });
     }
-    // Filter out unauthorized test connections
+    // Filter out unauthorized personal accounts
     pages = pages.filter(p => {
       const n = (p.name || '').toLowerCase();
       const id = String(p.id || p.page_id || '');
@@ -7818,42 +7943,26 @@ class MetaCRMApp {
   }
 
   _pageName(pageId) {
-    if (!pageId) return 'Nova auto nz';
+    if (!pageId) return 'Unmapped Page';
     const cleanId = String(pageId).trim();
+    if (this.svc && typeof this.svc.resolvePageRecord === 'function') {
+      const rec = this.svc.resolvePageRecord(cleanId);
+      if (rec && rec.name) return rec.name.trim();
+    }
     const pages = (this._getAccessiblePages ? this._getAccessiblePages() : (this.svc ? this.svc.pages : [])) || [];
-    const p = pages.find(pg => 
-      String(pg.id) === cleanId || 
-      String(pg.page_id) === cleanId || 
-      String(pg.accountId) === cleanId || 
+    const p = pages.find(pg =>
+      String(pg.id) === cleanId ||
+      String(pg.page_id) === cleanId ||
+      String(pg.accountId) === cleanId ||
       String(pg.account_id) === cleanId ||
       String(pg._id) === cleanId ||
       String(pg.zernioAccountId) === cleanId
     );
     if (p && p.name) return p.name.trim();
-
-    const fallbackMap = {
-      '1342542735606057': 'Nova auto nz',
-      '6acd4daed19284a3227d7870': 'Nova auto nz',
-      '1330954980099743': 'Nova cars Samoa nz',
-      '6accd8b0d52dc43d8bf6034c': 'Nova cars Samoa nz',
-      '1217451958128630': 'Nova Cars Tongan NZ',
-      '1357368447449594': 'Car4u Ma’a Tonga NZ',
-      '6aea527fa5c031c687ccba15': 'Car4u Ma’a Tonga NZ',
-      '380918975300755': 'Car4u',
-      '6aea5280a5c031c687ccba16': 'Car4u',
-      '284138661621993': 'Zodiac Motor Company',
-      '6aea5280a5c031c687ccba17': 'Zodiac Motor Company',
-      '1271057346092106': 'Car4u Mo Samoa NZ',
-      '6aea5281a5c031c687ccba18': 'Car4u Mo Samoa NZ',
-      'page_fb_001': 'Nova auto nz'
-    };
-    if (fallbackMap[cleanId]) return fallbackMap[cleanId];
-
-    // If ID looks like a raw Mongo hex or numeric string, return friendly name instead of raw code
     if (/^[0-9a-f]{20,32}$/i.test(cleanId) || /^[0-9]{12,25}$/.test(cleanId)) {
-      return 'Nova auto nz';
+      return `Page (${cleanId.slice(-6)})`;
     }
-    return cleanId || 'Nova auto nz';
+    return cleanId || 'Unmapped Page';
   }
 
   _statusColor(status) {
@@ -7904,9 +8013,10 @@ class MetaCRMApp {
   }
 
   _formatNum(n) {
-    if (n >= 100000) return (n / 100000).toFixed(1) + 'L';
-    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
-    return n;
+    const val = Number(n || 0);
+    if (val >= 1000000) return (val / 1000000).toFixed(1) + 'M';
+    if (val >= 1000) return (val / 1000).toFixed(1) + 'K';
+    return val.toLocaleString('en-NZ');
   }
 
   _empty(title, subtitle, href = null, cta = null, actionHtml = null, icon = null) {
@@ -7976,361 +8086,333 @@ class MetaCRMApp {
   // ──────────────────────────────────────────────────────────
 
   async renderMetaAds() {
-    this._setBreadcrumbs('Meta Ads Manager');
+    this.el.title.textContent = 'Marketing / Meta';
     this.adsActiveTab = this.adsActiveTab || 'campaigns';
     this.adsDateRange = this.adsDateRange || 'last_30d';
-    this.adsStatusFilter = this.adsStatusFilter || 'ALL';
+    this.adsPageFilter = this.adsPageFilter || 'all';
     this.adsSearchQuery = this.adsSearchQuery || '';
 
-    // Verify staff permissions: non-admin can only see assigned accounts
-    const isStaff = this.user && this.user.role === 'staff';
-    const allIntegrations = this.svc ? (this.svc.integrations || []) : [];
-    const metaIntegration = allIntegrations.find(i => i.provider === 'meta_ads');
-    const isAssigned = metaIntegration && (!isStaff || (metaIntegration.assigned_staff_ids || []).includes(this.user ? this.user.id : ''));
-
-    if (metaIntegration && metaIntegration.status === 'connected' && !isAssigned) {
+    const isAdmin = this.user && (this.user.role === 'admin' || this.user.role === 'super_admin');
+    if (!isAdmin) {
+      this.el.actions.innerHTML = '';
       this.el.content.innerHTML = `
         <div class="empty-state-card" style="padding:48px 24px;text-align:center;">
           <div style="font-size:32px;margin-bottom:12px;">🔒</div>
-          <h3 style="font-size:16px;font-weight:600;margin-bottom:8px;">Access Restricted</h3>
-          <p class="text-sm text-gray" style="max-width:440px;margin:0 auto 16px;">Your account (${escapeHtml(this.user.name)}) does not have permission to view this Meta Ads account. Please contact an administrator to request ad account access.</p>
-          <button class="btn btn-secondary" onclick="window.app.navigate('dashboard')">Return to Dashboard</button>
-        </div>
-      `;
+          <h3 style="font-size:16px;font-weight:600;margin-bottom:8px;">Manager Access Only</h3>
+          <p class="text-sm text-gray" style="max-width:440px;margin:0 auto 16px;">Marketing &amp; Meta advertising settings are restricted to dealership managers.</p>
+          <button class="btn btn-secondary" onclick="window.app.navigate('dashboard')">Return to Overview</button>
+        </div>`;
       return;
     }
 
-    // Auto-fetch live campaigns if not yet fetched
-    if (!this._fetchedLiveAds && this.svc) {
-      this._fetchedLiveAds = true;
-      this.svc.fetchLiveCampaigns().then(() => {
+    // Clear any stale actions from previous screens and mount Marketing actions cleanly
+    this.el.actions.innerHTML = `
+      <button class="btn btn-secondary btn-sm" id="btn-sync-meta-leads" onclick="window.app.syncZernioLeadsFromMarketing()">
+        ↻ Sync Meta Leads
+      </button>
+      <button class="btn btn-primary btn-sm" id="btn-sync-meta-ads" onclick="window.app.syncLiveAds()">
+        ↻ Sync Ad Insights (NZD)
+      </button>`;
+
+    // Auto-fetch live Zernio insights, lead forms, and connection health once
+    if (!this._loadedZernioMarketing && this.svc) {
+      this._loadedZernioMarketing = true;
+      Promise.all([
+        this.svc.syncZernioAds ? this.svc.syncZernioAds(this.adsDateRange, this.adsPageFilter, false).catch(() => null) : null,
+        this.svc.fetchZernioLeadForms ? this.svc.fetchZernioLeadForms().then(r => { this.zernioLeadForms = r?.forms || []; }).catch(() => null) : null,
+        this.svc.fetchZernioHealth ? this.svc.fetchZernioHealth().then(h => { this.zernioHealthCache = h; }).catch(() => null) : null
+      ]).then(() => {
         if (this.currentRoute === 'meta-ads') this.renderMetaAds();
       });
     }
 
-    // Load campaigns, ad sets, and ads
-    const campaigns = this.svc ? (this.svc.campaigns || []) : [];
-    const adsets = this.svc ? (this.svc.adsets || []) : [];
-    const ads = this.svc ? (this.svc.ads || []) : [];
+    const adsState = (this.svc && this.svc.zernioAdsState) ? this.svc.zernioAdsState : null;
+    const campaigns = adsState?.campaigns || (this.svc ? (this.svc.campaigns || []) : []);
+    const totals = adsState?.totals || null;
+    const nzdAdAccounts = adsState?.adAccounts || [];
+    const excludedNonNzd = adsState?.excludedNonNzdAccounts || [];
+    const leadForms = this.zernioLeadForms || [];
+    const health = this.zernioHealthCache || null;
+    const accessiblePages = this._getAccessiblePages ? this._getAccessiblePages() : [];
 
-    // Calculate aggregated metrics
-    const totalSpend = campaigns.reduce((s, c) => s + (c.spend || (c.metrics && c.metrics.spend) || 0), 0);
-    const totalLeads = campaigns.reduce((s, c) => s + (c.leads || (c.metrics && c.metrics.leads) || 0), 0);
-    const totalImpressions = campaigns.reduce((s, c) => s + ((c.metrics && c.metrics.impressions) || 0), 0);
-    const totalClicks = campaigns.reduce((s, c) => s + ((c.metrics && c.metrics.clicks) || 0), 0);
-    const avgCtr = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(2) : '0.00';
-    const avgCpc = totalClicks > 0 ? (totalSpend / totalClicks).toFixed(2) : '0.00';
-    const avgCpl = totalLeads > 0 ? Math.round(totalSpend / totalLeads) : 0;
-    const avgCpm = totalImpressions > 0 ? ((totalSpend / totalImpressions) * 1000).toFixed(2) : '0.00';
+    const totalSpend = totals ? totals.spendNzd : 0;
+    const totalPlatformLeads = totals ? totals.platformLeads : 0;
+    const totalCrmLeads = totals ? totals.crmAttributedLeads : 0;
+    const avgCpl = totals && totals.cplPlatformNzd !== null ? totals.cplPlatformNzd : null;
+    const totalImpressions = totals ? totals.impressions : 0;
+    const totalClicks = totals ? totals.clicks : 0;
+    const avgCtr = totals ? totals.ctr : 0;
+    const totalMsgs = totals ? totals.messagingConnections : 0;
+    const lastSyncLabel = adsState?.lastSuccessfulSync
+      ? new Date(adsState.lastSuccessfulSync).toLocaleString('en-NZ', { timeZone: 'Pacific/Auckland', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) + ' NZ'
+      : 'Not synced yet';
 
-    const connectedLiveAccounts = [
-      { id: '1342542735606057', name: 'Nova auto nz ', platform: 'Facebook' },
-      { id: '1330954980099743', name: 'Nova cars Samoa nz', platform: 'Facebook' },
-      { id: '1217451958128630', name: 'Nova Cars Tongan NZ', platform: 'Facebook' }
-    ];
-    const accessiblePages = (this._getAccessiblePages && this._getAccessiblePages().length > 0)
-      ? this._getAccessiblePages()
-      : connectedLiveAccounts;
+    const webhookBlocked = health && health.webhookHealth && !health.webhookHealth.active;
 
     this.el.content.innerHTML = `
-      <div class="ads-manager-view">
-        <!-- TOP CONTROLS & HEADER -->
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
+      <div class="ads-manager-view" style="padding-bottom:32px;">
+        <!-- TOP HEADER & FILTER TOOLBAR -->
+        <div class="crm-toolbar">
           <div>
-            <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.02em;margin-bottom:4px;color:var(--text);">Meta Ads Manager</h2>
-            <p class="text-xs text-gray">Live Meta Marketing API performance, audience attribution, and CPL conversion metrics.</p>
+            <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.02em;margin:0 0 4px;color:#0F172A;">Marketing &amp; Meta Ads (via Zernio)</h2>
+            <p class="text-xs text-gray" style="margin:0;">
+              Currency: <strong>NZD only</strong> · Connected Pages: <strong>${accessiblePages.length}</strong> · Last Ad Sync: <strong>${escapeHtml(lastSyncLabel)}</strong>
+            </p>
           </div>
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            <select class="input input-sm" id="ads-account-select" style="font-weight:500;">
-              <option value="all">All Connected Accounts (${connectedLiveAccounts.length})</option>
-              ${connectedLiveAccounts.map(p => `<option value="${p.id}">${escapeHtml(p.name)} (${p.platform})</option>`).join('')}
+          <div class="crm-filter-group">
+            <select class="input input-sm" id="ads-account-select" aria-label="Filter by Page" onchange="window.app.adsPageFilter=this.value;window.app.syncLiveAds();">
+              <option value="all">All Connected Pages (${accessiblePages.length})</option>
+              ${accessiblePages.map(p => `<option value="${p.id || p.page_id}" ${String(this.adsPageFilter) === String(p.id || p.page_id) ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
             </select>
-            <select class="input input-sm" id="ads-daterange-select" onchange="window.app.changeAdsDateRange(this.value)">
-              <option value="last_7d" ${this.adsDateRange==='last_7d'?'selected':''}>Last 7 Days</option>
-              <option value="last_14d" ${this.adsDateRange==='last_14d'?'selected':''}>Last 14 Days</option>
-              <option value="last_30d" ${this.adsDateRange==='last_30d'?'selected':''}>Last 30 Days</option>
-              <option value="this_month" ${this.adsDateRange==='this_month'?'selected':''}>This Month</option>
-              <option value="lifetime" ${this.adsDateRange==='lifetime'?'selected':''}>Lifetime</option>
-            </select>
-            <button class="btn btn-secondary btn-sm" onclick="window.app.syncLiveAds()">
-              <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
-              Sync Live Ads
-            </button>
-            <button class="btn btn-primary btn-sm" onclick="window.app.openCreateCampaignModal()">
-              + Create Campaign
-            </button>
-          </div>
-        </div>
-
-        <!-- KPI SUMMARY CARDS -->
-        <div class="stats-grid" style="grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:12px;margin-bottom:24px;">
-          <div class="stat-card">
-            <div class="stat-label">Total Ad Spend</div>
-            <div class="stat-value">${this.formatMoney(totalSpend)}</div>
-            <div class="stat-comparison ${totalSpend > 0 ? 'text-green' : 'text-gray'}" style="font-size:11px;margin-top:4px;">
-              ${totalSpend > 0 ? '<span>Verified Meta ad spend</span>' : '<span>No active ad spend tracked</span>'}
-            </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Attributed Leads</div>
-            <div class="stat-value">${totalLeads}</div>
-            <div class="stat-comparison ${totalLeads > 0 ? 'text-green' : 'text-gray'}" style="font-size:11px;margin-top:4px;">
-              ${totalLeads > 0 ? `<span>${totalLeads} leads from paid campaigns</span>` : '<span>0 ad leads in selected period</span>'}
-            </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Cost Per Lead (CPL)</div>
-            <div class="stat-value">${this.formatMoney(avgCpl)}</div>
-            <div class="stat-comparison ${avgCpl > 0 ? 'text-green' : 'text-gray'}" style="font-size:11px;margin-top:4px;">
-              ${avgCpl > 0 ? `<span>Average CPL: ${this.formatMoney(avgCpl)}</span>` : `<span>${this.formatMoney(0)} / lead (No spend)</span>`}
-            </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Impressions &amp; CPM</div>
-            <div class="stat-value">${this._formatNum(totalImpressions)}</div>
-            <div class="stat-comparison text-gray" style="font-size:11px;margin-top:4px;">
-              CPM: <strong>${this.formatMoney(avgCpm)}</strong>
-            </div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Clicks &amp; CTR</div>
-            <div class="stat-value">${this._formatNum(totalClicks)}</div>
-            <div class="stat-comparison text-gray" style="font-size:11px;margin-top:4px;">
-              CTR: <strong>${avgCtr}%</strong> • CPC: <strong>${this.formatMoney(avgCpc)}</strong>
-            </div>
-          </div>
-        </div>
-
-        <!-- TAB NAVIGATION -->
-        <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
-          <div style="display:flex;gap:8px;">
-            <button class="btn btn-sm ${this.adsActiveTab==='campaigns'?'btn-primary':'btn-secondary'}" onclick="window.app.switchAdsTab('campaigns')">
-              Campaigns (${campaigns.length})
-            </button>
-            <button class="btn btn-sm ${this.adsActiveTab==='adsets'?'btn-primary':'btn-secondary'}" onclick="window.app.switchAdsTab('adsets')">
-              Ad Sets (${adsets.length})
-            </button>
-            <button class="btn btn-sm ${this.adsActiveTab==='ads'?'btn-primary':'btn-secondary'}" onclick="window.app.switchAdsTab('ads')">
-              Ads Creative (${ads.length})
-            </button>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <input type="text" class="input input-sm" placeholder="Search by name or ID…" value="${escapeHtml(this.adsSearchQuery)}" oninput="window.app.searchAds(this.value)" style="width:200px;">
-            <select class="input input-sm" onchange="window.app.filterAdsStatus(this.value)">
-              <option value="ALL" ${this.adsStatusFilter==='ALL'?'selected':''}>All Statuses</option>
-              <option value="ACTIVE" ${this.adsStatusFilter==='ACTIVE'?'selected':''}>Active Only</option>
-              <option value="PAUSED" ${this.adsStatusFilter==='PAUSED'?'selected':''}>Paused Only</option>
+            <select class="input input-sm" id="ads-daterange-select" aria-label="Date range" onchange="window.app.changeAdsDateRange(this.value)">
+              <option value="last_7d" ${this.adsDateRange==='last_7d'?'selected':''}>Last 7 Days (NZ)</option>
+              <option value="last_14d" ${this.adsDateRange==='last_14d'?'selected':''}>Last 14 Days (NZ)</option>
+              <option value="last_30d" ${this.adsDateRange==='last_30d'?'selected':''}>Last 30 Days (NZ)</option>
+              <option value="this_month" ${this.adsDateRange==='this_month'?'selected':''}>This Month (NZ)</option>
             </select>
           </div>
         </div>
 
-        <!-- DATA TABLES -->
-        <div id="ads-table-container">
-          ${this._renderAdsTable(this.adsActiveTab, campaigns, adsets, ads)}
+        ${webhookBlocked ? `
+          <div style="margin-bottom:16px;padding:12px 16px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+            <div style="font-size:12.5px;color:#92400E;">
+              <strong>⚠️ Live Zernio Webhook Disabled / Misconfigured:</strong> ${escapeHtml(health.webhookHealth.actionRequired || 'Check Connection Health tab for details.')}
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.switchAdsTab('health')">Inspect Health →</button>
+          </div>
+        ` : ''}
+
+        <!-- 3 CLEAR SEPARATED SECTIONS -->
+        <div class="tabs" style="margin-bottom:18px;">
+          <div class="tab ${this.adsActiveTab==='campaigns'?'active':''}" onclick="window.app.switchAdsTab('campaigns')">
+            Campaign Performance (NZD) <span class="tab-count">${campaigns.length}</span>
+          </div>
+          <div class="tab ${this.adsActiveTab==='lead_capture'?'active':''}" onclick="window.app.switchAdsTab('lead_capture')">
+            Lead Capture &amp; Forms <span class="tab-count">${leadForms.length}</span>
+          </div>
+          <div class="tab ${this.adsActiveTab==='health'?'active':''}" onclick="window.app.switchAdsTab('health')">
+            Connection Health <span class="tab-count">${health?.pages?.length || accessiblePages.length}</span>
+          </div>
         </div>
+
+        ${this.adsActiveTab === 'campaigns' ? `
+          <!-- NZD KPI SUMMARY CARDS -->
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-label">Ad Spend (NZD)</div>
+              <div class="stat-value">${adsState?.insightsRetrievedSuccessfully ? this.formatMoney(totalSpend) : 'Not synced'}</div>
+              <div class="stat-sub">${nzdAdAccounts.length} deduplicated NZD ad accounts</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Meta Platform Leads</div>
+              <div class="stat-value">${adsState?.insightsRetrievedSuccessfully ? totalPlatformLeads.toLocaleString() : '—'}</div>
+              <div class="stat-sub">${totalMsgs.toLocaleString()} messaging conversations started</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">CRM Attributed Leads</div>
+              <div class="stat-value" style="color:#059669;">${totalCrmLeads}</div>
+              <div class="stat-sub">Ingested enquiries linked by campaign ID</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Cost / Platform Lead</div>
+              <div class="stat-value">${avgCpl !== null ? this.formatMoney(avgCpl) : 'No data'}</div>
+              <div class="stat-sub">CTR: <strong>${avgCtr}%</strong> · ${this._formatNum(totalImpressions)} impr.</div>
+            </div>
+          </div>
+
+          ${excludedNonNzd.length > 0 ? `
+            <div style="margin-bottom:14px;padding:10px 14px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;font-size:12px;color:#475569;">
+              <strong>NZD Currency Safeguard:</strong> Excluded ${excludedNonNzd.length} non-NZD ad account(s) (${excludedNonNzd.map(a => `${escapeHtml(a.name)} [${escapeHtml(a.currency)}]`).join(', ')}) so non-NZD spend is never mixed into New Zealand dealership totals.
+            </div>
+          ` : ''}
+
+          <div class="crm-filter-bar">
+            <input type="text" class="input input-sm" style="min-width:220px;flex:1;max-width:340px;" placeholder="Filter campaigns by name or ad account…" value="${escapeHtml(this.adsSearchQuery)}" oninput="window.app.searchAds(this.value)">
+            <span class="text-xs text-gray" style="margin-left:auto;">Click any campaign row to inspect its captured CRM leads</span>
+          </div>
+
+          <div id="ads-table-container">
+            ${this._renderAdsTable('campaigns', campaigns, [], [])}
+          </div>
+
+          <div style="margin-top:14px;padding:10px 14px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;font-size:11.5px;color:#64748B;">
+            <strong>Provider note (Zernio):</strong> Native Meta Ads Manager campaigns are retrieved via Zernio <code>GET /api/v1/ads/insights?level=campaign</code> (Zernio <code>/api/v1/ads/campaigns</code> only lists campaigns created inside Zernio).
+          </div>
+        ` : this.adsActiveTab === 'lead_capture' ? `
+          <div class="dash-panel-card" style="margin-bottom:16px;">
+            <div class="dash-panel-header">
+              <div>
+                <div class="dash-panel-title">Meta Instant Lead Forms (via Zernio)</div>
+                <div class="text-xs text-gray">Live forms discovered across your connected dealership pages.</div>
+              </div>
+              <div style="display:flex;gap:8px;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.runGuidedTestLead('${accessiblePages[0] ? (accessiblePages[0].page_id || accessiblePages[0].id) : ''}', '${escapeHtml(accessiblePages[0] ? accessiblePages[0].name : 'Connected Page')}')">🧪 Guided Test Lead</button>
+                <button type="button" class="btn btn-primary btn-sm" onclick="window.app.syncZernioLeadsFromMarketing()">↻ Sync Real Leads from Zernio</button>
+              </div>
+            </div>
+            <div style="overflow-x:auto;">
+              <table class="crm-table">
+                <thead>
+                  <tr>
+                    <th>Page</th>
+                    <th>Lead Form Name</th>
+                    <th>Status</th>
+                    <th style="text-align:right;">Platform Leads</th>
+                    <th style="text-align:right;">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${leadForms.length === 0 ? `
+                    <tr><td colspan="5" style="text-align:center;padding:28px;color:#64748B;">Loading live Meta Lead Forms from Zernio… Click "Sync Meta Leads" to pull submissions.</td></tr>
+                  ` : leadForms.map(f => `
+                    <tr>
+                      <td style="font-weight:600;">${escapeHtml(f.pageName)}</td>
+                      <td>
+                        <div style="font-weight:600;color:#0F172A;">${escapeHtml(f.name)}</div>
+                        <div class="text-xs text-gray">Form ID: ${escapeHtml(f.id)}</div>
+                      </td>
+                      <td><span class="health-pill ${f.status === 'ACTIVE' ? 'pass' : 'neutral'}">${escapeHtml(f.status)}</span></td>
+                      <td style="text-align:right;font-weight:700;">${f.leadsCount ?? 0}</td>
+                      <td style="text-align:right;">
+                        <button type="button" class="btn btn-ghost btn-sm" onclick="window.app.leadPageFilter='${f.pageId}';window.app.navigate('leads');">View Page Leads →</button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ` : `
+          <!-- CONNECTION HEALTH (7-STAGE HONEST MATRIX) -->
+          <div class="dash-panel-card" style="margin-bottom:16px;">
+            <div class="dash-panel-header">
+              <div>
+                <div class="dash-panel-title">7-Stage Integration Readiness Matrix</div>
+                <div class="text-xs text-gray">Every stage is verified independently from live Zernio endpoints — never inferred from OAuth alone.</div>
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.refreshMarketingHealth()">↻ Re-verify Live Health</button>
+            </div>
+            <div style="overflow-x:auto;">
+              <table class="crm-table">
+                <thead>
+                  <tr>
+                    <th>Page</th>
+                    <th>1. Connected</th>
+                    <th>2. Permissions</th>
+                    <th>3. Subscription &amp; Webhook</th>
+                    <th>4. Leads Received</th>
+                    <th>5. NZD Ad Account</th>
+                    <th>6. Insights Synced</th>
+                    <th>Action Needed</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${!health || !Array.isArray(health.pages) || health.pages.length === 0 ? `
+                    <tr><td colspan="8" style="text-align:center;padding:24px;color:#64748B;">Checking live Zernio connection health…</td></tr>
+                  ` : health.pages.map(p => `
+                    <tr>
+                      <td>
+                        <div style="font-weight:600;">${escapeHtml(p.pageName)}</div>
+                        <div class="text-xs text-gray">${escapeHtml(p.pageId)}</div>
+                      </td>
+                      <td><span class="health-pill ${p.accountConnected ? 'pass' : 'fail'}">${p.accountConnected ? 'Connected' : 'Reconnect'}</span></td>
+                      <td><span class="health-pill ${p.permissionsVerified?.allCoreGranted ? 'pass' : 'warn'}">${p.permissionsVerified?.allCoreGranted ? 'All Granted' : (p.missingPermissions?.join(', ') || 'Partial')}</span></td>
+                      <td><span class="health-pill ${p.subscriptionVerified?.verified ? 'pass' : 'fail'}">${p.subscriptionVerified?.verified ? 'Verified' : (p.subscriptionVerified?.pageLeadgenSubscribed ? 'Page OK · Webhook Off' : 'Unsubscribed')}</span></td>
+                      <td><span class="health-pill ${p.leadReceivedSuccessfully ? 'pass' : 'neutral'}">${p.leadReceivedSuccessfully ? `${p.recentLeadsCount || 'Yes'} captured` : 'None yet'}</span></td>
+                      <td><span class="health-pill ${p.adAccountConnected ? 'pass' : 'warn'}">${p.adAccountConnected ? `${(p.adAccounts||[]).filter(a=>a.isNzd).length} NZD` : 'None linked'}</span></td>
+                      <td><span class="health-pill ${p.insightsRetrievedSuccessfully ? 'pass' : 'warn'}">${p.insightsRetrievedSuccessfully ? 'Synced' : 'Not synced'}</span></td>
+                      <td class="text-xs" style="color:${p.actionRequired ? '#92400E' : '#065F46'};">${escapeHtml(p.actionRequired || 'All checks passing')}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `}
       </div>
     `;
   }
 
+  async syncZernioLeadsFromMarketing() {
+    this.toast('Syncing real Meta Lead Ads via Zernio…');
+    try {
+      const res = await this.svc.syncZernioLeads(this.adsPageFilter);
+      this.toast(`Synced ${res.newLeads || 0} new lead(s), skipped ${res.skippedLeads || 0} duplicate(s).`, 'success');
+      this.renderMetaAds();
+    } catch (e) {
+      this.toast(`Lead sync error: ${e.message}`, 'error');
+    }
+  }
+
+  async refreshMarketingHealth() {
+    this.toast('Checking live Zernio health…');
+    try {
+      this.zernioHealthCache = await this.svc.fetchZernioHealth();
+      this.renderMetaAds();
+      this.toast('Connection health refreshed.', 'success');
+    } catch (e) {
+      this.toast(`Health check error: ${e.message}`, 'error');
+    }
+  }
+
   _renderAdsTable(tab, campaigns, adsets, ads) {
     const q = (this.adsSearchQuery || '').toLowerCase();
-    const st = this.adsStatusFilter || 'ALL';
+    const list = (campaigns || []).filter(c => {
+      if (!q) return true;
+      return String(c.name || '').toLowerCase().includes(q) ||
+        String(c.adAccountName || '').toLowerCase().includes(q) ||
+        String(c.id || '').toLowerCase().includes(q);
+    });
 
-    if (tab === 'campaigns') {
-      let list = campaigns.filter(c => {
-        const matchesQuery = !q || c.name.toLowerCase().includes(q) || (c.id && c.id.toLowerCase().includes(q));
-        const matchesStatus = st === 'ALL' || c.status === st;
-        return matchesQuery && matchesStatus;
-      });
-
-      if (list.length === 0) {
-        return `
-          <div class="empty-state-card" style="padding:32px 24px;text-align:center;background:#FFFFFF;border:1px solid var(--border-subtle);border-radius:var(--radius-md);box-shadow:var(--shadow-card);">
-            <div style="width:48px;height:48px;border-radius:12px;background:#EEF4FE;color:#1877F2;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;">
-              <svg width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
-            </div>
-            <h3 style="font-size:16px;font-weight:700;margin-bottom:6px;color:var(--text);">Meta Ad Accounts Connected</h3>
-            <p class="text-xs text-gray" style="max-width:540px;margin:0 auto 16px;">
-              Your connected Facebook &amp; Instagram advertising accounts (<strong>Nova auto nz </strong> and <strong>Nova cars Samoa nz</strong>) are active via Meta Verified OAuth. Paid campaigns created or published from Meta Ads Manager will appear here automatically.
-            </p>
-            <div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
-              <span class="badge badge-success" style="padding:4px 10px;font-size:11px;">● Nova auto nz (Connected)</span>
-              <span class="badge badge-success" style="padding:4px 10px;font-size:11px;">● Nova cars Samoa nz (Connected)</span>
-              
-            </div>
-            <div style="display:flex;justify-content:center;gap:10px;">
-              <button class="btn btn-primary btn-sm" onclick="window.app.openCreateCampaignModal()">+ Create Campaign</button>
-              <button class="btn btn-secondary btn-sm" onclick="window.app.syncLiveAds()">↻ Sync Live Ads</button>
-              <button class="btn btn-secondary btn-sm" onclick="window.open('https://adsmanager.facebook.com', '_blank')">↗ Open Meta Ads Manager</button>
-            </div>
-          </div>
-        `;
-      }
-
+    if (list.length === 0) {
       return `
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th style="width:70px;">Status</th>
-                <th>Campaign Name</th>
-                <th>Objective</th>
-                <th>Budget</th>
-                <th style="text-align:right;">Spend</th>
-                <th style="text-align:right;">Clicks</th>
-                <th style="text-align:right;">CTR</th>
-                <th style="text-align:right;">Leads</th>
-                <th style="text-align:right;">CPL</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${list.map(c => {
-                const spend = c.spend || (c.metrics && c.metrics.spend) || 0;
-                const leads = c.leads || (c.metrics && c.metrics.leads) || 0;
-                const clicks = (c.metrics && c.metrics.clicks) || 0;
-                const impressions = (c.metrics && c.metrics.impressions) || 1;
-                const ctr = ((clicks / impressions) * 100).toFixed(2);
-                const cpl = leads > 0 ? Math.round(spend / leads) : '—';
-                const isActive = c.status === 'ACTIVE';
-
-                return `
-                  <tr>
-                    <td>
-                      <button class="badge ${isActive ? 'badge-success' : 'badge-subtle'}" style="font-size:10px;cursor:pointer;border:none;" onclick="window.app.toggleCampaignStatus('${c.id}')" title="Click to ${isActive ? 'pause' : 'activate'} campaign">
-                        ${c.status}
-                      </button>
-                    </td>
-                    <td>
-                      <div style="font-weight:600;color:var(--text);">${escapeHtml(c.name)}</div>
-                      <div class="text-xs text-gray font-mono">${c.id}</div>
-                    </td>
-                    <td class="text-xs" style="text-transform:uppercase;">${(c.objective || 'OUTCOME_LEADS').replace('OUTCOME_', '')}</td>
-                    <td class="text-xs font-medium">${c.daily_budget ? this.formatMoney(c.daily_budget, c.currency) + '/day' : 'Lifetime'}</td>
-                    <td class="text-xs font-semibold" style="text-align:right;">${this.formatMoney(spend, c.currency)}</td>
-                    <td class="text-xs" style="text-align:right;">${this._formatNum(clicks)}</td>
-                    <td class="text-xs" style="text-align:right;">${ctr}%</td>
-                    <td class="text-xs font-semibold" style="text-align:right;color:var(--primary);">${leads}</td>
-                    <td class="text-xs font-semibold" style="text-align:right;">${cpl !== '—' ? this.formatMoney(cpl, c.currency) : '—'}</td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-      `;
+        <div class="dash-panel-card" style="padding:32px 24px;text-align:center;">
+          <h3 style="font-size:15px;font-weight:700;margin:0 0 6px;color:#0F172A;">No Campaign Insights Loaded Yet</h3>
+          <p class="text-xs text-gray" style="max-width:480px;margin:0 auto 14px;">
+            Click <strong>Sync Ad Insights (NZD)</strong> to pull live Meta campaign spend, impressions, clicks, and lead counts via Zernio.
+          </p>
+          <button type="button" class="btn btn-primary btn-sm" onclick="window.app.syncLiveAds()">↻ Sync Ad Insights (NZD)</button>
+        </div>`;
     }
 
-    if (tab === 'adsets') {
-      let list = adsets.filter(a => {
-        const matchesQuery = !q || a.name.toLowerCase().includes(q) || (a.id && a.id.toLowerCase().includes(q));
-        const matchesStatus = st === 'ALL' || a.status === st;
-        return matchesQuery && matchesStatus;
-      });
-
-      if (list.length === 0) {
-        return `
-          <div class="empty-state-card" style="padding:32px 24px;text-align:center;background:#FFFFFF;border:1px solid var(--border-subtle);border-radius:var(--radius-md);box-shadow:var(--shadow-card);">
-            <div class="text-sm font-semibold" style="margin-bottom:6px;">No Ad Sets Found</div>
-            <p class="text-xs text-gray" style="max-width:440px;margin:0 auto 12px;">Active ad sets associated with your campaigns will appear here once campaigns are published.</p>
-            <button class="btn btn-secondary btn-sm" onclick="window.app.syncLiveAds()">↻ Sync Live Ads</button>
-          </div>
-        `;
-      }
-
-      return `
-        <div class="table-responsive">
-          <table class="data-table">
+    return `
+      <div class="dash-panel-card">
+        <div style="overflow-x:auto;">
+          <table class="crm-table">
             <thead>
               <tr>
-                <th style="width:70px;">Status</th>
-                <th>Ad Set Name</th>
                 <th>Campaign</th>
-                <th>Optimization</th>
-                <th>Budget</th>
-                <th style="text-align:right;">Spend</th>
-                <th style="text-align:right;">Clicks</th>
-                <th style="text-align:right;">Leads</th>
-                <th style="text-align:right;">CPL</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${list.map(a => `
-                <tr>
-                  <td><span class="badge ${a.status === 'ACTIVE' ? 'badge-success' : 'badge-subtle'}" style="font-size:10px;">${a.status}</span></td>
-                  <td>
-                    <div style="font-weight:600;color:var(--text);">${escapeHtml(a.name)}</div>
-                    <div class="text-xs text-gray font-mono">${a.id}</div>
-                  </td>
-                  <td class="text-xs">${escapeHtml(a.campaign_name || a.campaign_id || 'Campaign')}</td>
-                  <td class="text-xs">${escapeHtml(a.optimization_goal || 'LEAD_GENERATION')}</td>
-                  <td class="text-xs">${a.daily_budget ? this.formatMoney(a.daily_budget, a.currency) + '/day' : '—'}</td>
-                  <td class="text-xs font-semibold" style="text-align:right;">${this.formatMoney(a.spend || 0, a.currency)}</td>
-                  <td class="text-xs" style="text-align:right;">${a.clicks || 0}</td>
-                  <td class="text-xs font-semibold" style="text-align:right;color:var(--primary);">${a.leads || 0}</td>
-                  <td class="text-xs font-semibold" style="text-align:right;">${this.formatMoney(a.cost_per_lead || 0, a.currency)}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      `;
-    }
-
-    if (tab === 'ads') {
-      let list = ads.filter(ad => {
-        const matchesQuery = !q || ad.name.toLowerCase().includes(q) || (ad.id && ad.id.toLowerCase().includes(q));
-        const matchesStatus = st === 'ALL' || ad.status === st;
-        return matchesQuery && matchesStatus;
-      });
-
-      if (list.length === 0) {
-        return `
-          <div class="empty-state-card" style="padding:32px 24px;text-align:center;background:#FFFFFF;border:1px solid var(--border-subtle);border-radius:var(--radius-md);box-shadow:var(--shadow-card);">
-            <div class="text-sm font-semibold" style="margin-bottom:6px;">No Ad Creatives Found</div>
-            <p class="text-xs text-gray" style="max-width:440px;margin:0 auto 12px;">Active ad creatives and copies will appear here once campaigns are published.</p>
-            <button class="btn btn-secondary btn-sm" onclick="window.app.syncLiveAds()">↻ Sync Live Ads</button>
-          </div>
-        `;
-      }
-
-      return `
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th style="width:70px;">Status</th>
-                <th>Ad Creative</th>
-                <th>Ad Set</th>
-                <th>Format</th>
-                <th style="text-align:right;">Spend</th>
-                <th style="text-align:right;">Clicks</th>
+                <th>NZD Ad Account</th>
+                <th style="text-align:right;">Spend (NZD)</th>
+                <th style="text-align:right;">Impressions</th>
                 <th style="text-align:right;">CTR</th>
-                <th style="text-align:right;">Leads</th>
-                <th style="text-align:right;">CPL</th>
+                <th style="text-align:right;">Meta Leads</th>
+                <th style="text-align:right;">CRM Leads</th>
+                <th style="text-align:right;">CPL (NZD)</th>
+                <th style="text-align:right;">Messages</th>
               </tr>
             </thead>
             <tbody>
-              ${list.map(ad => `
-                <tr>
-                  <td><span class="badge ${ad.status === 'ACTIVE' ? 'badge-success' : 'badge-subtle'}" style="font-size:10px;">${ad.status}</span></td>
+              ${list.map(c => `
+                <tr class="clickable-row" onclick="window.app.leadCampaignFilter='${escapeHtml(c.id || '')}';window.app.navigate('leads');" title="Click to view CRM enquiries attributed to this campaign">
                   <td>
-                    <div style="font-weight:600;color:var(--text);">${escapeHtml(ad.name)}</div>
-                    <div class="text-xs text-gray font-mono">${ad.id}</div>
+                    <div style="font-weight:600;color:#0F172A;">${escapeHtml(c.name)}</div>
+                    <div class="text-xs text-gray">${escapeHtml(c.id)}</div>
                   </td>
-                  <td class="text-xs">${escapeHtml(ad.adset_name || ad.adset_id || 'Decision Makers')}</td>
-                  <td class="text-xs">${escapeHtml(ad.format || 'Single Image Lead Form')}</td>
-                  <td class="text-xs font-semibold" style="text-align:right;">${this.formatMoney(ad.spend || 0, ad.currency)}</td>
-                  <td class="text-xs" style="text-align:right;">${ad.clicks || 0}</td>
-                  <td class="text-xs" style="text-align:right;">${ad.ctr || 0}%</td>
-                  <td class="text-xs font-semibold" style="text-align:right;color:var(--primary);">${ad.leads || 0}</td>
-                  <td class="text-xs font-semibold" style="text-align:right;">${this.formatMoney(ad.cost_per_lead || 0, ad.currency)}</td>
+                  <td class="text-xs">${escapeHtml(c.adAccountName || c.pageName || 'NZD Account')}</td>
+                  <td style="text-align:right;font-weight:600;">${this.formatMoney(c.spend || 0)}</td>
+                  <td style="text-align:right;">${this._formatNum(c.impressions || 0)}</td>
+                  <td style="text-align:right;">${c.ctr ?? 0}%</td>
+                  <td style="text-align:right;font-weight:600;">${c.platformLeads ?? 0}</td>
+                  <td style="text-align:right;font-weight:700;color:#059669;">${c.crmLeadsCount ?? 0}</td>
+                  <td style="text-align:right;">${c.cplPlatform !== null && c.cplPlatform !== undefined ? this.formatMoney(c.cplPlatform) : '—'}</td>
+                  <td style="text-align:right;">${c.messagingConnections ?? 0}</td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
         </div>
-      `;
-    }
+      </div>`;
   }
 
   switchAdsTab(tab) {
@@ -8340,18 +8422,15 @@ class MetaCRMApp {
 
   changeAdsDateRange(val) {
     this.adsDateRange = val;
-    this.toast(`Updating ads metrics for ${val.replace('_', ' ')}…`);
-    this.renderMetaAds();
+    this.syncLiveAds();
   }
 
   searchAds(query) {
     this.adsSearchQuery = query;
     const container = document.getElementById('ads-table-container');
     if (container) {
-      const campaigns = this.svc ? (this.svc.campaigns || []) : [];
-      const adsets = this.svc ? (this.svc.adsets || []) : [];
-      const ads = this.svc ? (this.svc.ads || []) : [];
-      container.innerHTML = this._renderAdsTable(this.adsActiveTab, campaigns, adsets, ads);
+      const campaigns = (this.svc?.zernioAdsState?.campaigns) || (this.svc ? (this.svc.campaigns || []) : []);
+      container.innerHTML = this._renderAdsTable('campaigns', campaigns, [], []);
     }
   }
 
@@ -8361,13 +8440,18 @@ class MetaCRMApp {
   }
 
   async syncLiveAds() {
-    this.toast('Synchronizing live Meta Ads & Marketing API data…');
-    if (this.svc) {
-      await this.svc.fetchLiveCampaigns();
-      await this.svc.fetchLiveAdSets();
-      await this.svc.fetchLiveAds();
-      this.toast('✓ Meta Ads synced successfully!', 'success');
-      this.renderMetaAds();
+    this.toast('Syncing live NZD Meta Ads insights via Zernio…');
+    if (this.svc && this.svc.syncZernioAds) {
+      try {
+        const res = await this.svc.syncZernioAds(this.adsDateRange || 'last_30d', this.adsPageFilter || 'all', true);
+        if (this.svc.fetchZernioHealth) {
+          this.zernioHealthCache = await this.svc.fetchZernioHealth().catch(() => this.zernioHealthCache);
+        }
+        this.toast(`Synced ${res.campaigns?.length || 0} NZD campaign(s) via Zernio.`, 'success');
+        this.renderMetaAds();
+      } catch (err) {
+        this.toast(`Ad sync error: ${err.message}`, 'error');
+      }
     }
   }
 
@@ -8385,10 +8469,7 @@ class MetaCRMApp {
             <div>
               <label class="form-label" style="font-weight:600;font-size:12px;margin-bottom:4px;display:block;">Ad Account / Page</label>
               <select id="m-camp-account" class="input w-full">
-                <option value="1342542735606057">Nova auto nz  (Facebook)</option>
-                <option value="1330954980099743">Nova cars Samoa nz (Facebook)</option>
-                <option value="1217451958128630">Nova Cars Tongan NZ (Facebook)</option>
-                
+                ${(this._getAccessiblePages ? this._getAccessiblePages() : []).map(p => `<option value="${p.id || p.page_id}">${escapeHtml(p.name)} (${escapeHtml(p.platform || 'Facebook')})</option>`).join('') || '<option value="">No connected pages</option>'}
               </select>
             </div>
             <div>
@@ -8431,7 +8512,8 @@ class MetaCRMApp {
       this.toast('Please enter a campaign name', 'error');
       return false;
     }
-    const accountId = document.getElementById('m-camp-account')?.value || '1342542735606057';
+    const firstPage = (this._getAccessiblePages ? this._getAccessiblePages() : [])[0];
+    const accountId = document.getElementById('m-camp-account')?.value || (firstPage ? (firstPage.id || firstPage.page_id) : '');
     const objective = document.getElementById('m-camp-objective')?.value || 'OUTCOME_LEADS';
     const budget = parseFloat(document.getElementById('m-camp-budget')?.value || '50');
     const status = document.getElementById('m-camp-status')?.value || 'ACTIVE';
@@ -9544,7 +9626,10 @@ class MetaCRMApp {
   }
 
   renderReports() {
-    this._setBreadcrumbs('Reports');
+    this.el.title.textContent = (this.user && this.user.role === 'staff') ? 'My Performance' : 'Reports';
+    this.el.actions.innerHTML = `
+      <button class="btn btn-secondary btn-sm" id="btn-generate-report" onclick="window.app.generateReport()">↻ Refresh</button>
+      <button class="btn btn-primary btn-sm" onclick="window.app.exportReportsCsv()">Export CSV (NZD)</button>`;
     this.reportsDateRange = this.reportsDateRange || 'last_7d';
     this.reportsPageFilter = this.reportsPageFilter || 'all';
 
@@ -9581,16 +9666,16 @@ class MetaCRMApp {
     this.el.content.innerHTML = `
       <div class="reports-view" style="padding:4px 0 36px;">
         <!-- HEADER & PACIFIC/AUCKLAND CONTROLS -->
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+        <div class="crm-toolbar">
           <div>
-            <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.02em;margin-bottom:4px;color:var(--text);">${isAdmin ? 'Dealership Business Reports' : 'My Sales Performance'}</h2>
-            <p class="text-xs text-gray">
+            <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.02em;margin:0 0 4px;color:#0F172A;">${isAdmin ? 'Dealership Business Reports' : 'My Sales Performance'}</h2>
+            <p class="text-xs text-gray" style="margin:0;">
               Scope: <strong>${escapeHtml(meta.scope || (isAdmin ? 'All Authorised Pages' : 'Assigned Pages Only'))}</strong> ·
               Timezone: <strong>Pacific/Auckland (NZST/NZDT)</strong> ·
               Currency: <strong>NZD ($)</strong>
             </p>
           </div>
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <div class="crm-filter-group">
             <select id="reports-page-select" class="input input-sm" style="font-weight:500;" onchange="window.app.changeReportsPageFilter(this.value)">
               <option value="all">${isAdmin ? 'All Authorised Pages' : 'All Assigned Pages'}</option>
               ${accessiblePages.map(p => `<option value="${p.id || p.page_id}" ${String(this.reportsPageFilter) === String(p.id || p.page_id) ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
@@ -9608,8 +9693,6 @@ class MetaCRMApp {
               <span class="text-xs text-gray">to</span>
               <input type="date" id="reports-end-date" class="input input-sm" value="${this.reportsCustomEnd || ''}">
             </div>
-            <button class="btn btn-primary btn-sm" id="btn-generate-report" onclick="window.app.generateReport()">↻ Refresh</button>
-            <button class="btn btn-secondary btn-sm" onclick="window.app.exportReportsCsv()">Export CSV (NZD)</button>
           </div>
         </div>
 
