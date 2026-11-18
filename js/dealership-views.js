@@ -1171,10 +1171,10 @@
           <div class="ds-empty-box">
             <div class="ds-empty-icon">${this._dsIcon('inbox', 20)}</div>
             <h3 class="ds-empty-title">${hasFilters ? 'No enquiries match these filters' : 'No enquiries captured yet'}</h3>
-            <p class="ds-empty-desc">${hasFilters ? 'Clear or adjust your filters to view other enquiries across your authorised dealership pages.' : 'Sync real Meta Lead Ads from Zernio, convert an active Inbox conversation, or log a walk-in enquiry.'}</p>
+            <p class="ds-empty-desc">${hasFilters ? 'Clear or adjust your filters to view other enquiries across your authorised dealership pages.' : (isAdmin ? 'Check for new ad enquiries, convert an active Inbox conversation, or log a walk-in enquiry.' : 'Convert an active Inbox conversation or log a walk-in enquiry.')}</p>
             <div style="display:flex;justify-content:center;gap:8px;flex-wrap:wrap;">
               ${hasFilters ? `<button type="button" class="btn btn-secondary btn-sm" onclick="window.app.clearLeadFilters()">Clear Filters</button>` : ''}
-              ${isAdmin && !hasFilters ? `<button type="button" class="btn btn-secondary btn-sm" onclick="window.app.syncZernioLeadsFromMarketing()">${this._dsIcon('refresh', 13)}<span>Sync Meta Leads</span></button>` : ''}
+              ${isAdmin && !hasFilters ? `<button type="button" class="btn btn-secondary btn-sm" onclick="window.app.syncZernioLeadsFromMarketing()">${this._dsIcon('refresh', 13)}<span>Refresh Ad Leads</span></button>` : ''}
               <button type="button" class="btn btn-primary btn-sm" onclick="window.app.openAddLeadModal()">${this._dsIcon('plus', 13)}<span>Add Enquiry</span></button>
             </div>
           </div>
