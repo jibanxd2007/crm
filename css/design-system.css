@@ -1,62 +1,87 @@
 /* ============================================================================
-   METACRM — NOVA AUTOS NZ DEALERSHIP DESIGN SYSTEM (v3.0)
-   Restrained neutral surfaces, clear visual hierarchy, one brand accent,
-   semantic status tokens, and zero-squeeze responsive layouts.
+   METACRM — NOVA AUTOS NZ DEALERSHIP DESIGN SYSTEM (v4.0)
+   Calm light-neutral surfaces, predominantly white workspace, slim quiet sidebar,
+   compact black primary actions, subtle lavender accents, thin borders,
+   barely visible shadows, and readable 14px typography.
    ============================================================================ */
 
 :root {
-  --ds-canvas: #F6F7F9;
+  /* Core Visual Reference Tokens */
+  --ds-canvas: #F7F8FA;
+  --ds-sidebar: #F8F8FA;
   --ds-surface: #FFFFFF;
-  --ds-surface-subtle: #F9FAFB;
-  --ds-surface-hover: #F3F4F6;
-  --ds-border: #E5E7EB;
-  --ds-border-strong: #D1D5DB;
+  --ds-surface-subtle: #F7F8FA;
+  --ds-surface-hover: #F2F3F7;
+  --ds-nav-selected: #EEEEF2;
 
-  --ds-ink: #111827;
-  --ds-ink-secondary: #4B5563;
-  --ds-ink-muted: #6B7280;
-  --ds-ink-subtle: #9CA3AF;
+  --ds-ink: #18181B;
+  --ds-ink-secondary: #52525B;
+  --ds-ink-muted: #71717A;
+  --ds-ink-subtle: #8A8A96;
 
-  --ds-accent: #EA580C;
-  --ds-accent-hover: #C2410C;
-  --ds-accent-soft: #FFF7ED;
-  --ds-accent-border: #FDBA74;
+  --ds-border: #EAEAF0;
+  --ds-border-strong: #D6D6E0;
 
-  --ds-success: #047857;
+  /* Primary Button (Compact Black) & Lavender Accent */
+  --ds-primary: #18181B;
+  --ds-primary-hover: #27272A;
+  --ds-accent: #8B7AE0;
+  --ds-accent-hover: #6D5BD0;
+  --ds-accent-text: #5B47B8;
+  --ds-accent-soft: #EEE9FC;
+  --ds-accent-border: #DDD4FA;
+
+  /* Semantic Status Tokens (AA-compliant text + subtle tinted surface) */
+  --ds-success: #22A66F;
+  --ds-success-text: #157A50;
   --ds-success-bg: #ECFDF5;
-  --ds-success-border: #A7F3D0;
+  --ds-success-border: #C6F1DD;
 
-  --ds-warning: #B45309;
-  --ds-warning-bg: #FFFBEB;
-  --ds-warning-border: #FDE68A;
+  --ds-warning: #E99A36;
+  --ds-warning-text: #9A5B13;
+  --ds-warning-bg: #FEF7EC;
+  --ds-warning-border: #F8DFB9;
 
-  --ds-danger: #B91C1C;
-  --ds-danger-bg: #FEF2F2;
-  --ds-danger-border: #FECACA;
+  --ds-danger: #DC4C64;
+  --ds-danger-text: #B4233C;
+  --ds-danger-bg: #FDF0F2;
+  --ds-danger-border: #F6CBD3;
 
-  --ds-info: #1D4ED8;
-  --ds-info-bg: #EFF6FF;
-  --ds-info-border: #BFDBFE;
+  --ds-info: #8B7AE0;
+  --ds-info-text: #5B47B8;
+  --ds-info-bg: #EEE9FC;
+  --ds-info-border: #DDD4FA;
 
+  /* Restrained Radii & Barely Visible Shadows */
   --ds-radius-xs: 6px;
-  --ds-radius-sm: 8px;
+  --ds-radius-sm: 7px;
   --ds-radius-md: 10px;
   --ds-radius-lg: 12px;
-  --ds-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --ds-shadow-sm: 0 2px 6px rgba(15, 23, 42, 0.05);
-  --ds-shadow-md: 0 8px 24px rgba(15, 23, 42, 0.09);
+  --ds-shadow-xs: 0 1px 2px rgba(24, 24, 27, 0.03);
+  --ds-shadow-sm: 0 2px 8px rgba(24, 24, 27, 0.05);
+  --ds-shadow-md: 0 10px 28px rgba(24, 24, 27, 0.09);
+
+  /* Consistent Spacing Scale: 4, 8, 12, 16, 24, 32 */
+  --ds-s1: 4px;
+  --ds-s2: 8px;
+  --ds-s3: 12px;
+  --ds-s4: 16px;
+  --ds-s6: 24px;
+  --ds-s8: 32px;
 
   --ds-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 html, body {
   font-family: var(--ds-font) !important;
-  background: var(--ds-canvas) !important;
+  background: var(--ds-surface) !important;
   color: var(--ds-ink) !important;
+  font-size: 14px !important;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Accessible focus rings everywhere */
+/* Accessible lavender focus rings everywhere */
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
@@ -69,19 +94,68 @@ summary:focus-visible {
 }
 
 /* ============================================================================
-   1. APPLICATION SHELL (Sidebar + Quiet Topbar + Main Canvas)
+   1. APPLICATION SHELL (Slim Quiet Sidebar + Clean White Topbar & Workspace)
    ============================================================================ */
 #sidebar {
-  background: var(--ds-surface) !important;
+  width: 228px !important;
+  background: var(--ds-sidebar) !important;
   border-right: 1px solid var(--ds-border) !important;
 }
 
-.nav-section-title {
-  font-size: 10.5px !important;
+.sidebar-header {
+  padding: 14px 16px 12px !important;
+  border-bottom: none !important;
+}
+
+.brand-icon-box {
+  background: var(--ds-accent-soft) !important;
+  border: 1px solid var(--ds-accent-border) !important;
+  border-radius: 8px !important;
+}
+
+.brand-title {
+  color: var(--ds-ink) !important;
   font-weight: 700 !important;
-  letter-spacing: 0.06em !important;
-  color: var(--ds-ink-subtle) !important;
-  padding: 14px 12px 6px !important;
+  font-size: 15px !important;
+  letter-spacing: -0.02em;
+}
+
+.workspace-switcher-wrapper {
+  padding: 0 12px 10px !important;
+}
+.workspace-switcher-btn {
+  background: var(--ds-surface) !important;
+  border: 1px solid var(--ds-border) !important;
+  border-radius: 8px !important;
+  padding: 7px 10px !important;
+  box-shadow: var(--ds-shadow-xs);
+}
+.workspace-switcher-btn:hover {
+  border-color: var(--ds-border-strong) !important;
+}
+.ws-avatar {
+  background: var(--ds-primary) !important;
+}
+.ws-name {
+  color: var(--ds-ink) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+}
+.ws-plan {
+  color: var(--ds-ink-muted) !important;
+  font-size: 11.5px !important;
+}
+
+.nav-section {
+  padding: 4px 10px 12px !important;
+}
+.nav-section-title {
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  color: var(--ds-ink-muted) !important;
+  padding: 16px 10px 6px !important;
 }
 
 .nav-item {
@@ -93,27 +167,65 @@ summary:focus-visible {
   margin-bottom: 2px;
   transition: background 120ms ease, color 120ms ease !important;
 }
+.nav-item .nav-icon svg {
+  color: var(--ds-ink-muted) !important;
+  width: 16px;
+  height: 16px;
+}
 .nav-item:hover {
   background: var(--ds-surface-hover) !important;
   color: var(--ds-ink) !important;
 }
+.nav-item:hover .nav-icon svg {
+  color: var(--ds-ink) !important;
+}
 .nav-item.active {
-  background: var(--ds-accent-soft) !important;
-  color: var(--ds-accent-hover) !important;
+  background: var(--ds-nav-selected) !important;
+  color: var(--ds-ink) !important;
   font-weight: 600 !important;
 }
 .nav-item.active .nav-icon svg {
-  color: var(--ds-accent) !important;
+  color: var(--ds-ink) !important;
 }
 
+.nav-badge-red {
+  background: var(--ds-danger) !important;
+  color: #FFFFFF !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  min-width: 19px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 5px !important;
+}
+
+.nav-bottom {
+  border-top: 1px solid var(--ds-border) !important;
+  padding: 10px 10px 12px !important;
+  background: var(--ds-sidebar) !important;
+}
+
+.user-profile-item {
+  border-radius: var(--ds-radius-sm) !important;
+  padding: 8px 10px !important;
+}
+.user-profile-item:hover {
+  background: var(--ds-surface-hover) !important;
+}
+.user-avatar {
+  background: var(--ds-primary) !important;
+  color: #FFFFFF !important;
+}
+
+/* Clean White Topbar */
 .topbar {
   height: 56px !important;
   background: var(--ds-surface) !important;
   border-bottom: 1px solid var(--ds-border) !important;
-  padding: 0 20px !important;
+  padding: 0 24px !important;
   display: flex !important;
   align-items: center !important;
-  gap: 14px !important;
+  gap: 16px !important;
 }
 
 .topbar-title-wrap {
@@ -123,18 +235,18 @@ summary:focus-visible {
 .topbar-title,
 #page-title,
 #page-title h1 {
-  font-size: 16px !important;
-  font-weight: 700 !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
   color: var(--ds-ink) !important;
-  letter-spacing: -0.015em !important;
+  letter-spacing: -0.01em !important;
   white-space: nowrap !important;
   margin: 0 !important;
 }
 
 .topbar-search-wrap {
-  flex: 0 1 300px !important;
-  min-width: 170px;
-  max-width: 320px !important;
+  flex: 0 1 320px !important;
+  min-width: 180px;
+  max-width: 340px !important;
   margin-right: auto !important;
 }
 .topbar-search-input {
@@ -142,13 +254,16 @@ summary:focus-visible {
   background: var(--ds-surface-subtle) !important;
   border: 1px solid var(--ds-border) !important;
   border-radius: var(--ds-radius-sm) !important;
-  font-size: 12.5px !important;
+  font-size: 13px !important;
   color: var(--ds-ink) !important;
+}
+.topbar-search-input::placeholder {
+  color: var(--ds-ink-muted) !important;
 }
 .topbar-search-input:focus {
   background: var(--ds-surface) !important;
   border-color: var(--ds-accent) !important;
-  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.1) !important;
+  box-shadow: 0 0 0 3px rgba(139, 122, 224, 0.14) !important;
 }
 
 .topbar-actions {
@@ -158,17 +273,58 @@ summary:focus-visible {
   flex-shrink: 0 !important;
 }
 
+.notif-bell-btn {
+  border-radius: var(--ds-radius-sm) !important;
+  border: 1px solid var(--ds-border) !important;
+  background: var(--ds-surface) !important;
+  color: var(--ds-ink-secondary) !important;
+}
+.notif-bell-btn:hover {
+  background: var(--ds-surface-subtle) !important;
+  color: var(--ds-ink) !important;
+}
+.topbar-avatar {
+  background: var(--ds-primary) !important;
+  color: #FFFFFF !important;
+  font-weight: 600 !important;
+}
+
+/* Predominantly White Main Workspace */
 .content-wrapper {
-  background: var(--ds-canvas) !important;
-  padding: 20px 24px 36px !important;
+  background: var(--ds-surface) !important;
+  padding: 24px 32px 40px !important;
 }
 .content-wrapper.inbox-view-container {
   padding: 0 !important;
   background: var(--ds-surface) !important;
 }
 
+/* Clear Page Headings (22-26px) */
+.ds-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.ds-page-h1 {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--ds-ink);
+  margin: 0 0 4px;
+  line-height: 1.25;
+}
+.ds-page-sub {
+  font-size: 14px;
+  color: var(--ds-ink-muted);
+  margin: 0;
+  line-height: 1.45;
+}
+
 /* ============================================================================
-   2. REUSABLE COMPONENTS (Buttons, Inputs, Badges, Cards, Tables, Tabs)
+   2. REUSABLE COMPONENTS (Compact Black Buttons, Inputs, Pills, Cards, Tables)
    ============================================================================ */
 .btn {
   display: inline-flex;
@@ -176,10 +332,10 @@ summary:focus-visible {
   justify-content: center;
   gap: 6px;
   font-family: var(--ds-font);
-  font-weight: 600;
-  font-size: 13px;
-  height: 34px;
-  padding: 0 13px;
+  font-weight: 500;
+  font-size: 13.5px;
+  height: 36px;
+  padding: 0 14px;
   border-radius: var(--ds-radius-sm);
   border: 1px solid transparent;
   cursor: pointer;
@@ -187,33 +343,35 @@ summary:focus-visible {
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
 }
 .btn-sm {
-  height: 32px;
-  padding: 0 11px;
-  font-size: 12.5px;
+  height: 34px;
+  padding: 0 12px;
+  font-size: 13px;
 }
 .btn-xs {
   height: 28px;
-  padding: 0 9px;
+  padding: 0 10px;
   font-size: 12px;
 }
 .btn-primary {
-  background: var(--ds-accent) !important;
-  border-color: var(--ds-accent) !important;
+  background: var(--ds-primary) !important;
+  border-color: var(--ds-primary) !important;
   color: #FFFFFF !important;
-  box-shadow: 0 1px 2px rgba(234, 88, 12, 0.18);
+  font-weight: 500 !important;
+  box-shadow: var(--ds-shadow-xs);
 }
 .btn-primary:hover {
-  background: var(--ds-accent-hover) !important;
-  border-color: var(--ds-accent-hover) !important;
+  background: var(--ds-primary-hover) !important;
+  border-color: var(--ds-primary-hover) !important;
 }
 .btn-secondary {
   background: var(--ds-surface) !important;
-  border-color: var(--ds-border-strong) !important;
+  border-color: var(--ds-border) !important;
   color: var(--ds-ink) !important;
+  box-shadow: var(--ds-shadow-xs);
 }
 .btn-secondary:hover {
   background: var(--ds-surface-subtle) !important;
-  border-color: #9CA3AF !important;
+  border-color: var(--ds-border-strong) !important;
 }
 .btn-ghost {
   background: transparent !important;
@@ -226,22 +384,26 @@ summary:focus-visible {
 }
 
 .input, select.input {
-  height: 34px;
-  border: 1px solid var(--ds-border-strong);
+  height: 36px;
+  border: 1px solid var(--ds-border);
   border-radius: var(--ds-radius-sm);
   background: var(--ds-surface);
   color: var(--ds-ink);
-  font-size: 13px;
+  font-size: 13.5px;
   font-family: var(--ds-font);
-  padding: 0 10px;
+  padding: 0 12px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.input:hover, select.input:hover {
+  border-color: var(--ds-border-strong);
 }
 .input:focus, select.input:focus {
   border-color: var(--ds-accent);
-  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.1);
+  box-shadow: 0 0 0 3px rgba(139, 122, 224, 0.14);
   outline: none;
 }
 
-/* Consistent Surfaces & Cards */
+/* Consistent Surfaces & Cards (Thin #EAEAF0 borders, barely visible shadow) */
 .ds-card {
   background: var(--ds-surface);
   border: 1px solid var(--ds-border);
@@ -254,45 +416,46 @@ summary:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 18px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--ds-border);
 }
 .ds-card-title {
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 14.5px;
+  font-weight: 600;
   color: var(--ds-ink);
   margin: 0;
+  letter-spacing: -0.01em;
 }
 .ds-card-subtitle {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ds-ink-muted);
   margin-top: 2px;
 }
 .ds-card-body {
-  padding: 16px 18px;
+  padding: 16px 20px;
 }
 
-/* Semantic Status Pills (Always icon/dot + clear text) */
+/* Restrained Semantic Status Pills (Never loud or neon) */
 .ds-pill {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  font-weight: 600;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
   line-height: 1.45;
   white-space: nowrap;
   border: 1px solid transparent;
 }
-.ds-pill-neutral { background: #F3F4F6; color: #374151; border-color: #E5E7EB; }
-.ds-pill-info    { background: var(--ds-info-bg); color: var(--ds-info); border-color: var(--ds-info-border); }
-.ds-pill-success { background: var(--ds-success-bg); color: var(--ds-success); border-color: var(--ds-success-border); }
-.ds-pill-warning { background: var(--ds-warning-bg); color: var(--ds-warning); border-color: var(--ds-warning-border); }
-.ds-pill-danger  { background: var(--ds-danger-bg); color: var(--ds-danger); border-color: var(--ds-danger-border); }
-.ds-pill-accent  { background: var(--ds-accent-soft); color: var(--ds-accent-hover); border-color: var(--ds-accent-border); }
+.ds-pill-neutral { background: #F4F4F6; color: #52525B; border-color: #EAEAF0; }
+.ds-pill-info    { background: var(--ds-accent-soft); color: var(--ds-accent-text); border-color: var(--ds-accent-border); }
+.ds-pill-success { background: var(--ds-success-bg); color: var(--ds-success-text); border-color: var(--ds-success-border); }
+.ds-pill-warning { background: var(--ds-warning-bg); color: var(--ds-warning-text); border-color: var(--ds-warning-border); }
+.ds-pill-danger  { background: var(--ds-danger-bg); color: var(--ds-danger-text); border-color: var(--ds-danger-border); }
+.ds-pill-accent  { background: var(--ds-accent-soft); color: var(--ds-accent-text); border-color: var(--ds-accent-border); }
 
-/* Clean Data Tables */
+/* Clean Data Tables (14px readable cells, hairline #EAEAF0 dividers) */
 .ds-table-wrap {
   width: 100%;
   overflow-x: auto;
@@ -300,42 +463,44 @@ summary:focus-visible {
 .ds-table, .crm-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 14px;
 }
 .ds-table th, .crm-table th {
   text-align: left;
-  padding: 10px 14px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  padding: 11px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--ds-ink-muted);
-  background: var(--ds-surface-subtle);
+  background: var(--ds-canvas);
   border-bottom: 1px solid var(--ds-border);
   white-space: nowrap;
 }
 .ds-table td, .crm-table td {
-  padding: 11px 14px;
-  border-bottom: 1px solid #F3F4F6;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--ds-border);
   color: var(--ds-ink);
   vertical-align: middle;
+  font-size: 14px;
 }
 .ds-table tbody tr:last-child td, .crm-table tbody tr:last-child td {
   border-bottom: none;
 }
 .ds-table tbody tr.clickable-row:hover, .crm-table tbody tr.clickable-row:hover {
-  background: #F9FAFB;
+  background: var(--ds-canvas);
   cursor: pointer;
 }
 
-/* Segmented Tabs */
+/* Segmented Tabs (Reference Style: Soft #F7F8FA track + crisp white active tab) */
 .ds-tabs {
   display: inline-flex;
   align-items: center;
   gap: 2px;
   padding: 3px;
-  background: #ECEEF2;
-  border-radius: var(--ds-radius-sm);
+  background: var(--ds-canvas);
+  border: 1px solid var(--ds-border);
+  border-radius: 8px;
   max-width: 100%;
   overflow-x: auto;
   scrollbar-width: none;
@@ -350,9 +515,9 @@ summary:focus-visible {
   border-radius: 6px;
   border: none;
   background: transparent;
-  color: var(--ds-ink-secondary);
-  font-size: 12.5px;
-  font-weight: 600;
+  color: var(--ds-ink-muted);
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
   transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease;
@@ -361,27 +526,90 @@ summary:focus-visible {
 .ds-tab-btn.active {
   background: var(--ds-surface);
   color: var(--ds-ink);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  font-weight: 600;
+  box-shadow: var(--ds-shadow-xs);
 }
 .ds-tab-count {
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
   padding: 0 6px;
-  border-radius: 999px;
-  background: #E5E7EB;
-  color: #374151;
+  border-radius: 5px;
+  background: #EAEAF0;
+  color: var(--ds-ink-secondary);
 }
 .ds-tab-btn.active .ds-tab-count {
   background: var(--ds-accent-soft);
-  color: var(--ds-accent-hover);
+  color: var(--ds-accent-text);
 }
 
-/* Inline Metric Strip (Compact, meaningful, never oversized) */
+/* Reference-Style Bento Summary Grid (Overview) */
+.ds-bento-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.9fr) minmax(0, 1.25fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+@media (max-width: 1120px) {
+  .ds-bento-top { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 720px) {
+  .ds-bento-top { grid-template-columns: 1fr; }
+}
+.ds-bento-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ds-bento-card {
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  padding: 16px 20px;
+  box-shadow: var(--ds-shadow-xs);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+}
+.ds-bento-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.ds-bento-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ds-ink);
+}
+.ds-bento-title svg {
+  color: var(--ds-ink-muted);
+}
+.ds-lavender-strip {
+  display: flex;
+  height: 36px;
+  border-radius: 7px;
+  overflow: hidden;
+  gap: 2px;
+  background: var(--ds-canvas);
+  padding: 2px;
+}
+.ds-lavender-seg {
+  height: 100%;
+  border-radius: 5px;
+  transition: width 260ms ease;
+}
+
+/* Inline Metric Strip (Marketing / Reports) */
 .ds-metric-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 18px;
+  gap: 16px;
+  margin-bottom: 24px;
 }
 @media (max-width: 1024px) {
   .ds-metric-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -392,12 +620,13 @@ summary:focus-visible {
 .ds-metric-tile {
   background: var(--ds-surface);
   border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius-md);
-  padding: 14px 16px;
+  border-radius: var(--ds-radius-lg);
+  padding: 16px 18px;
   text-align: left;
   cursor: pointer;
   width: 100%;
   font-family: var(--ds-font);
+  box-shadow: var(--ds-shadow-xs);
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 .ds-metric-tile:hover {
@@ -405,11 +634,12 @@ summary:focus-visible {
   box-shadow: var(--ds-shadow-sm);
 }
 .ds-metric-tile.is-urgent {
-  border-left: 3px solid var(--ds-accent);
+  border-color: var(--ds-accent-border);
+  background: linear-gradient(180deg, #FFFFFF 0%, #FAF8FF 100%);
 }
 .ds-metric-label {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--ds-ink-muted);
   display: flex;
   align-items: center;
@@ -420,16 +650,16 @@ summary:focus-visible {
   font-weight: 700;
   color: var(--ds-ink);
   letter-spacing: -0.025em;
-  margin-top: 4px;
+  margin-top: 6px;
   line-height: 1.2;
 }
 .ds-metric-sub {
-  font-size: 11.5px;
+  font-size: 12.5px;
   color: var(--ds-ink-muted);
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
-/* Brand Dealership Page Avatar (Recognizable Initials + Channel Dot) */
+/* Understated Dealership Page Initials Badge */
 .ds-page-avatar {
   position: relative;
   width: 28px;
@@ -439,15 +669,16 @@ summary:focus-visible {
   align-items: center;
   justify-content: center;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: -0.02em;
   flex-shrink: 0;
+  border: 1px solid rgba(24, 24, 27, 0.06);
 }
 .ds-page-avatar.sm {
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
-  font-size: 9.5px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  font-size: 10px;
 }
 .ds-page-channel-dot {
   position: absolute;
@@ -461,14 +692,14 @@ summary:focus-visible {
   align-items: center;
   justify-content: center;
   font-size: 7px;
-  font-weight: 800;
+  font-weight: 700;
   color: #FFFFFF;
 }
-.ds-page-channel-dot.fb { background: #1877F2; }
-.ds-page-channel-dot.ig { background: #E1306C; }
+.ds-page-channel-dot.fb { background: #3B82F6; }
+.ds-page-channel-dot.ig { background: #D9468F; }
 
 /* ============================================================================
-   3. FLAGSHIP MULTI-BRAND INBOX (Zero Squeezing, Zero Overlap)
+   3. CALM MULTI-PAGE INBOX (Predominantly White, Zero Clutter, Zero Squeeze)
    ============================================================================ */
 .inbox-layout {
   position: relative;
@@ -482,29 +713,29 @@ summary:focus-visible {
   overflow: hidden !important;
 }
 
-/* Column 0: Page Selector Rail */
+/* Column 0: Quiet Dealership Page Rail */
 .inbox-page-rail {
-  width: 212px !important;
-  min-width: 212px !important;
-  max-width: 212px !important;
-  background: #FAFBFD !important;
+  width: 220px !important;
+  min-width: 220px !important;
+  max-width: 220px !important;
+  background: var(--ds-sidebar) !important;
   border-right: 1px solid var(--ds-border) !important;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
 }
 .inbox-rail-header {
-  padding: 14px 14px 10px !important;
+  padding: 16px 14px 10px !important;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #F1F5F9;
+  border-bottom: 1px solid var(--ds-border);
 }
 .inbox-rail-title {
-  font-size: 11px !important;
-  font-weight: 700 !important;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
   color: var(--ds-ink-muted) !important;
 }
 .inbox-rail-list {
@@ -527,22 +758,22 @@ summary:focus-visible {
   border: 1px solid transparent !important;
   background: transparent;
   color: var(--ds-ink-secondary);
-  font-size: 12.5px !important;
+  font-size: 13px !important;
   font-weight: 500;
   cursor: pointer;
   text-align: left;
   transition: background 120ms ease, color 120ms ease;
 }
 .inbox-rail-item:hover {
-  background: #F1F5F9 !important;
+  background: var(--ds-surface-hover) !important;
   color: var(--ds-ink);
 }
 .inbox-rail-item.active {
-  background: var(--ds-surface) !important;
-  border-color: var(--ds-border) !important;
+  background: var(--ds-nav-selected) !important;
+  border-color: transparent !important;
   color: var(--ds-ink) !important;
-  font-weight: 700 !important;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  font-weight: 600 !important;
+  box-shadow: none !important;
 }
 .inbox-rail-item.active::before {
   content: '';
@@ -555,35 +786,35 @@ summary:focus-visible {
   background: var(--ds-accent);
 }
 .inbox-rail-unread {
-  background: var(--ds-accent) !important;
-  color: #FFFFFF !important;
-  font-size: 10.5px !important;
-  font-weight: 700 !important;
-  min-width: 20px;
-  height: 18px;
+  background: var(--ds-accent-soft) !important;
+  color: var(--ds-accent-text) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  min-width: 22px;
+  height: 19px;
   padding: 0 6px;
-  border-radius: 999px;
+  border-radius: 5px !important;
 }
 .inbox-rail-total {
-  font-size: 11px;
-  color: var(--ds-ink-subtle);
+  font-size: 12px;
+  color: var(--ds-ink-muted);
 }
 .inbox-rail-footer {
   padding: 10px 14px;
   border-top: 1px solid var(--ds-border);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--ds-ink-muted);
-  background: var(--ds-surface);
+  background: var(--ds-sidebar);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Column 1: Conversation List */
+/* Column 1: Clean White Conversation List */
 .inbox-sidebar {
-  width: 304px !important;
-  min-width: 276px !important;
-  max-width: 320px !important;
+  width: 316px !important;
+  min-width: 284px !important;
+  max-width: 332px !important;
   border-right: 1px solid var(--ds-border) !important;
   background: var(--ds-surface) !important;
   display: flex;
@@ -591,11 +822,11 @@ summary:focus-visible {
   flex-shrink: 0;
 }
 .inbox-list-head {
-  padding: 12px 14px 10px;
+  padding: 14px 16px 12px;
   border-bottom: 1px solid var(--ds-border);
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 10px;
   position: relative;
 }
 .inbox-list-head-top {
@@ -605,8 +836,8 @@ summary:focus-visible {
   gap: 8px;
 }
 .inbox-scope-heading {
-  font-size: 14.5px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 600;
   color: var(--ds-ink);
   margin: 0;
   overflow: hidden;
@@ -614,35 +845,36 @@ summary:focus-visible {
   white-space: nowrap;
 }
 .inbox-scope-meta {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--ds-ink-muted);
-  margin-top: 1px;
+  margin-top: 2px;
 }
 
-/* Single-Row Compact Queue Bar (Replaces 3-row 6-pill clutter!) */
+/* Single-Row Quiet Segmented Queue Bar */
 .inbox-queue-bar {
   display: flex;
   align-items: center;
   gap: 2px;
   padding: 3px;
-  background: #F3F4F6;
-  border-radius: var(--ds-radius-sm);
+  background: var(--ds-canvas);
+  border: 1px solid var(--ds-border);
+  border-radius: 8px;
 }
 .inbox-queue-seg {
   flex: 1 1 auto;
   height: 28px;
-  padding: 0 5px;
+  padding: 0 6px;
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--ds-ink-secondary);
-  font-size: 11px;
-  font-weight: 600;
+  color: var(--ds-ink-muted);
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 4px;
   white-space: nowrap;
   transition: all 120ms ease;
 }
@@ -650,43 +882,53 @@ summary:focus-visible {
 .inbox-queue-seg.active {
   background: var(--ds-surface);
   color: var(--ds-ink);
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  font-weight: 600;
+  box-shadow: var(--ds-shadow-xs);
 }
 .inbox-queue-seg .q-cnt {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--ds-ink-muted);
-  font-weight: 600;
+  font-weight: 500;
 }
 .inbox-queue-seg.active .q-cnt {
-  color: var(--ds-accent);
+  color: var(--ds-accent-text);
+  font-weight: 600;
 }
 
-/* Clean 3-line Conversation Row (No badge soup) */
+/* Clean Conversation Rows with Subtle Separators */
 .inbox-conv-item {
   position: relative;
   display: flex !important;
   align-items: flex-start !important;
   gap: 10px !important;
-  padding: 11px 14px !important;
-  border-bottom: 1px solid #F3F4F6 !important;
+  padding: 12px 16px !important;
+  border-bottom: 1px solid var(--ds-border) !important;
   border-left: 3px solid transparent !important;
   cursor: pointer;
   background: var(--ds-surface);
   transition: background 100ms ease;
 }
 .inbox-conv-item:hover {
-  background: #F9FAFB !important;
+  background: var(--ds-canvas) !important;
 }
 .inbox-conv-item.active {
-  background: #FFF7ED !important;
+  background: #F5F3FD !important;
   border-left-color: var(--ds-accent) !important;
 }
+.inbox-conv-item .conv-name {
+  font-size: 14px !important;
+  color: var(--ds-ink) !important;
+}
+.inbox-conv-item .conv-preview {
+  font-size: 13px !important;
+  color: var(--ds-ink-muted) !important;
+}
 .inbox-conv-item.is-unread-row .conv-name {
-  font-weight: 700 !important;
+  font-weight: 600 !important;
   color: var(--ds-ink) !important;
 }
 .inbox-conv-item.is-unread-row .conv-preview {
-  color: #1F2937 !important;
+  color: var(--ds-ink-secondary) !important;
   font-weight: 500 !important;
 }
 .conv-row-footer {
@@ -694,15 +936,15 @@ summary:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  margin-top: 5px;
+  margin-top: 6px;
 }
 .conv-page-tag {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--ds-ink-secondary);
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ds-ink-muted);
   min-width: 0;
   overflow: hidden;
 }
@@ -710,32 +952,32 @@ summary:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 126px;
+  max-width: 132px;
 }
 .conv-state-text {
-  font-size: 10.5px;
-  font-weight: 600;
-  color: var(--ds-accent);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ds-accent-text);
   white-space: nowrap;
   flex-shrink: 0;
 }
 .conv-state-text.draft {
-  color: var(--ds-warning);
+  color: var(--ds-warning-text);
 }
 
-/* Column 2: Chat Workspace */
+/* Column 2: Spacious Pure-White Chat Canvas */
 .inbox-main {
   flex: 1 1 auto !important;
   min-width: 0 !important;
   display: flex;
   flex-direction: column;
-  background: #F8F9FB !important;
+  background: var(--ds-surface) !important;
 }
 .inbox-thread-header {
-  padding: 12px 18px !important;
+  padding: 12px 24px !important;
   background: var(--ds-surface) !important;
   border-bottom: 1px solid var(--ds-border) !important;
-  min-height: 60px !important;
+  min-height: 62px !important;
   display: flex !important;
   align-items: center !important;
   gap: 12px !important;
@@ -743,54 +985,57 @@ summary:focus-visible {
 .inbox-thread {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 22px !important;
+  padding: 24px 28px !important;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  background: var(--ds-surface) !important;
 }
 .msg-date-divider {
   text-align: center;
   margin: 4px 0 8px;
 }
 .msg-date-divider span {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 11.5px;
+  font-weight: 500;
   color: var(--ds-ink-muted);
-  background: #ECEEF2;
+  background: var(--ds-canvas);
+  border: 1px solid var(--ds-border);
   padding: 3px 10px;
-  border-radius: 999px;
+  border-radius: 6px;
 }
 .msg-in .msg-bubble {
-  background: var(--ds-surface) !important;
+  background: var(--ds-canvas) !important;
   border: 1px solid var(--ds-border) !important;
   color: var(--ds-ink) !important;
-  border-radius: 4px 14px 14px 14px !important;
+  border-radius: 4px 12px 12px 12px !important;
   padding: 10px 14px !important;
-  font-size: 13.5px !important;
+  font-size: 14px !important;
   line-height: 1.5 !important;
-  box-shadow: var(--ds-shadow-xs);
-  max-width: 78%;
+  box-shadow: none !important;
+  max-width: 76%;
 }
 .msg-out .msg-bubble {
-  background: #1F2937 !important;
+  background: var(--ds-primary) !important;
   color: #FFFFFF !important;
-  border-radius: 14px 4px 14px 14px !important;
+  border-radius: 12px 4px 12px 12px !important;
   padding: 10px 14px !important;
-  font-size: 13.5px !important;
+  font-size: 14px !important;
   line-height: 1.5 !important;
-  max-width: 78%;
+  box-shadow: none !important;
+  max-width: 76%;
 }
 
-/* Unified Single Composer Card (Replaces 3 stacked cluttered bars!) */
+/* Calm Single Composer Card with Clear "Replying as [Page Name]" */
 .ds-composer-shell {
-  padding: 12px 18px 16px;
-  background: #F8F9FB;
+  padding: 12px 24px 18px;
+  background: var(--ds-surface);
   border-top: 1px solid var(--ds-border);
 }
 .ds-composer-card {
   background: var(--ds-surface);
   border: 1px solid var(--ds-border-strong);
-  border-radius: var(--ds-radius-lg);
+  border-radius: var(--ds-radius-md);
   box-shadow: var(--ds-shadow-xs);
   overflow: visible;
   position: relative;
@@ -798,40 +1043,40 @@ summary:focus-visible {
 }
 .ds-composer-card:focus-within {
   border-color: var(--ds-accent);
-  box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.1);
+  box-shadow: 0 0 0 3px rgba(139, 122, 224, 0.14);
 }
 .ds-composer-card.sender-mismatch {
-  border-color: #F59E0B;
+  border-color: var(--ds-warning);
 }
 .ds-composer-sender-strip {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 7px 12px;
-  background: #FAFBFD;
-  border-bottom: 1px solid #F1F5F9;
-  border-radius: 11px 11px 0 0;
-  font-size: 12px;
+  padding: 8px 14px;
+  background: var(--ds-canvas);
+  border-bottom: 1px solid var(--ds-border);
+  border-radius: 9px 9px 0 0;
+  font-size: 12.5px;
   color: var(--ds-ink-secondary);
 }
 .ds-composer-card.sender-mismatch .ds-composer-sender-strip {
   background: var(--ds-warning-bg);
-  color: var(--ds-warning);
+  color: var(--ds-warning-text);
 }
 .ds-composer-input-wrap {
-  padding: 8px 12px 4px;
+  padding: 10px 14px 4px;
 }
 .ds-composer-textarea {
   width: 100%;
-  min-height: 44px;
-  max-height: 130px;
+  min-height: 46px;
+  max-height: 136px;
   border: none;
   outline: none;
   resize: none;
   font-family: var(--ds-font);
-  font-size: 13.5px;
-  line-height: 1.48;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--ds-ink);
   background: transparent;
 }
@@ -840,8 +1085,8 @@ summary:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 10px 8px;
-  border-top: 1px solid #F3F4F6;
+  padding: 8px 12px;
+  border-top: 1px solid var(--ds-border);
 }
 .ds-composer-tools-left {
   display: flex;
@@ -854,12 +1099,12 @@ summary:focus-visible {
   align-items: center;
   gap: 5px;
   height: 30px;
-  padding: 0 9px;
+  padding: 0 10px;
   border-radius: 6px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--ds-ink-secondary);
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
@@ -891,9 +1136,9 @@ summary:focus-visible {
   cursor: pointer;
   display: block;
 }
-.ds-saved-reply-opt:hover { background: var(--ds-surface-hover); }
+.ds-saved-reply-opt:hover { background: var(--ds-canvas); }
 
-/* Column 3: Docked Customer Details Panel — NEVER covers Send button on desktop! */
+/* Column 3: Collapsible Customer Details Panel — NEVER squeezes chat or Send button */
 .inbox-details {
   width: 324px !important;
   min-width: 312px !important;
@@ -910,8 +1155,6 @@ summary:focus-visible {
   display: none !important;
 }
 
-/* SMART ADAPTIVE LAYOUT: At 1160px–1540px, opening Details auto-compacts the Page Rail
-   into the clean Conv-List Page Selector bar so Chat + Send + Details ALL sit side-by-side! */
 @media (max-width: 1540px) and (min-width: 1081px) {
   .inbox-layout:not(.details-collapsed) .inbox-page-rail {
     display: none !important;
@@ -920,36 +1163,35 @@ summary:focus-visible {
     display: block !important;
   }
   .inbox-layout:not(.details-collapsed) .inbox-sidebar {
-    width: 272px !important;
+    width: 276px !important;
     min-width: 256px !important;
   }
 }
 
-/* At <= 1080px, Page Rail stays in top Page Selector bar; Details slides cleanly with close button */
 @media (max-width: 1080px) {
   .inbox-page-rail { display: none !important; }
   .inbox-mobile-page-bar { display: block !important; }
-  .inbox-sidebar { width: 274px !important; min-width: 254px !important; }
+  .inbox-sidebar { width: 276px !important; min-width: 254px !important; }
   .inbox-layout:not(.details-collapsed) .inbox-details {
     position: absolute !important;
     top: 0;
     right: 0;
     bottom: 0;
     z-index: 40;
-    box-shadow: -12px 0 32px rgba(15, 23, 42, 0.16) !important;
+    box-shadow: -12px 0 32px rgba(24, 24, 27, 0.12) !important;
   }
 }
 
-/* Mobile <= 768px (390px): Clean 3-step List -> Chat -> Details flow + Mobile Card Rows */
+/* Mobile <= 768px (390px) */
 @media (max-width: 768px) {
-  .content-wrapper { padding: 14px 12px 28px !important; }
-  .topbar { padding: 0 10px !important; gap: 6px !important; }
+  .content-wrapper { padding: 16px 14px 32px !important; }
+  .topbar { padding: 0 12px !important; gap: 8px !important; }
   .topbar-search-wrap { display: none !important; }
   .topbar-title-wrap { margin-right: auto !important; overflow: hidden; }
   .topbar-title, #page-title, #page-title h1 { font-size: 15px !important; overflow: hidden; text-overflow: ellipsis; }
   .topbar-actions .btn-secondary,
   .topbar-actions .ds-tabs { display: none !important; }
-  .topbar-actions .btn-primary { padding: 0 10px !important; font-size: 12px !important; height: 32px !important; }
+  .topbar-actions .btn-primary { padding: 0 10px !important; font-size: 12.5px !important; height: 32px !important; }
   .inbox-layout { height: calc(100vh - 56px) !important; }
   .inbox-layout.view-list .inbox-sidebar { width: 100% !important; max-width: 100% !important; border-right: none !important; }
   .inbox-layout.view-list .inbox-main { display: none !important; }
@@ -957,10 +1199,10 @@ summary:focus-visible {
   .inbox-layout.view-chat .inbox-main { width: 100% !important; }
   .inbox-layout:not(.details-collapsed) .inbox-details { width: 100% !important; max-width: 100% !important; }
   .inbox-back-btn { display: inline-flex !important; min-width: 36px; min-height: 36px; align-items: center; justify-content: center; }
-  .inbox-thread-header { padding: 10px 12px !important; gap: 8px !important; }
+  .inbox-thread-header { padding: 10px 14px !important; gap: 8px !important; }
   .inbox-thread-header .thread-avatar,
   .inbox-thread-header .ds-pill { display: none !important; }
-  .ds-composer-shell { padding: 8px 10px 10px; }
+  .ds-composer-shell { padding: 10px 12px 12px; }
   .ds-queue-row { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; padding: 12px 14px !important; }
   .crm-filter-bar { flex-direction: column !important; align-items: stretch !important; }
   .crm-filter-bar .input, .crm-filter-bar select { flex: 0 0 auto !important; width: 100% !important; max-width: 100% !important; height: 36px !important; }
@@ -978,16 +1220,16 @@ summary:focus-visible {
   gap: 4px;
 }
 .ds-field-label {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--ds-ink-muted);
 }
 .ds-inline-input {
-  height: 32px;
-  padding: 0 8px;
+  height: 34px;
+  padding: 0 10px;
   border: 1px solid var(--ds-border);
-  border-radius: 6px;
-  font-size: 12.5px;
+  border-radius: 7px;
+  font-size: 13px;
   font-family: var(--ds-font);
   color: var(--ds-ink);
   background: var(--ds-surface);
@@ -995,16 +1237,17 @@ summary:focus-visible {
 }
 .ds-inline-input:focus {
   border-color: var(--ds-accent);
+  box-shadow: 0 0 0 3px rgba(139, 122, 224, 0.14);
   outline: none;
 }
 
 /* ============================================================================
-   4. OVERVIEW WORKBENCH ("My Day" / "Dealership Pulse")
+   4. OVERVIEW WORKBENCH
    ============================================================================ */
 .ds-overview-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr);
-  gap: 18px;
+  grid-template-columns: minmax(0, 1.65fr) minmax(300px, 1fr);
+  gap: 20px;
   align-items: start;
 }
 @media (max-width: 1080px) {
@@ -1015,66 +1258,79 @@ summary:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 18px;
-  border-bottom: 1px solid #F3F4F6;
+  padding: 13px 20px;
+  border-bottom: 1px solid var(--ds-border);
   cursor: pointer;
   transition: background 100ms ease;
 }
 .ds-queue-row:last-child { border-bottom: none; }
-.ds-queue-row:hover { background: #F9FAFB; }
+.ds-queue-row:hover { background: var(--ds-canvas); }
 
 /* ============================================================================
-   5. PIPELINE BOARD & CARDS (Useful Without Opening + Finance Status)
+   5. UNDERSTATED KANBAN PIPELINE (Reference-Aligned)
    ============================================================================ */
 .ds-kanban-board {
   display: grid;
-  grid-template-columns: repeat(6, minmax(220px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(6, minmax(236px, 1fr));
+  gap: 16px;
   overflow-x: auto;
-  padding-bottom: 12px;
+  padding-bottom: 16px;
   align-items: start;
 }
 .ds-kanban-col {
-  background: #EFF1F5;
+  background: var(--ds-canvas);
+  border: 1px solid var(--ds-border);
   border-radius: var(--ds-radius-lg);
-  padding: 10px;
-  min-height: 360px;
+  padding: 12px;
+  min-height: 380px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 .ds-kanban-col-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 4px 6px;
+  padding: 2px 4px 6px;
 }
 .ds-kanban-card {
   background: var(--ds-surface);
   border: 1px solid var(--ds-border);
   border-radius: var(--ds-radius-md);
-  padding: 12px;
+  padding: 14px;
   box-shadow: var(--ds-shadow-xs);
   cursor: pointer;
-  transition: border-color 120ms ease, box-shadow 120ms ease;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
 }
 .ds-kanban-card:hover {
   border-color: var(--ds-border-strong);
   box-shadow: var(--ds-shadow-sm);
+  transform: translateY(-1px);
+}
+.ds-kanban-due-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--ds-canvas);
+  border: 1px solid var(--ds-border);
+  font-size: 12px;
+  color: var(--ds-ink-secondary);
 }
 
 /* ============================================================================
-   6. REPORTS & MARKETING VISUAL CHARTS (Clean Horizontal Bars & Funnel)
+   6. UNDERSTATED CHARTS (Lavender #8B7AE0 + Semantic Accents)
    ============================================================================ */
 .ds-bar-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 .ds-bar-row {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 6px;
   cursor: pointer;
 }
 .ds-bar-meta {
@@ -1082,11 +1338,11 @@ summary:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  font-size: 12.5px;
+  font-size: 13.5px;
 }
 .ds-bar-track {
   height: 8px;
-  background: #F3F4F6;
+  background: var(--ds-canvas);
   border-radius: 999px;
   overflow: hidden;
 }
@@ -1096,28 +1352,17 @@ summary:focus-visible {
   background: var(--ds-accent);
   transition: width 260ms ease;
 }
-.ds-bar-fill.secondary { background: #2563EB; }
-.ds-bar-fill.success   { background: #059669; }
+.ds-bar-fill.secondary { background: #A799EB; }
+.ds-bar-fill.success   { background: var(--ds-success); }
+.ds-bar-fill.warning   { background: var(--ds-warning); }
 
-.ds-diagnostics-disclosure {
-  margin-top: 12px;
-  border-top: 1px solid var(--ds-border);
-  padding-top: 10px;
-}
-.ds-diagnostics-disclosure summary {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--ds-ink-secondary);
-  cursor: pointer;
-  user-select: none;
-}
 .ds-diagnostics-pre {
   margin-top: 8px;
-  padding: 10px 12px;
-  background: #F9FAFB;
+  padding: 12px 14px;
+  background: var(--ds-canvas);
   border: 1px solid var(--ds-border);
-  border-radius: 6px;
-  font-size: 11.5px;
+  border-radius: 8px;
+  font-size: 12px;
   color: var(--ds-ink-secondary);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   overflow-x: auto;
@@ -1137,7 +1382,7 @@ summary:focus-visible {
   height: 44px;
   margin: 0 auto 12px;
   border-radius: 10px;
-  background: var(--ds-surface-subtle);
+  background: var(--ds-canvas);
   border: 1px solid var(--ds-border);
   display: flex;
   align-items: center;
@@ -1145,15 +1390,38 @@ summary:focus-visible {
   color: var(--ds-ink-muted);
 }
 .ds-empty-title {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 15.5px;
+  font-weight: 600;
   color: var(--ds-ink);
   margin: 0 0 6px;
 }
 .ds-empty-desc {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--ds-ink-muted);
   max-width: 440px;
   margin: 0 auto 16px;
   line-height: 1.5;
+}
+
+/* Drawers, Modals & Login Alignment */
+#drawer {
+  background: var(--ds-surface) !important;
+  border-left: 1px solid var(--ds-border) !important;
+  box-shadow: var(--ds-shadow-md) !important;
+}
+.drawer-header, .modal-header {
+  border-bottom: 1px solid var(--ds-border) !important;
+}
+.modal {
+  border-radius: var(--ds-radius-lg) !important;
+  border: 1px solid var(--ds-border) !important;
+  box-shadow: var(--ds-shadow-md) !important;
+}
+.auth-screen {
+  background: var(--ds-canvas) !important;
+}
+.auth-card {
+  border: 1px solid var(--ds-border) !important;
+  border-radius: var(--ds-radius-lg) !important;
+  box-shadow: var(--ds-shadow-sm) !important;
 }

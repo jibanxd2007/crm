@@ -53,12 +53,12 @@
   };
 
   const PAGE_PALETTES = [
-    { bg: '#EEF2FF', fg: '#3730A3' },
-    { bg: '#FFF7ED', fg: '#C2410C' },
-    { bg: '#ECFDF5', fg: '#047857' },
-    { bg: '#EFF6FF', fg: '#1D4ED8' },
-    { bg: '#F5F3FF', fg: '#6D28D9' },
-    { bg: '#FEF3C7', fg: '#B45309' }
+    { bg: '#EEE9FC', fg: '#5B47B8' },
+    { bg: '#F4F4F6', fg: '#3F3F46' },
+    { bg: '#ECFDF5', fg: '#157A50' },
+    { bg: '#FEF7EC', fg: '#9A5B13' },
+    { bg: '#F3F0FF', fg: '#6D28D9' },
+    { bg: '#EFF6FF', fg: '#1E40AF' }
   ];
 
   const proto = MetaCRMApp.prototype;
@@ -249,52 +249,142 @@
 
     const hour = new Date().getHours();
     const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    const soldDealsCount = allLeads.filter(l => ['Won', 'Converted', 'Sold'].includes(l.status)).length;
+    const workloadTotal = Math.max(1, waitingConvs.length + activeDeals.length + soldDealsCount);
+    const segWait = Math.round((waitingConvs.length / workloadTotal) * 100);
+    const segActive = Math.round((activeDeals.length / workloadTotal) * 100);
+    const segSold = Math.max(0, 100 - segWait - segActive);
+
+    // Per-page waiting breakdown for the right-hand activity chart
+    const pagePulse = availablePages.slice(0, 6).map(p => {
+      const pid = p.id || p.page_id;
+      const wCnt = waitingConvs.filter(c => this._dsConvMatchesPage(c, pid)).length;
+      const lCnt = allLeads.filter(l => this._dsNormPage(l.page_id || l.pageId) === this._dsNormPage(pid)).length;
+      return { id: pid, name: p.name, waiting: wCnt, leads: lCnt, total: wCnt + lCnt };
+    });
+    const maxPulse = Math.max(1, ...pagePulse.map(x => x.total));
 
     this.el.content.innerHTML = `
       <div style="max-width:1360px;margin:0 auto;">
-        <div style="display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+        <div class="ds-page-header">
           <div>
-            <h2 style="font-size:20px;font-weight:700;letter-spacing:-0.02em;margin:0 0 3px;color:var(--ds-ink);">
-              ${greeting}, ${esc(this.user.displayName || this.user.name || 'Team')}
-            </h2>
-            <p style="font-size:13px;color:var(--ds-ink-muted);margin:0;">
+            <h2 class="ds-page-h1">${greeting}, ${esc(this.user.displayName || this.user.name || 'Team')}</h2>
+            <p class="ds-page-sub">
               ${isAdmin ? `Monitoring ${availablePages.length} authorised dealership pages · New Zealand time (Pacific/Auckland)` : `Your assigned pages & daily priorities · New Zealand time (Pacific/Auckland)`}
             </p>
           </div>
           ${businessNotice && isAdmin ? `
-            <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--ds-warning-bg);border:1px solid var(--ds-warning-border);border-radius:8px;font-size:12.5px;color:var(--ds-warning);">
-              ${this._dsIcon('alert', 14)}
+            <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--ds-warning-bg);border:1px solid var(--ds-warning-border);border-radius:8px;font-size:13px;color:var(--ds-warning-text);">
+              ${this._dsIcon('alert', 15)}
               <span>${esc(businessNotice)}</span>
               ${needsReconnect ? `<button type="button" class="btn btn-secondary btn-xs" onclick="window.app.settingsTab='accounts';window.app.navigate('settings');">Reconnect Facebook</button>` : ''}
             </div>
           ` : ''}
         </div>
 
-        <!-- 4 COMPACT OPERATIONAL METRICS -->
-        <div class="ds-metric-strip">
-          <button type="button" class="ds-metric-tile ${waitingConvs.length > 0 ? 'is-urgent' : ''}" onclick="window.app.inboxTab='needs_reply';window.app.navigate('inbox');">
-            <div class="ds-metric-label"><span>Waiting for Reply</span>${this._dsIcon('message', 15)}</div>
-            <div class="ds-metric-value">${waitingConvs.length}</div>
-            <div class="ds-metric-sub">${waitingConvs.length > 0 ? 'Customers sent the last message' : 'All conversations answered'}</div>
-          </button>
+        <!-- REFERENCE-ALIGNED BENTO SUMMARY ROW -->
+        <div class="ds-bento-top">
+          <!-- Card 1: Enquiry Status + Lavender Segmented Strip -->
+          <div class="ds-bento-card">
+            <div class="ds-bento-head">
+              <span class="ds-bento-title">${this._dsIcon('message', 15)}<span>Enquiry workload</span></span>
+              <button type="button" class="btn btn-ghost btn-xs" onclick="window.app.inboxTab='needs_reply';window.app.navigate('inbox');">Open Inbox →</button>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px;">
+              <div style="cursor:pointer;" onclick="window.app.inboxTab='needs_reply';window.app.navigate('inbox');">
+                <div style="font-size:24px;font-weight:700;color:var(--ds-ink);letter-spacing:-0.02em;line-height:1.2;">${waitingConvs.length}</div>
+                <div style="font-size:12.5px;color:var(--ds-ink-muted);margin-top:2px;">Waiting reply</div>
+              </div>
+              <div style="cursor:pointer;" onclick="window.app.leadSavedView='${isAdmin ? 'unassigned' : 'all'}';window.app.navigate('leads');">
+                <div style="font-size:24px;font-weight:700;color:var(--ds-ink);letter-spacing:-0.02em;line-height:1.2;">${isAdmin ? unassignedLeads.length : activeDeals.length}</div>
+                <div style="font-size:12.5px;color:var(--ds-ink-muted);margin-top:2px;">${isAdmin ? 'Unassigned' : 'Active deals'}</div>
+              </div>
+              <div style="cursor:pointer;" onclick="window.app.leadSavedView='sold';window.app.navigate('leads');">
+                <div style="font-size:24px;font-weight:700;color:var(--ds-ink);letter-spacing:-0.02em;line-height:1.2;">${soldDealsCount}</div>
+                <div style="font-size:12.5px;color:var(--ds-ink-muted);margin-top:2px;">Vehicles sold</div>
+              </div>
+            </div>
+            <div>
+              <div class="ds-lavender-strip" aria-hidden="true">
+                ${waitingConvs.length + activeDeals.length + soldDealsCount === 0 ? `
+                  <div class="ds-lavender-seg" style="width:100%;background:#EEE9FC;"></div>
+                ` : `
+                  ${segWait > 0 ? `<div class="ds-lavender-seg" style="width:${Math.max(12, segWait)}%;background:#7A68D8;"></div>` : ''}
+                  ${segActive > 0 ? `<div class="ds-lavender-seg" style="width:${Math.max(10, segActive)}%;background:#A899EB;"></div>` : ''}
+                  ${segSold > 0 ? `<div class="ds-lavender-seg" style="width:${Math.max(8, segSold)}%;background:#D5CCF8;"></div>` : ''}
+                  <div class="ds-lavender-seg" style="flex:1;background:#EEE9FC;"></div>
+                `}
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--ds-ink-muted);margin-top:6px;">
+                <span>${waitingConvs.length > 0 ? `${waitingConvs.length} customer messages waiting` : 'All conversations answered'}</span>
+                <span>${activeDeals.length} open</span>
+              </div>
+            </div>
+          </div>
 
-          <button type="button" class="ds-metric-tile ${dueOrOverdueTasks.length > 0 ? 'is-urgent' : ''}" onclick="window.app.navigate('tasks');">
-            <div class="ds-metric-label"><span>Follow-ups &amp; Visits Due</span>${this._dsIcon('calendar', 15)}</div>
-            <div class="ds-metric-value">${dueOrOverdueTasks.length}</div>
-            <div class="ds-metric-sub">${todayVisits.length > 0 ? `${todayVisits.length} yard visit${todayVisits.length > 1 ? 's' : ''} booked today` : 'No yard visits scheduled today'}</div>
-          </button>
+          <!-- Card 2: Stacked Follow-ups & Open Pipeline NZD -->
+          <div class="ds-bento-stack">
+            <div class="ds-bento-card" style="cursor:pointer;flex:1;" onclick="window.app.navigate('tasks');">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                <div>
+                  <div style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;color:var(--ds-ink-muted);">${this._dsIcon('calendar', 14)}<span>Follow-ups &amp; visits</span></div>
+                  <div style="font-size:24px;font-weight:700;color:var(--ds-ink);letter-spacing:-0.02em;margin-top:4px;">${dueOrOverdueTasks.length}</div>
+                  <div style="font-size:12px;color:${todayVisits.length > 0 ? 'var(--ds-success-text)' : 'var(--ds-ink-muted)'};margin-top:2px;">${todayVisits.length > 0 ? `${todayVisits.length} yard visit${todayVisits.length > 1 ? 's' : ''} today` : 'No yard visits today'}</div>
+                </div>
+                <svg width="68" height="36" viewBox="0 0 68 36" fill="none" aria-hidden="true">
+                  <rect x="4" y="20" width="6" height="14" rx="2" fill="#EEE9FC"/>
+                  <rect x="14" y="14" width="6" height="20" rx="2" fill="#D5CCF8"/>
+                  <rect x="24" y="22" width="6" height="12" rx="2" fill="#EEE9FC"/>
+                  <rect x="34" y="10" width="6" height="24" rx="2" fill="#8B7AE0"/>
+                  <rect x="44" y="16" width="6" height="18" rx="2" fill="#D5CCF8"/>
+                  <rect x="54" y="6" width="6" height="28" rx="2" fill="#E99A36"/>
+                </svg>
+              </div>
+            </div>
 
-          <button type="button" class="ds-metric-tile ${unassignedLeads.length > 0 ? 'is-urgent' : ''}" onclick="window.app.leadSavedView='unassigned';window.app.navigate('leads');">
-            <div class="ds-metric-label"><span>${isAdmin ? 'Unassigned Enquiries' : 'Active Enquiries'}</span>${this._dsIcon('user', 15)}</div>
-            <div class="ds-metric-value">${isAdmin ? unassignedLeads.length : activeDeals.length}</div>
-            <div class="ds-metric-sub">${isAdmin ? `${activeDeals.length} open enquiries total` : 'Assigned to your pages'}</div>
-          </button>
+            <div class="ds-bento-card" style="cursor:pointer;flex:1;" onclick="window.app.navigate('pipeline');">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                <div>
+                  <div style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;color:var(--ds-ink-muted);">${this._dsIcon('layers', 14)}<span>Open pipeline (NZD)</span></div>
+                  <div style="font-size:22px;font-weight:700;color:var(--ds-ink);letter-spacing:-0.02em;margin-top:4px;">${pipelineValueNzd > 0 ? this.formatMoney(pipelineValueNzd) : (activeDeals.length > 0 ? `${activeDeals.length} deals` : 'No data')}</div>
+                  <div style="font-size:12px;color:var(--ds-ink-muted);margin-top:2px;">${activeDeals.length} active vehicle enquir${activeDeals.length === 1 ? 'y' : 'ies'}</div>
+                </div>
+                <svg width="68" height="36" viewBox="0 0 68 36" fill="none" aria-hidden="true">
+                  <path d="M4 28 L18 22 L32 25 L48 13 L64 9" stroke="#8B7AE0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <circle cx="48" cy="13" r="3" fill="#8B7AE0"/>
+                  <circle cx="64" cy="9" r="3" fill="#22A66F"/>
+                </svg>
+              </div>
+            </div>
+          </div>
 
-          <button type="button" class="ds-metric-tile" onclick="window.app.navigate('pipeline');">
-            <div class="ds-metric-label"><span>Open Pipeline Value</span>${this._dsIcon('layers', 15)}</div>
-            <div class="ds-metric-value">${pipelineValueNzd > 0 ? this.formatMoney(pipelineValueNzd) : (activeDeals.length > 0 ? `${activeDeals.length} deals` : 'No data')}</div>
-            <div class="ds-metric-sub">${activeDeals.length} active vehicle enquiries (NZD)</div>
-          </button>
+          <!-- Card 3: Dealership Page Activity Chart -->
+          <div class="ds-bento-card">
+            <div class="ds-bento-head">
+              <span class="ds-bento-title">${this._dsIcon('layers', 15)}<span>Page activity</span></span>
+              ${isAdmin ? `<button type="button" class="btn btn-ghost btn-xs" onclick="window.app.settingsTab='accounts';window.app.navigate('settings');">Accounts</button>` : `<span style="font-size:12px;color:var(--ds-ink-muted);">${availablePages.length} assigned</span>`}
+            </div>
+            ${pagePulse.length === 0 ? `
+              <div style="flex:1;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--ds-ink-muted);font-size:13px;padding:12px 0;">
+                No dealership pages assigned to your account yet.
+              </div>
+            ` : `
+              <div style="display:flex;flex-direction:column;gap:9px;">
+                ${pagePulse.map((p, idx) => {
+                  const pct = p.total > 0 ? Math.max(8, Math.round((p.total / maxPulse) * 100)) : 4;
+                  const barColor = idx === 0 ? '#8B7AE0' : (idx === 1 ? '#A799EB' : '#C8BEF6');
+                  return `
+                    <div style="cursor:pointer;" onclick="window.app.openPageInInbox('${esc(p.id)}')">
+                      <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px;gap:8px;">
+                        <span style="font-weight:500;color:var(--ds-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(p.name)}</span>
+                        <span style="color:var(--ds-ink-muted);white-space:nowrap;">${p.waiting} waiting</span>
+                      </div>
+                      <div class="ds-bar-track" style="height:6px;"><div class="ds-bar-fill" style="width:${pct}%;background:${barColor};"></div></div>
+                    </div>`;
+                }).join('')}
+              </div>
+            `}
+          </div>
         </div>
 
         <!-- 2-COLUMN ACTION WORKBENCH -->
@@ -1137,7 +1227,13 @@
 
     this.el.content.innerHTML = `
       <div style="max-width:1360px;margin:0 auto;">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+        <div class="ds-page-header" style="margin-bottom:16px;">
+          <div>
+            <h2 class="ds-page-h1">Leads &amp; Enquiries</h2>
+            <p class="ds-page-sub">Track dealership enquiries, vehicle interest, finance readiness, and assigned salespeople.</p>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
           <div class="ds-tabs" role="tablist">
             ${savedViews.map(sv => `
               <button type="button" role="tab" aria-selected="${view === sv.id}" class="ds-tab-btn ${view === sv.id ? 'active' : ''}" onclick="window.app.renderLeads('${sv.id}')">
@@ -1272,67 +1368,77 @@
     }
 
     const stages = [
-      { id: 'New Lead', label: 'New', dot: '#2563EB' },
-      { id: 'Contacted', label: 'Contacted', dot: '#D97706' },
-      { id: 'Qualified', label: 'Qualified', dot: '#7C3AED' },
-      { id: 'Follow-up', label: 'Visit / Follow-up', dot: '#EA580C' },
-      { id: 'Won', label: 'Sold', dot: '#059669' },
-      { id: 'Lost', label: 'Lost', dot: '#DC2626' }
+      { id: 'New Lead', label: 'New', dot: '#8B7AE0' },
+      { id: 'Contacted', label: 'Contacted', dot: '#E99A36' },
+      { id: 'Qualified', label: 'Qualified', dot: '#6D5BD0' },
+      { id: 'Follow-up', label: 'Visit / Follow-up', dot: '#E99A36' },
+      { id: 'Won', label: 'Sold', dot: '#22A66F' },
+      { id: 'Lost', label: 'Lost', dot: '#DC4C64' }
     ];
     const leads = this._getFilteredLeads ? this._getFilteredLeads(false) : [];
 
     this.el.content.innerHTML = `
-      <div class="ds-kanban-board">
-        ${stages.map(st => {
-          const cards = leads.filter(d => d.status === st.id || (st.id === 'New Lead' && d.status === 'New') || (st.id === 'Won' && ['Converted', 'Sold'].includes(d.status)));
-          const totalVal = cards.reduce((s, c) => s + Number(c.sale_value_nzd || c.budget_nzd || c.value || c.dealValue || 0), 0);
-          return `
-            <div class="ds-kanban-col" data-stage="${st.id}" ondragover="event.preventDefault()" ondrop="window.app.onKanbanDrop(event, '${st.id}')">
-              <div class="ds-kanban-col-head">
-                <div style="display:flex;align-items:center;gap:7px;">
-                  <span style="width:8px;height:8px;border-radius:50%;background:${st.dot};display:inline-block;"></span>
-                  <span style="font-size:13px;font-weight:700;color:var(--ds-ink);">${st.label}</span>
-                  <span class="ds-pill ds-pill-neutral" style="padding:0 6px;font-size:11px;">${cards.length}</span>
+      <div style="max-width:1440px;margin:0 auto;">
+        <div class="ds-page-header" style="margin-bottom:20px;">
+          <div>
+            <h2 class="ds-page-h1">Sales Pipeline</h2>
+            <p class="ds-page-sub">Progress vehicle enquiries from first contact to yard visit and completed NZD sale.</p>
+          </div>
+        </div>
+        <div class="ds-kanban-board">
+          ${stages.map(st => {
+            const cards = leads.filter(d => d.status === st.id || (st.id === 'New Lead' && d.status === 'New') || (st.id === 'Won' && ['Converted', 'Sold'].includes(d.status)));
+            const totalVal = cards.reduce((s, c) => s + Number(c.sale_value_nzd || c.budget_nzd || c.value || c.dealValue || 0), 0);
+            return `
+              <div class="ds-kanban-col" data-stage="${st.id}" ondragover="event.preventDefault()" ondrop="window.app.onKanbanDrop(event, '${st.id}')">
+                <div class="ds-kanban-col-head">
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="width:7px;height:7px;border-radius:50%;background:${st.dot};display:inline-block;"></span>
+                    <span style="font-size:13.5px;font-weight:600;color:var(--ds-ink);">${st.label}</span>
+                    <span style="font-size:12.5px;font-weight:500;color:var(--ds-ink-muted);">${cards.length}</span>
+                  </div>
+                  ${totalVal > 0 ? `<span style="font-size:12px;font-weight:600;color:var(--ds-ink-secondary);">${this.formatMoney(totalVal)}</span>` : ''}
                 </div>
-                ${totalVal > 0 ? `<span style="font-size:11.5px;font-weight:600;color:var(--ds-ink-secondary);">${this.formatMoney(totalVal)}</span>` : ''}
-              </div>
-              ${cards.length === 0 ? `
-                <div style="padding:20px 10px;text-align:center;font-size:12px;color:var(--ds-ink-subtle);border:1px dashed var(--ds-border-strong);border-radius:8px;">
-                  No deals in ${st.label}
-                </div>
-              ` : cards.map(c => {
-                const days = Math.max(0, Math.floor((Date.now() - new Date(c.updated_at || c.created_at || Date.now()).getTime()) / 86400000));
-                const nextDt = c.next_action_at || c.follow_up_date || c.followUpDate;
-                const overdue = nextDt && new Date(nextDt) < new Date() && st.id !== 'Won' && st.id !== 'Lost';
-                const val = Number(c.sale_value_nzd || c.budget_nzd || c.value || c.dealValue || 0);
-                const pName = this._pageName(c.page_id || c.pageId);
-                return `
-                  <article class="ds-kanban-card" draggable="true" ondragstart="window.app.onKanbanDragStart(event, '${esc(c.id)}')" onclick="window.app.openLeadDrawer('${esc(c.id)}')">
-                    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;">
-                      <div style="font-size:13.5px;font-weight:700;color:var(--ds-ink);line-height:1.3;">${esc(c.name || c.full_name || 'Customer')}</div>
-                      <span class="ds-pill ${overdue ? 'ds-pill-danger' : (days >= 3 ? 'ds-pill-warning' : 'ds-pill-neutral')}" style="font-size:10.5px;padding:1px 6px;">${overdue ? 'Overdue' : `${days}d`}</span>
-                    </div>
-                    <div style="display:flex;align-items:center;gap:5px;margin-top:6px;font-size:12.5px;font-weight:600;color:var(--ds-ink-secondary);">
-                      ${this._dsIcon('car', 13)}<span>${esc(c.vehicle_interest || 'Vehicle TBC')}</span>
-                    </div>
-                    <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-top:6px;font-size:12px;">
-                      <span style="color:var(--ds-ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(pName)}</span>
-                      <span style="font-weight:700;color:var(--ds-ink);white-space:nowrap;">${val > 0 ? this.formatMoney(val) : 'Value TBC'}</span>
-                    </div>
-                    ${(c.finance_status || c.payment_preference) ? `<div style="margin-top:7px;">${this._dsFinancePill(c.finance_status, c.payment_preference)}</div>` : ''}
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid #F3F4F6;font-size:11.5px;color:var(--ds-ink-muted);">
-                      <span>${esc(this._staffName(c.assigned_staff_id || c.assignedStaffId || c.assigned_to))}</span>
-                      <span>${nextDt ? new Date(nextDt).toLocaleDateString('en-NZ', { timeZone: 'Pacific/Auckland', day: 'numeric', month: 'short' }) : 'No next date'}</span>
-                    </div>
-                    <div class="kanban-card-stage-bar" onclick="event.stopPropagation()">
-                      <select class="kanban-stage-select" aria-label="Move stage for ${esc(c.name || 'deal')}" onchange="window.app.moveLeadStage('${esc(c.id)}', this.value)">
-                        ${stages.map(opt => `<option value="${opt.id}" ${(c.status === opt.id || (opt.id === 'New Lead' && c.status === 'New')) ? 'selected' : ''}>Stage: ${opt.label}</option>`).join('')}
-                      </select>
-                    </div>
-                  </article>`;
-              }).join('')}
-            </div>`;
-        }).join('')}
+                ${cards.length === 0 ? `
+                  <div style="padding:24px 12px;text-align:center;font-size:13px;color:var(--ds-ink-muted);border:1px dashed var(--ds-border-strong);border-radius:10px;background:var(--ds-surface);">
+                    No deals in ${st.label}
+                  </div>
+                ` : cards.map(c => {
+                  const days = Math.max(0, Math.floor((Date.now() - new Date(c.updated_at || c.created_at || Date.now()).getTime()) / 86400000));
+                  const nextDt = c.next_action_at || c.follow_up_date || c.followUpDate;
+                  const overdue = nextDt && new Date(nextDt) < new Date() && st.id !== 'Won' && st.id !== 'Lost';
+                  const val = Number(c.sale_value_nzd || c.budget_nzd || c.value || c.dealValue || 0);
+                  const pName = this._pageName(c.page_id || c.pageId);
+                  const dueTxt = nextDt ? new Date(nextDt).toLocaleDateString('en-NZ', { timeZone: 'Pacific/Auckland', day: 'numeric', month: 'short' }) : 'No next step';
+                  return `
+                    <article class="ds-kanban-card" draggable="true" ondragstart="window.app.onKanbanDragStart(event, '${esc(c.id)}')" onclick="window.app.openLeadDrawer('${esc(c.id)}')">
+                      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:8px;">
+                        <span style="font-size:12px;color:var(--ds-ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(pName)}</span>
+                        <span class="ds-pill ${overdue ? 'ds-pill-danger' : (days >= 3 ? 'ds-pill-warning' : 'ds-pill-neutral')}" style="font-size:11px;padding:1px 7px;">${overdue ? 'Overdue' : `${days}d`}</span>
+                      </div>
+                      <div style="font-size:14.5px;font-weight:600;color:var(--ds-ink);line-height:1.35;">${esc(c.name || c.full_name || 'Customer')}</div>
+                      <div style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:13px;color:var(--ds-ink-muted);">
+                        ${this._dsIcon('car', 13)}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(c.vehicle_interest || 'Vehicle TBC')}</span>
+                      </div>
+                      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:10px;">
+                        <span class="ds-kanban-due-chip">${this._dsIcon('calendar', 12)}<span>Next: ${esc(dueTxt)}</span></span>
+                        ${val > 0 ? `<span class="ds-pill ds-pill-info" style="font-weight:600;">${this.formatMoney(val)}</span>` : ''}
+                      </div>
+                      ${(c.finance_status || c.payment_preference) ? `<div style="margin-top:8px;">${this._dsFinancePill(c.finance_status, c.payment_preference)}</div>` : ''}
+                      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:10px;border-top:1px solid var(--ds-border);font-size:12px;color:var(--ds-ink-muted);">
+                        <span style="font-weight:500;color:var(--ds-ink-secondary);">${esc(this._staffName(c.assigned_staff_id || c.assignedStaffId || c.assigned_to))}</span>
+                        <span>${val > 0 ? 'NZD' : 'Value TBC'}</span>
+                      </div>
+                      <div class="kanban-card-stage-bar" onclick="event.stopPropagation()" style="margin-top:8px;">
+                        <select class="kanban-stage-select ds-inline-input" style="height:30px;font-size:12px;" aria-label="Move stage for ${esc(c.name || 'deal')}" onchange="window.app.moveLeadStage('${esc(c.id)}', this.value)">
+                          ${stages.map(opt => `<option value="${opt.id}" ${(c.status === opt.id || (opt.id === 'New Lead' && c.status === 'New')) ? 'selected' : ''}>Stage: ${opt.label}</option>`).join('')}
+                        </select>
+                      </div>
+                    </article>`;
+                }).join('')}
+              </div>`;
+          }).join('')}
+        </div>
       </div>`;
   };
 
@@ -1366,6 +1472,12 @@
 
     this.el.content.innerHTML = `
       <div style="max-width:1120px;margin:0 auto;">
+        <div class="ds-page-header" style="margin-bottom:16px;">
+          <div>
+            <h2 class="ds-page-h1">Tasks &amp; Appointments</h2>
+            <p class="ds-page-sub">Manage daily callbacks, follow-ups, and booked yard visits in New Zealand time.</p>
+          </div>
+        </div>
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
           <div class="ds-tabs" role="tablist">
             ${tabs.map(t => `
@@ -1506,10 +1618,10 @@
 
     this.el.content.innerHTML = `
       <div style="max-width:1360px;margin:0 auto;">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+        <div class="ds-page-header" style="margin-bottom:20px;">
           <div>
-            <h2 style="font-size:19px;font-weight:700;margin:0 0 3px;color:var(--ds-ink);">Marketing &amp; Advertising Results</h2>
-            <p style="font-size:12.5px;color:var(--ds-ink-muted);margin:0;">
+            <h2 class="ds-page-h1">Marketing &amp; Advertising Results</h2>
+            <p class="ds-page-sub">
               ${esc(freshnessLine)} · New Zealand Dollars (NZD)
             </p>
           </div>
@@ -1776,10 +1888,10 @@
     this.el.content.innerHTML = `
       <div style="max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:18px;">
         <!-- Consistent Filter Header -->
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div class="ds-page-header" style="margin-bottom:4px;">
           <div>
-            <h2 style="font-size:19px;font-weight:700;margin:0 0 3px;color:var(--ds-ink);">${isAdmin ? 'Dealership Performance Reports' : 'My Sales Results'}</h2>
-            <p style="font-size:12.5px;color:var(--ds-ink-muted);margin:0;">
+            <h2 class="ds-page-h1">${isAdmin ? 'Dealership Performance Reports' : 'My Sales Results'}</h2>
+            <p class="ds-page-sub">
               ${esc(meta.scope || (isAdmin ? 'All Authorised Pages' : 'Assigned Pages Only'))} · Pacific/Auckland (NZ) · NZD ($)
             </p>
           </div>

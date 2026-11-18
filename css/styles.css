@@ -5,107 +5,113 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-/* ─── 1. Polaris Design Tokens & Orange Brand Accents ──────────────────── */
+/* ─── 1. Unified Neutral + Lavender + Ink Design Tokens ──────────────────── */
 :root {
   /* Typography */
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 
-  /* Brand Orange Tokens */
-  --brand-orange:          #FF6700;
-  --brand-orange-hover:    #F45D00;
-  --brand-orange-light:    #FFF4ED;
-  --brand-orange-tint:     #FFF0E5;
-  --brand-orange-border:   #FED7AA;
-  --brand-orange-bubble:   #FFF0E5;
+  /* Brand & Accent Tokens (Aligned to Reference) */
+  --brand-orange:          #18181B;
+  --brand-orange-hover:    #27272A;
+  --brand-orange-light:    #EEE9FC;
+  --brand-orange-tint:     #EEE9FC;
+  --brand-orange-border:   #D8CEF8;
+  --brand-orange-bubble:   #EEE9FC;
 
   /* Surfaces & Backgrounds */
-  --bg-page:               #F7F8FA;  /* Clean Minimal Canvas */
-  --bg-surface:            #FFFFFF;  /* Primary Card / Content Surface */
-  --bg-surface-secondary:  #F7F8FA;  /* Subdued headers, zebra stripes */
-  --bg-surface-hover:      #F7F8FA;  /* Hover state */
-  --bg-surface-active:     #F3F4F6;  /* Pressed / Active button or nav */
-  --bg-surface-selected:   #FFF4ED;  /* Selected nav item / active row */
-  --bg-surface-tertiary:   #F3F4F6;
+  --bg-page:               #F7F8FA;  /* App background */
+  --bg-sidebar:            #F8F8FA;  /* Slim quiet sidebar */
+  --bg-surface:            #FFFFFF;  /* Primary card / workspace surface */
+  --bg-surface-secondary:  #F8F8FA;  /* Subdued headers, secondary panels */
+  --bg-surface-hover:      #F2F3F7;  /* Subtle hover state */
+  --bg-surface-active:     #EEEEF2;  /* Pressed / active state */
+  --bg-surface-selected:   #EEEEF2;  /* Selected nav item / active row */
+  --bg-surface-tertiary:   #EEEEF2;
 
   /* Text Colors */
-  --text-primary:          #17191D;  /* High-contrast deep slate */
-  --text-secondary:        #737B89;  /* Supporting labels & descriptions */
-  --text-muted:            #9CA3AF;  /* Disabled / subtle hints */
+  --text-primary:          #18181B;  /* Crisp primary ink */
+  --text-secondary:        #71717A;  /* Restrained secondary text */
+  --text-muted:            #71717A;  /* Readable muted text */
   --text-on-dark:          #FFFFFF;
 
   /* Borders & Dividers */
-  --border-subtle:         #E8EBF0;  /* Subtle light neutral borders */
-  --border:                #E8EBF0;  /* Input borders & secondary actions */
-  --border-strong:         #9CA3AF;  /* Emphasized borders */
-  --border-focus:          #FF6700;  /* Crisp brand orange focus ring */
+  --border-subtle:         #EAEAF0;  /* Thin neutral borders */
+  --border:                #EAEAF0;  /* Input & card borders */
+  --border-strong:         #D4D4DE;  /* Emphasized borders */
+  --border-focus:          #8B7AE0;  /* Subtle lavender focus ring */
 
-  /* Primary Action */
-  --action-primary:        #FF6700;
-  --action-primary-hover:  #F45D00;
-  --action-primary-active: #D95400;
+  /* Primary Action (Compact Black Primary Buttons) */
+  --action-primary:        #18181B;
+  --action-primary-hover:  #27272A;
+  --action-primary-active: #09090B;
   --action-primary-text:   #FFFFFF;
 
   /* Dark Button Tokens */
-  --action-dark:           #17191D;
-  --action-dark-hover:     #000000;
+  --action-dark:           #18181B;
+  --action-dark-hover:     #27272A;
 
-  /* Semantic Status Colors (Reserved strictly for meaningful status) */
-  --status-success-bg:     #E7F8F0;
-  --status-success-border: #BBF0CF;
-  --status-success-text:   #0D6832;
-  --status-success-dot:    #108A00;
+  /* Subtle Purple / Lavender Accent */
+  --purple-accent:         #8B7AE0;
+  --purple-accent-text:    #5B47B8;
+  --lavender-highlight:    #EEE9FC;
 
-  --status-warning-bg:     #FFF8EB;
-  --status-warning-border: #FED7AA;
-  --status-warning-text:   #9A3412;
-  --status-warning-dot:    #F59E0B;
+  /* Semantic Status Colors */
+  --status-success-bg:     #ECFDF5;
+  --status-success-border: #C6F1DD;
+  --status-success-text:   #157A50;
+  --status-success-dot:    #22A66F;
 
-  --status-critical-bg:    #FEF1F1;
-  --status-critical-border:#FECACA;
-  --status-critical-text:  #B91C1C;
-  --status-critical-dot:   #D82C0D;
+  --status-warning-bg:     #FEF7EC;
+  --status-warning-border: #F8DFB9;
+  --status-warning-text:   #9A5B13;
+  --status-warning-dot:    #E99A36;
 
-  --status-info-bg:        #F0F5FF;
-  --status-info-border:    #D0E1FD;
-  --status-info-text:      #004899;
-  --status-info-dot:       #005BD3;
+  --status-critical-bg:    #FDF0F2;
+  --status-critical-border:#F6CBD3;
+  --status-critical-text:  #B4233C;
+  --status-critical-dot:   #DC4C64;
 
-  --status-neutral-bg:     #F3F4F6;
-  --status-neutral-border: #E8EBF0;
-  --status-neutral-text:   #4A4A4A;
+  --status-info-bg:        #EEE9FC;
+  --status-info-border:    #DDD5F9;
+  --status-info-text:      #5B47B8;
+  --status-info-dot:       #8B7AE0;
+
+  --status-neutral-bg:     #F4F4F6;
+  --status-neutral-border: #EAEAF0;
+  --status-neutral-text:   #52525B;
 
   /* Backward Compatibility Aliases */
-  --accent:                #17191D;
-  --accent-hover:          #000000;
-  --accent-light:          #F7F8FA;
-  --accent-border:         #E8EBF0;
-  --success:               #0D6832;
-  --success-light:         #E7F8F0;
-  --warning:               #9A3412;
-  --warning-light:         #FFF8EB;
-  --danger:                #B91C1C;
-  --danger-light:          #FEF1F1;
-  --info:                  #004899;
-  --info-light:            #F0F5FF;
+  --accent:                #18181B;
+  --accent-hover:          #27272A;
+  --accent-light:          #EEE9FC;
+  --accent-border:         #EAEAF0;
+  --success:               #22A66F;
+  --success-light:         #ECFDF5;
+  --warning:               #E99A36;
+  --warning-light:         #FEF7EC;
+  --danger:                #DC4C64;
+  --danger-light:          #FDF0F2;
+  --info:                  #8B7AE0;
+  --info-light:            #EEE9FC;
 
-  /* Corner Radii */
-  --radius-xs:             4px;
-  --radius-sm:             6px;      /* Buttons, inputs, chips */
-  --radius:                8px;      /* Cards, tables, dropdowns */
-  --radius-lg:             10px;     /* Modals, drawers */
+  /* Corner Radii (6-8px controls, 10-12px cards) */
+  --radius-xs:             6px;
+  --radius-sm:             7px;      /* Buttons, inputs, chips */
+  --radius:                10px;     /* Cards, tables, dropdowns */
+  --radius-lg:             12px;     /* Modals, drawers, containers */
   --radius-xl:             12px;
   --radius-full:           9999px;   /* Badges, avatars */
 
-  /* Restrained Shadows */
-  --shadow-card:           0 1px 2px rgba(0, 0, 0, 0.03);
-  --shadow-subtle:         0 1px 0 rgba(0, 0, 0, 0.04);
-  --shadow-popover:        0 4px 12px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.05);
-  --shadow-modal:          0 16px 36px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  /* Barely Visible Shadows */
+  --shadow-card:           0 1px 2px rgba(24, 24, 27, 0.03);
+  --shadow-subtle:         0 1px 0 rgba(24, 24, 27, 0.03);
+  --shadow-popover:        0 6px 20px rgba(24, 24, 27, 0.08), 0 0 0 1px rgba(24, 24, 27, 0.05);
+  --shadow-modal:          0 16px 40px rgba(24, 24, 27, 0.12), 0 0 0 1px rgba(24, 24, 27, 0.06);
 
   /* Layout Spacing */
-  --sidebar-w:             224px;
-  --topbar-h:              60px;
+  --sidebar-w:             228px;
+  --topbar-h:              56px;
 
   /* Micro-transitions */
   --transition:            140ms cubic-bezier(0.2, 0, 0, 1);
@@ -126,7 +132,7 @@ body {
   font-family: var(--font-sans);
   background-color: var(--bg-page);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;

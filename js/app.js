@@ -1304,7 +1304,7 @@ class MetaCRMApp {
 
     const sections = [
       {
-        title: 'DAILY SALES',
+        title: 'Daily Sales',
         items: [
           { id: 'dashboard',   icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>`, label: 'Overview', shortcut: '' },
           { id: 'inbox',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`, label: 'Inbox', badge: unreadConvs > 0 ? unreadConvs : null, shortcut: '' },
@@ -1315,7 +1315,7 @@ class MetaCRMApp {
         ]
       },
       ...(isAdmin ? [{
-        title: 'MANAGER',
+        title: 'Manager',
         items: [
           { id: 'meta-ads',    icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>`, label: 'Marketing / Meta', shortcut: '' },
           { id: 'staff',       icon: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`, label: 'Team', shortcut: '' },
