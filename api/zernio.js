@@ -94,6 +94,14 @@ function getRawStreamBuffer(req) {
     if (typeof req.rawBody === 'string') {
       return resolve(Buffer.from(req.rawBody, 'utf8'));
     }
+    // If stream was already consumed (e.g. pre-parsed req.body in serverless or test harness),
+    // return serialized body immediately instead of hanging waiting for 'end'
+    if (req.readableEnded || req.complete || typeof req.on !== 'function') {
+      if (Buffer.isBuffer(req.body)) return resolve(req.body);
+      if (typeof req.body === 'string') return resolve(Buffer.from(req.body, 'utf8'));
+      if (req.body && typeof req.body === 'object') return resolve(Buffer.from(JSON.stringify(req.body), 'utf8'));
+      return resolve(Buffer.alloc(0));
+    }
 
     const chunks = [];
     req.on('data', chunk => {
@@ -127,6 +135,18 @@ async function zernioUnifiedHandler(req, res) {
   const url = req.url || '';
   const query = req.query || {};
   const path = (query.path || '').toLowerCase();
+  const isWebhookRoute = path === 'webhook' || url.includes('/webhooks/zernio');
+
+  // With bodyParser disabled for exact webhook HMAC verification, parse JSON body for non-webhook POST/PATCH/PUT routes
+  if (!isWebhookRoute && ['POST', 'PUT', 'PATCH'].includes(String(req.method || '').toUpperCase()) && req.body === undefined) {
+    try {
+      const rawBuf = await getRawStreamBuffer(req);
+      const rawTxt = rawBuf.toString('utf8').trim();
+      req.body = rawTxt ? JSON.parse(rawTxt) : {};
+    } catch (e) {
+      req.body = {};
+    }
+  }
 
   // 0. DEVELOPER-ONLY DIAGNOSTICS & SYNC STATUS (Super Admin & Staff receive HTTP 403)
   if (path === 'diagnostics' || url.includes('/diagnostics')) {
@@ -1170,6 +1190,40 @@ async function zernioUnifiedHandler(req, res) {
 
       const supabase = getSupabaseAdmin();
       const payload = body.data || body.payload || body;
+      const evtName = String(body.event || body.type || '').toLowerCase();
+
+      // Acknowledge Zernio test webhook pings cleanly without creating CRM records
+      if (evtName === 'webhook.test' || evtName === 'test' || evtName === 'ping') {
+        SYNC_DIAGNOSTICS.webhooksProcessed++;
+        return res.status(200).json({
+          status: 'ok',
+          verified: true,
+          event: evtName || 'webhook.test',
+          provider: 'zernio',
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // Acknowledge non-lead lifecycle/status events cleanly without falling through to lead ingestion
+      if (
+        evtName.startsWith('account.') ||
+        evtName === 'message.sent' ||
+        evtName === 'message.delivered' ||
+        evtName === 'message.read' ||
+        evtName === 'message.failed' ||
+        evtName === 'message.deleted' ||
+        evtName === 'message.edited' ||
+        evtName === 'conversation.started' ||
+        evtName === 'reaction.received'
+      ) {
+        SYNC_DIAGNOSTICS.webhooksProcessed++;
+        return res.status(200).json({
+          status: 'acknowledged',
+          event: evtName,
+          provider: 'zernio',
+          timestamp: new Date().toISOString()
+        });
+      }
 
       // Handle real messaging webhook event from Zernio / Instagram Direct / Messenger
       const isMessageEvent = body.event === 'message.received' || 
@@ -1405,5 +1459,6 @@ async function zernioUnifiedHandler(req, res) {
 
 const handler = createVercelHandler(zernioUnifiedHandler);
 handler.zernioUnifiedHandler = zernioUnifiedHandler;
+handler.config = { api: { bodyParser: false } };
 module.exports = handler;
 
