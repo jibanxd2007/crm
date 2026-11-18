@@ -634,7 +634,7 @@ class MetaCRMApp {
         this.toast(`✅ ${countMsg} connected successfully! Leads & messages will now appear automatically.`, 'success');
 
         if (window.history && window.history.replaceState) {
-          window.history.replaceState({}, document.title, window.location.pathname + '#connections');
+          window.history.replaceState({}, document.title, window.location.pathname + '#settings');
         }
 
         // Notify state subscribers to trigger immediate reactive UI rendering
@@ -642,7 +642,12 @@ class MetaCRMApp {
           this.svc.notifyChange('pages_updated', { pages: this.svc.pages });
         }
 
-        // Render current view immediately without requiring a browser refresh
+        this.settingsTab = 'accounts';
+        if (this.currentRoute === 'settings') {
+          this.renderSettings();
+        } else {
+          this.navigate('settings');
+        }
         this.renderSidebar();
         this.renderNotifications();
         if (this.currentRoute === 'connections' || window.location.hash.includes('connections')) {
@@ -3380,7 +3385,7 @@ class MetaCRMApp {
     e.dataTransfer.setData('text/plain', leadId);
   }
 
-  onKanbanDrop(e, newStage) {
+  async onKanbanDrop(e, newStage) {
     e.preventDefault();
     const leadId = e.dataTransfer.getData('text/plain');
     if (!leadId) return;
@@ -3397,8 +3402,27 @@ class MetaCRMApp {
           timestamp: new Date().toISOString()
         });
         this.svc._saveToStorage ? this.svc._saveToStorage() : this.svc.saveAll();
-        this.toast(`Lead moved from ${prev} → ${newStage}`);
         this.renderPipeline();
+
+        try {
+          if (typeof this.svc.updateLeadStatus === 'function') {
+            await this.svc.updateLeadStatus(leadId, newStage);
+          } else {
+            const authH = (this.svc && this.svc.getAuthHeaders) ? this.svc.getAuthHeaders() : { 'Content-Type': 'application/json' };
+            await fetch('/api/leads', {
+              method: 'PATCH',
+              headers: authH,
+              body: JSON.stringify({ id: leadId, status: newStage })
+            });
+          }
+          this.toast(`Lead moved from ${prev} → ${newStage}`);
+        } catch (err) {
+          console.warn('[Kanban Drop Revert]:', err);
+          lead.status = prev;
+          this.svc._saveToStorage ? this.svc._saveToStorage() : this.svc.saveAll();
+          this.renderPipeline();
+          this.toast('Failed to save stage change to server. Reverted.', 'error');
+        }
       }
     }
   }
@@ -5213,7 +5237,14 @@ class MetaCRMApp {
     this.inboxSearchQuery = '';
     const inp = document.getElementById('inbox-search-input');
     if (inp) inp.value = '';
-    this.renderInbox();
+    const clearBtn = document.querySelector('.inbox-search-clear');
+    if (clearBtn) clearBtn.style.display = 'none';
+    if (this.svc) {
+      const pageId = (this.selectedInboxPage && this.selectedInboxPage !== 'all') ? this.selectedInboxPage : null;
+      this.svc.fetchRemoteConversations({ pageId }).then(() => this.renderInbox());
+    } else {
+      this.renderInbox();
+    }
   }
 
   retryFetchConversationMessages(convId) {
@@ -5396,6 +5427,145 @@ class MetaCRMApp {
       if (syncInd) syncInd.remove();
       const loadInd = document.getElementById('inbox-thread-loading');
       if (loadInd) loadInd.remove();
+    }
+  }
+
+  async loadOlderMessages(convId = null) {
+    const targetId = convId || this.activeConvId;
+    if (!targetId || !this.svc) return;
+    const conv = (this.svc.conversations || []).find(c => String(c.id) === String(targetId));
+    if (!conv || conv._loadingOlderMsgs || conv._allHistoryLoaded) return;
+    if (!Array.isArray(conv.messages) || conv.messages.length === 0) return;
+
+    conv._loadingOlderMsgs = true;
+    const thread = document.getElementById('inbox-thread');
+    const prevScrollHeight = thread ? thread.scrollHeight : 0;
+    const prevScrollTop = thread ? thread.scrollTop : 0;
+
+    let olderInd = null;
+    if (thread) {
+      olderInd = document.createElement('div');
+      olderInd.id = 'inbox-older-loader';
+      olderInd.style.cssText = 'padding:6px;text-align:center;font-size:11px;color:var(--ds-ink-muted);';
+      olderInd.innerHTML = '<span>⟳ Loading earlier messages…</span>';
+      thread.prepend(olderInd);
+    }
+
+    try {
+      const oldestMsg = conv.messages[0];
+      const beforeCursor = oldestMsg ? (oldestMsg.created_at || oldestMsg.sentAt) : null;
+      const accountId = (this.svc && this.svc.resolveZernioAccountId(conv.accountId || conv.page_id)) || conv.accountId || conv.page_id || '';
+      const externalId = conv.external_id || conv.id;
+
+      let olderMsgs = [];
+      const authHeaders = (this.svc && typeof this.svc.getAuthHeaders === 'function')
+        ? this.svc.getAuthHeaders(false)
+        : { 'X-User-Id': (this.user && this.user.id) || 'admin' };
+
+      const dbUrl = `/api/messages?conversation_id=${encodeURIComponent(conv.id)}&accountId=${encodeURIComponent(accountId)}&before=${encodeURIComponent(beforeCursor || '')}&limit=30`;
+      const dbRes = await fetch(dbUrl, { headers: authHeaders }).catch(() => null);
+      if (dbRes && dbRes.ok) {
+        const dbData = await dbRes.json();
+        olderMsgs = dbData.messages || [];
+      }
+
+      if (!olderMsgs || olderMsgs.length === 0) {
+        const zUrl = `/api/zernio?path=inbox-messages&conversationId=${encodeURIComponent(externalId)}&accountId=${encodeURIComponent(accountId)}&before=${encodeURIComponent(beforeCursor || '')}&limit=30`;
+        const zRes = await fetch(zUrl).catch(() => null);
+        if (zRes && zRes.ok) {
+          const zData = await zRes.json();
+          olderMsgs = Array.isArray(zData) ? zData : (zData.messages || zData.data || []);
+        }
+      }
+
+      if (olderInd) olderInd.remove();
+
+      if (!olderMsgs || olderMsgs.length === 0) {
+        conv._allHistoryLoaded = true;
+      } else {
+        const existingIds = new Set(conv.messages.map(m => String(m.id || m.meta_mid)));
+        const newOlder = [];
+        olderMsgs.forEach(m => {
+          const mid = String(m.id || m.meta_mid || ('msg_' + Date.now()));
+          if (!existingIds.has(mid)) {
+            existingIds.add(mid);
+            let text = m.message || m.message_text || m.text || '';
+            const att = this._extractAttachment ? this._extractAttachment(m) : null;
+            if (!text || !text.trim()) {
+              if (m.isStoryMention) text = 'Replied to your story 📸';
+              else if (att) text = (att.type && att.type.startsWith('image')) ? 'Sent a photo 📷' : '📎 Attachment';
+              else text = 'Direct message';
+            }
+            const incoming = m.direction ? (m.direction === 'incoming' || m.direction === 'inbound') : (m.sender_type === 'customer' || m.incoming === true);
+            newOlder.push({
+              id: mid,
+              meta_mid: m.meta_mid || m.id,
+              client_msg_id: m.client_msg_id,
+              text: text,
+              incoming: incoming,
+              attachment: att,
+              attachments: m.attachments || (att ? [att] : []),
+              attachment_url: att?.url || m.attachment_url,
+              attachment_storage_path: att?.storagePath || m.attachment_storage_path,
+              created_at: m.created_at || m.createdAt || m.sentAt,
+              status: m.status || 'sent',
+              time: new Date(m.sentAt || m.createdAt || m.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            });
+          }
+        });
+
+        if (newOlder.length === 0) {
+          conv._allHistoryLoaded = true;
+        } else {
+          conv.messages = [...newOlder, ...conv.messages];
+          conv.messages.sort((a, b) => {
+            const tA = new Date(a.created_at || a.time || 0).getTime();
+            const tB = new Date(b.created_at || b.time || 0).getTime();
+            if (tA !== tB) return tA - tB;
+            return String(a.id || '').localeCompare(String(b.id || ''));
+          });
+
+          if (this.svc && this.svc.saveConversations) this.svc.saveConversations();
+
+          if (this.activeConvId === conv.id) {
+            this.renderInbox();
+            const threadAfter = document.getElementById('inbox-thread');
+            if (threadAfter) {
+              const newScrollHeight = threadAfter.scrollHeight;
+              threadAfter.scrollTop = newScrollHeight - prevScrollHeight + prevScrollTop;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Load older messages warning]:', e);
+      if (olderInd) olderInd.remove();
+    } finally {
+      conv._loadingOlderMsgs = false;
+    }
+  }
+
+  async loadMoreConversations() {
+    if (this._loadingMoreConvs || !this.svc) return;
+    this._loadingMoreConvs = true;
+    const btn = document.getElementById('btn-load-more-convs');
+    if (btn) btn.innerHTML = '<span class="spinner" style="width:12px;height:12px;margin-right:6px;"></span> Loading…';
+
+    try {
+      const pageId = (this.selectedInboxPage && this.selectedInboxPage !== 'all') ? this.selectedInboxPage : null;
+      const q = this.inboxSearchQuery || '';
+      await this.svc.fetchRemoteConversations({
+        pageId,
+        q,
+        append: true
+      });
+      this.renderInbox();
+    } catch (e) {
+      console.warn('[Load more conversations error]:', e);
+    } finally {
+      this._loadingMoreConvs = false;
+      const btnAfter = document.getElementById('btn-load-more-convs');
+      if (btnAfter) btnAfter.innerHTML = 'Load older conversations…';
     }
   }
 
@@ -6827,6 +6997,22 @@ class MetaCRMApp {
       if (this.inboxSearchQuery && matched === 0) {
         emptyEl.textContent = `No conversations matching "${query}"`;
       }
+    }
+
+    if (this._inboxSearchTimer) clearTimeout(this._inboxSearchTimer);
+    if (this.inboxSearchQuery && this.inboxSearchQuery.length >= 2 && this.svc) {
+      this._inboxSearchTimer = setTimeout(async () => {
+        try {
+          const pageId = (this.selectedInboxPage && this.selectedInboxPage !== 'all') ? this.selectedInboxPage : null;
+          await this.svc.fetchRemoteConversations({
+            pageId,
+            q: this.inboxSearchQuery
+          });
+          this.renderInbox();
+        } catch (e) {
+          console.warn('[Server search error]:', e);
+        }
+      }, 350);
     }
   }
 

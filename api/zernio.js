@@ -677,9 +677,10 @@ async function zernioUnifiedHandler(req, res) {
   // 1.6 REAL INBOX MESSAGES LIST & SEND
   if (path === 'inbox-messages' || (url.includes('/inbox/conversations') && url.includes('/messages'))) {
     res.setHeader('Content-Type', 'application/json');
+    const msgLimit = Math.min(parseInt(query.limit || '50', 10), 100);
     const apiKey = process.env.ZERNIO_API_KEY;
     if (!apiKey) {
-      return res.status(200).json({ status: "error", error: "ZERNIO_API_KEY not configured", messages: [] });
+      return res.status(200).json({ status: "error", error: "ZERNIO_API_KEY not configured", messages: [], pagination: { limit: msgLimit, count: 0, hasMore: false } });
     }
 
     let conversationId = query.conversationId || (url.match(/conversations\/([^/?]+)/) ? url.match(/conversations\/([^/?]+)/)[1] : null);
@@ -809,10 +810,14 @@ async function zernioUnifiedHandler(req, res) {
     }
 
     // GET Messages with fast timeout and structured response
+    const msgCursor = query.cursor || query.before || null;
+    let msgPath = `/api/v1/inbox/conversations/${encodeURIComponent(targetZernioConvId)}/messages?accountId=${encodeURIComponent(accountId)}&limit=${msgLimit}`;
+    if (msgCursor) msgPath += `&cursor=${encodeURIComponent(msgCursor)}`;
+
     const options = {
       hostname: 'zernio.com',
       port: 443,
-      path: `/api/v1/inbox/conversations/${encodeURIComponent(targetZernioConvId)}/messages?accountId=${encodeURIComponent(accountId)}`,
+      path: msgPath,
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -841,7 +846,8 @@ async function zernioUnifiedHandler(req, res) {
               status: "success",
               conversationId: conversationId,
               messages: msgList,
-              data: msgList
+              data: msgList,
+              pagination: parsed.pagination || { limit: msgLimit, hasMore: msgList.length >= msgLimit }
             });
             resolve();
           } catch (e) {
@@ -865,57 +871,143 @@ async function zernioUnifiedHandler(req, res) {
   if (path === 'inbox-conversations' || (path.startsWith('inbox') && !url.includes('/messages')) || (url.includes('/inbox/conversations') && !url.includes('/messages'))) {
     res.setHeader('Content-Type', 'application/json');
     const apiKey = process.env.ZERNIO_API_KEY;
+    const reqLimit = Math.min(parseInt(query.limit || '50', 10), 100);
     if (!apiKey) {
-      return res.status(200).json({ conversations: [], data: [] });
+      return res.status(200).json({ conversations: [], data: [], pagination: { limit: reqLimit, count: 0, hasMore: false } });
     }
 
-    const options = {
-      hostname: 'zernio.com',
-      port: 443,
-      path: '/api/v1/inbox/conversations',
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Accept': 'application/json'
-      }
+    const targetAccount = query.accountId || query.account_id || query.pageId || query.page_id || null;
+    const reqCursor = query.cursor || query.after || null;
+    const searchQ = (query.q || '').trim().toLowerCase();
+
+    const fetchAccountConvs = (accId, limitVal, cursorVal) => {
+      let p = `/api/v1/inbox/conversations?accountId=${encodeURIComponent(accId)}&limit=${limitVal}`;
+      if (cursorVal) p += `&cursor=${encodeURIComponent(cursorVal)}`;
+      return new Promise((resolve) => {
+        const req = https.request({
+          hostname: 'zernio.com',
+          port: 443,
+          path: p,
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Accept': 'application/json'
+          }
+        }, (resp) => {
+          let d = '';
+          resp.on('data', chunk => { d += chunk; });
+          resp.on('end', () => {
+            try {
+              const parsed = JSON.parse(d);
+              resolve(parsed);
+            } catch (e) {
+              resolve({ data: [], pagination: { hasMore: false } });
+            }
+          });
+        });
+        req.setTimeout(6500, () => { req.destroy(); resolve({ data: [], pagination: { hasMore: false } }); });
+        req.on('error', () => resolve({ data: [], pagination: { hasMore: false } }));
+        req.end();
+      });
     };
 
-    return new Promise((resolve) => {
-      const request = https.request(options, (resp) => {
-        let data = '';
-        resp.on('data', chunk => { data += chunk; });
-        resp.on('end', () => {
-          try {
-            const parsed = JSON.parse(data);
-            const convList = parsed.data || parsed.conversations || [];
-            if (Array.isArray(convList)) {
-              convList.forEach(c => {
-                c.last_message_at = c.last_message_at || c.lastMessageAt || c.updatedTime || c.updated_at || c.time || new Date().toISOString();
-              });
-              convList.sort((a, b) => {
-                const timeA = new Date(a.last_message_at || 0).getTime();
-                const timeB = new Date(b.last_message_at || 0).getTime();
-                return timeB - timeA;
-              });
-              // Ensure both .data and .conversations exist on response
-              parsed.data = convList;
-              parsed.conversations = convList;
-              // Asynchronously reconcile conversations with Supabase
-              syncConversationsToSupabase(convList).catch(() => {});
-            }
-            res.status(200).json(parsed);
-            resolve();
-          } catch (e) {
-            res.status(200).json({ conversations: [], data: [] });
-            resolve();
-          }
+    if (targetAccount) {
+      const parsed = await fetchAccountConvs(targetAccount, reqLimit, reqCursor);
+      let convList = parsed.data || parsed.conversations || [];
+      if (Array.isArray(convList)) {
+        convList.forEach(c => {
+          c.accountId = c.accountId || targetAccount;
+          c.page_id = c.page_id || targetAccount;
+          c.last_message_at = c.last_message_at || c.lastMessageAt || c.updatedTime || c.updated_at || c.time || new Date().toISOString();
         });
+        if (searchQ) {
+          convList = convList.filter(c => {
+            const name = (c.customerName || c.participantName || c.name || '').toLowerCase();
+            const msg = (c.lastMessage || c.preview || '').toLowerCase();
+            return name.includes(searchQ) || msg.includes(searchQ);
+          });
+        }
+        convList.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
+        parsed.data = convList;
+        parsed.conversations = convList;
+        syncConversationsToSupabase(convList).catch(() => {});
+      }
+      return res.status(200).json(parsed);
+    }
+
+    // No target account specified: query across dynamic Zernio accounts
+    const allAccounts = await getDynamicZernioAccounts(apiKey);
+    const validAccounts = (Array.isArray(allAccounts) && allAccounts.length > 0) ? allAccounts : [];
+
+    if (validAccounts.length === 0) {
+      const defaultParsed = await new Promise((resolve) => {
+        const req = https.request({
+          hostname: 'zernio.com',
+          port: 443,
+          path: `/api/v1/inbox/conversations?limit=${reqLimit}`,
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${apiKey}`, 'Accept': 'application/json' }
+        }, (resp) => {
+          let d = '';
+          resp.on('data', chunk => { d += chunk; });
+          resp.on('end', () => {
+            try { resolve(JSON.parse(d)); } catch(e) { resolve({ data: [] }); }
+          });
+        });
+        req.setTimeout(6500, () => { req.destroy(); resolve({ data: [] }); });
+        req.on('error', () => resolve({ data: [] }));
+        req.end();
       });
-      request.on('error', (err) => {
-        res.status(500).json({ error: err.message, conversations: [], data: [] });
-        resolve();
+      return res.status(200).json(defaultParsed);
+    }
+
+    const results = await mapWithBoundedConcurrency(validAccounts, async (acc) => {
+      const accId = acc._id || acc.id || acc.accountId;
+      const res = await fetchAccountConvs(accId, reqLimit, reqCursor);
+      const list = res.data || res.conversations || [];
+      list.forEach(c => {
+        c.accountId = c.accountId || accId;
+        c.page_id = c.page_id || accId;
+        c.accountName = acc.name || c.accountName;
+        c.last_message_at = c.last_message_at || c.lastMessageAt || c.updatedTime || c.updated_at || c.time || new Date().toISOString();
       });
-      request.end();
+      return list;
+    }, 3);
+
+    let merged = [];
+    const seenIds = new Set();
+    for (const sublist of results) {
+      if (Array.isArray(sublist)) {
+        for (const conv of sublist) {
+          const cid = String(conv.id || conv.conversationId);
+          if (cid && !seenIds.has(cid)) {
+            seenIds.add(cid);
+            merged.push(conv);
+          }
+        }
+      }
+    }
+
+    if (searchQ) {
+      merged = merged.filter(c => {
+        const name = (c.customerName || c.participantName || c.name || '').toLowerCase();
+        const msg = (c.lastMessage || c.preview || '').toLowerCase();
+        return name.includes(searchQ) || msg.includes(searchQ);
+      });
+    }
+
+    merged.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
+    syncConversationsToSupabase(merged).catch(() => {});
+
+    return res.status(200).json({
+      status: "success",
+      conversations: merged,
+      data: merged,
+      pagination: {
+        totalAccounts: validAccounts.length,
+        count: merged.length,
+        hasMore: false
+      }
     });
   }
 
@@ -931,71 +1023,83 @@ async function zernioUnifiedHandler(req, res) {
       const cursor = query.cursor || query.after || null;
       const limit = query.limit || '50';
       const targetAccount = query.accountId || null;
-      let syncUrl = `/api/v1/inbox/conversations?limit=${encodeURIComponent(limit)}`;
-      if (cursor) syncUrl += `&cursor=${encodeURIComponent(cursor)}`;
-      if (targetAccount) syncUrl += `&accountId=${encodeURIComponent(targetAccount)}`;
 
-      const convsResp = await new Promise((resolve) => {
-        const hReq = https.get({
-          hostname: 'zernio.com',
-          port: 443,
-          path: syncUrl,
-          headers: { 'Authorization': `Bearer ${apiKey}`, 'Accept': 'application/json' }
-        }, (resp) => {
-          let data = '';
-          resp.on('data', d => data += d);
-          resp.on('end', () => {
-            try { resolve(JSON.parse(data)); } catch(e) { resolve({ data: [] }); }
-          });
-        });
-        hReq.setTimeout(8000, () => { hReq.destroy(); resolve({ data: [] }); });
-        hReq.on('error', () => resolve({ data: [] }));
-      });
+      const dynamicAccounts = await getDynamicZernioAccounts(apiKey);
+      const accountsToSync = targetAccount
+        ? [{ _id: targetAccount }]
+        : (Array.isArray(dynamicAccounts) && dynamicAccounts.length > 0 ? dynamicAccounts : [{ _id: null }]);
 
-      const convList = convsResp.data || convsResp.conversations || [];
-      const nextCursor = convsResp.nextCursor || convsResp.cursor || null;
-      SYNC_DIAGNOSTICS.lastCheckpoint = nextCursor;
+      let totalSyncedConvs = 0;
+      let totalSyncedMsgs = 0;
+      let lastNextCursor = null;
 
-      const syncBatchLimit = Math.max(1, Math.min(parseInt(req.query.limit || req.query.batch_size || '5', 10), 10));
-      const syncedConvs = await syncConversationsToSupabase(convList.slice(0, 25));
-      let syncedMsgs = 0;
+      for (const acc of accountsToSync) {
+        const accId = acc._id || acc.id || acc.accountId;
+        let syncUrl = `/api/v1/inbox/conversations?limit=${encodeURIComponent(limit)}`;
+        if (cursor) syncUrl += `&cursor=${encodeURIComponent(cursor)}`;
+        if (accId) syncUrl += `&accountId=${encodeURIComponent(accId)}`;
 
-      for (const conv of convList.slice(0, syncBatchLimit)) {
-        if (!conv.id) continue;
-        try {
-          const resolvedForConv = conv.accountId || targetAccount ? null : await resolveDynamicAccount(apiKey, conv.pageId || conv.page_id || null);
-          const accId = conv.accountId || targetAccount || resolvedForConv?.accountId || null;
-          if (!accId) continue;
-          const msgsResp = await new Promise((resolve) => {
-            const mReq = https.get({
-              hostname: 'zernio.com',
-              port: 443,
-              path: `/api/v1/inbox/conversations/${conv.id}/messages?accountId=${encodeURIComponent(accId)}`,
-              headers: { 'Authorization': `Bearer ${apiKey}`, 'Accept': 'application/json' }
-            }, (mResp) => {
-              let mData = '';
-              mResp.on('data', d => mData += d);
-              mResp.on('end', () => {
-                try { resolve(JSON.parse(mData)); } catch(e) { resolve(null); }
-              });
+        const convsResp = await new Promise((resolve) => {
+          const hReq = https.get({
+            hostname: 'zernio.com',
+            port: 443,
+            path: syncUrl,
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Accept': 'application/json' }
+          }, (resp) => {
+            let data = '';
+            resp.on('data', d => data += d);
+            resp.on('end', () => {
+              try { resolve(JSON.parse(data)); } catch(e) { resolve({ data: [] }); }
             });
-            mReq.setTimeout(5000, () => { mReq.destroy(); resolve(null); });
-            mReq.on('error', () => resolve(null));
           });
-          const msgList = msgsResp?.messages || msgsResp?.data || [];
-          if (Array.isArray(msgList) && msgList.length > 0) {
-            syncedMsgs += await syncMessagesToSupabase(conv.id, msgList, accId);
-          }
-        } catch (mErr) {}
+          hReq.setTimeout(8000, () => { hReq.destroy(); resolve({ data: [] }); });
+          hReq.on('error', () => resolve({ data: [] }));
+        });
+
+        const convList = convsResp.data || convsResp.conversations || [];
+        const nextCursor = convsResp.nextCursor || convsResp.cursor || null;
+        if (nextCursor) lastNextCursor = nextCursor;
+        SYNC_DIAGNOSTICS.lastCheckpoint = lastNextCursor;
+
+        const syncBatchLimit = Math.max(1, Math.min(parseInt(req.query.limit || req.query.batch_size || '5', 10), 10));
+        const syncedConvs = await syncConversationsToSupabase(convList.slice(0, 25));
+        totalSyncedConvs += syncedConvs;
+
+        for (const conv of convList.slice(0, syncBatchLimit)) {
+          if (!conv.id) continue;
+          try {
+            const thisAccId = conv.accountId || accId;
+            if (!thisAccId) continue;
+            const msgsResp = await new Promise((resolve) => {
+              const mReq = https.get({
+                hostname: 'zernio.com',
+                port: 443,
+                path: `/api/v1/inbox/conversations/${conv.id}/messages?accountId=${encodeURIComponent(thisAccId)}`,
+                headers: { 'Authorization': `Bearer ${apiKey}`, 'Accept': 'application/json' }
+              }, (mResp) => {
+                let mData = '';
+                mResp.on('data', d => mData += d);
+                mResp.on('end', () => {
+                  try { resolve(JSON.parse(mData)); } catch(e) { resolve(null); }
+                });
+              });
+              mReq.setTimeout(5000, () => { mReq.destroy(); resolve(null); });
+              mReq.on('error', () => resolve(null));
+            });
+            const msgList = msgsResp?.messages || msgsResp?.data || [];
+            if (Array.isArray(msgList) && msgList.length > 0) {
+              totalSyncedMsgs += await syncMessagesToSupabase(conv.id, msgList, thisAccId);
+            }
+          } catch (mErr) {}
+        }
       }
 
       return res.status(200).json({
         status: "success",
-        syncedConversations: syncedConvs,
-        syncedMessages: syncedMsgs,
-        totalFetched: convList.length,
-        nextCursor: nextCursor,
-        checkpoint: nextCursor,
+        syncedConversations: totalSyncedConvs,
+        syncedMessages: totalSyncedMsgs,
+        nextCursor: lastNextCursor,
+        checkpoint: lastNextCursor,
         timestamp: new Date().toISOString()
       });
     } catch (syncErr) {

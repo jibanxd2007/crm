@@ -431,6 +431,28 @@ async function syncZernioAdsInsights({ apiKey, supabase = null, since = null, un
     const totalCrmLeads = campaigns.reduce((s, c) => s + c.crmLeadsCount, 0);
     const totalMessagingConnections = campaigns.reduce((s, c) => s + c.messagingConnections, 0);
 
+    // Compute per-account spend, impressions, clicks, leads, and CPL from campaign-level insights
+    for (const acc of allAdAccounts) {
+      const accCampaigns = campaigns.filter(c => String(c.adAccountId) === String(acc.id));
+      const accSpend = Math.round(accCampaigns.reduce((sum, c) => sum + Number(c.spend || 0), 0) * 100) / 100;
+      const accImpressions = accCampaigns.reduce((sum, c) => sum + Number(c.impressions || 0), 0);
+      const accClicks = accCampaigns.reduce((sum, c) => sum + Number(c.clicks || 0), 0);
+      const accLeads = accCampaigns.reduce((sum, c) => sum + Number(c.platformLeads || 0), 0);
+      const accCrmLeads = accCampaigns.reduce((sum, c) => sum + Number(c.crmLeadsCount || 0), 0);
+      const accActiveCount = accCampaigns.filter(c => c.status === 'ACTIVE' || c.spend > 0).length;
+
+      acc.spend = accSpend;
+      acc.impressions = accImpressions;
+      acc.clicks = accClicks;
+      acc.platformLeads = accLeads;
+      acc.crmLeadsCount = accCrmLeads;
+      acc.activeCampaignsCount = accActiveCount;
+      acc.totalCampaignsCount = accCampaigns.length;
+      acc.cplPlatform = accLeads > 0 ? Math.round((accSpend / accLeads) * 100) / 100 : null;
+      acc.cplCrm = accCrmLeads > 0 ? Math.round((accSpend / accCrmLeads) * 100) / 100 : null;
+      acc.ctr = accImpressions > 0 ? Math.round((accClicks / accImpressions) * 10000) / 100 : 0;
+    }
+
     // 4. Persist to Supabase tables if migrated (best-effort additive upsert on exact grain)
     if (supabase && insightsRetrievedSuccessfully) {
       for (const adAcc of allAdAccounts) {
@@ -905,6 +927,7 @@ async function inspectZernioHealth({ apiKey, supabase = null, currentHost = 'crm
 module.exports = {
   zernioGet,
   zernioGetWithRetry,
+  mapWithBoundedConcurrency,
   getDynamicZernioAccounts,
   resolveDynamicAccount,
   resolveDateWindow,

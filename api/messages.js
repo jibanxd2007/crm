@@ -737,6 +737,11 @@ async function messagesHandler(req, res) {
           .select('*')
           .eq('conversation_id', dbConvId);
 
+        const before = req.query?.before || req.query?.cursor || null;
+        if (before) {
+          msgQuery = msgQuery.lt('created_at', before);
+        }
+
         if (orderParam === 'asc') {
           msgQuery = msgQuery.order('created_at', { ascending: true }).order('id', { ascending: true });
         } else {
@@ -808,7 +813,13 @@ async function messagesHandler(req, res) {
             status: "success",
             conversationId: requestedConv,
             messages: threadMsgs,
-            pagination: { limit, offset, count: threadMsgs.length }
+            pagination: {
+              limit,
+              offset,
+              count: threadMsgs.length,
+              hasMore: threadMsgs.length >= limit,
+              oldestCursor: threadMsgs.length > 0 ? threadMsgs[0].created_at : null
+            }
           });
         }
       } else {
@@ -821,7 +832,13 @@ async function messagesHandler(req, res) {
         if (showArchived) {
           convQuery = convQuery.eq('is_archived', true);
         } else {
-          convQuery = convQuery.eq('is_archived', false);
+          convQuery = convQuery.or('is_archived.eq.false,is_archived.is.null');
+        }
+
+        const searchQ = (req.query?.q || '').trim();
+        if (searchQ) {
+          const safeQ = searchQ.replace(/[%_,]/g, ' ');
+          convQuery = convQuery.or(`customer_name.ilike.%${safeQ}%,participant_name.ilike.%${safeQ}%,last_message.ilike.%${safeQ}%`);
         }
 
         const sortMode = req.query?.sort || 'latest';
@@ -853,7 +870,7 @@ async function messagesHandler(req, res) {
               userRole: user.role,
               conversations: [],
               data: [],
-              pagination: { limit, offset, total: 0 }
+              pagination: { limit, offset, total: 0, hasMore: false }
             });
           }
           convQuery = convQuery.in('page_id', user.pages);
@@ -867,7 +884,13 @@ async function messagesHandler(req, res) {
             userRole: user.role,
             conversations: convData,
             data: convData,
-            pagination: { limit, offset, total: totalCount !== null ? totalCount : convData.length }
+            pagination: {
+              limit,
+              offset,
+              total: totalCount !== null ? totalCount : convData.length,
+              hasMore: totalCount !== null ? (offset + convData.length < totalCount) : (convData.length >= limit),
+              nextOffset: offset + convData.length
+            }
           });
         }
       }

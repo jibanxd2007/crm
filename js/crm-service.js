@@ -647,20 +647,34 @@ class CRMService {
     return this.staff;
   }
 
-  async fetchRemoteConversations() {
+  async fetchRemoteConversations(options = {}) {
     try {
       const authUser = this.getCurrentUser();
       const token = this.getSessionToken();
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
       if (authUser && authUser.id) headers['X-User-Id'] = authUser.id;
-      const res = await fetch('/api/messages', { headers }).catch(() => null);
+
+      const pageId = options.pageId || null;
+      const limit = Math.min(options.limit || 50, 100);
+      const offset = options.offset !== undefined ? options.offset : (options.append ? (this._convsOffset || 0) : 0);
+      const q = options.q ? encodeURIComponent(options.q.trim()) : '';
+      const append = Boolean(options.append);
+
+      let url = `/api/messages?limit=${limit}&offset=${offset}`;
+      if (pageId && pageId !== 'all') url += `&page_id=${encodeURIComponent(pageId)}`;
+      if (q) url += `&q=${q}`;
+
+      const res = await fetch(url, { headers }).catch(() => null);
       if (res && res.ok) {
         const data = await res.json();
         const convList = Array.isArray(data) ? data : (data.conversations || data.data || []);
-        if (Array.isArray(convList) && convList.length > 0) {
+        this._conversationsPagination = data.pagination || { limit, offset, count: convList.length, hasMore: convList.length >= limit };
+        this._convsOffset = offset + convList.length;
+
+        if (Array.isArray(convList)) {
           const currentMap = new Map((this.conversations || []).map(c => [String(c.id), c]));
-          this.conversations = convList.map(c => {
+          const normalized = convList.map(c => {
             const cid = String(c.id || c.conversationId);
             const prev = currentMap.get(cid);
             const isFb = c.channel === 'messenger' || c.channel === 'facebook' || c.platform === 'facebook';
@@ -687,6 +701,19 @@ class CRMService {
               messages: (prev && prev.messages && prev.messages.length > 0) ? prev.messages : (c.messages || [])
             };
           });
+
+          if (append) {
+            normalized.forEach(c => currentMap.set(String(c.id), c));
+            this.conversations = Array.from(currentMap.values());
+          } else {
+            if (q) {
+              this.conversations = normalized;
+            } else {
+              normalized.forEach(c => currentMap.set(String(c.id), c));
+              this.conversations = Array.from(currentMap.values());
+            }
+          }
+
           this.conversations.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
           this.saveConversations();
           this.notifyChange('conversations_updated');
@@ -695,13 +722,17 @@ class CRMService {
       }
 
       // Gateway fallback directly to Zernio endpoint if /api/messages had no stored records
-      const zRes = await fetch('/api/zernio?path=inbox-conversations').catch(() => null);
+      let zUrl = `/api/zernio?path=inbox-conversations&limit=${limit}`;
+      if (pageId && pageId !== 'all') zUrl += `&accountId=${encodeURIComponent(pageId)}`;
+      if (q) zUrl += `&q=${q}`;
+
+      const zRes = await fetch(zUrl).catch(() => null);
       if (zRes && zRes.ok) {
         const zData = await zRes.json();
         const rawList = Array.isArray(zData) ? zData : (zData.conversations || zData.data || []);
         if (Array.isArray(rawList) && rawList.length > 0) {
           const currentMap = new Map((this.conversations || []).map(c => [String(c.id), c]));
-          this.conversations = rawList.map(c => {
+          const normalized = rawList.map(c => {
             const cid = String(c.id);
             const prev = currentMap.get(cid);
             const isFb = c.platform === 'facebook' || c.platform === 'messenger';
@@ -728,6 +759,9 @@ class CRMService {
               messages: (prev && prev.messages && prev.messages.length > 0) ? prev.messages : []
             };
           });
+
+          normalized.forEach(c => currentMap.set(String(c.id), c));
+          this.conversations = Array.from(currentMap.values());
           this.conversations.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
           this.saveConversations();
           this.notifyChange('conversations_updated');

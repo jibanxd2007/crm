@@ -839,6 +839,12 @@
                   </div>
                 </div>`;
             }).join('')}
+            ${filteredConvs.length > 0 ? `
+              <div style="padding:10px 14px;border-top:1px solid var(--ds-border);display:flex;align-items:center;justify-content:space-between;background:var(--ds-surface);margin-top:auto;">
+                <span style="font-size:11.5px;color:var(--ds-ink-muted);">Showing ${filteredConvs.length} chat${filteredConvs.length === 1 ? '' : 's'}</span>
+                <button type="button" class="btn btn-secondary btn-xs" id="btn-load-more-convs" onclick="window.app.loadMoreConversations()" style="font-size:11px;padding:3px 8px;">Load earlier chats…</button>
+              </div>
+            ` : ''}
           </div>
         </section>
 
@@ -889,7 +895,12 @@
               </header>
 
               <!-- Messages Thread -->
-              <div class="inbox-thread" id="inbox-thread">
+              <div class="inbox-thread" id="inbox-thread" onscroll="if (this.scrollTop < 40) window.app.loadOlderMessages('${esc(activeConv.id)}')">
+                ${!activeConv._allHistoryLoaded ? `
+                  <div style="text-align:center;padding:8px 0 4px;">
+                    <button type="button" class="btn btn-ghost btn-xs" onclick="window.app.loadOlderMessages('${esc(activeConv.id)}')" style="font-size:11px;color:var(--ds-ink-muted);background:var(--ds-canvas);border:1px solid var(--ds-border);border-radius:12px;padding:2px 10px;">⟳ Load earlier messages</button>
+                  </div>
+                ` : ''}
                 <div class="msg-date-divider"><span>${esc(this._formatMessageTime(activeConv.last_message_at || activeConv.time) || 'Today')}</span></div>
                 ${messages.map(m => {
                   if (m.incoming) {
@@ -1839,6 +1850,65 @@
               <button type="button" class="btn btn-secondary btn-xs" onclick="window.app.settingsTab='accounts';window.app.navigate('settings');">Manage Ad Accounts</button>
             </div>
           ` : ''}
+
+          <!-- Ad Accounts Spend & Leads Breakdown -->
+          ${(() => {
+            const allAdAccs = adsState?.allAdAccounts || adsState?.adAccounts || [];
+            if (!allAdAccs || allAdAccs.length === 0) return '';
+            return `
+              <div class="ds-card" style="margin-bottom:16px;">
+                <div class="ds-card-header">
+                  <div>
+                    <h3 class="ds-card-title">Connected Meta Ad Accounts (${allAdAccs.length})</h3>
+                    <div class="ds-card-subtitle">Per-account advertising spend, leads, and cost per lead without double-counting.</div>
+                  </div>
+                  <button type="button" class="btn btn-secondary btn-xs" onclick="window.app.syncLiveAds()">${this._dsIcon('refresh', 12)}<span style="margin-left:4px;">Refresh Ad Results</span></button>
+                </div>
+                <div class="ds-table-wrap">
+                  <table class="ds-table">
+                    <thead>
+                      <tr>
+                        <th>Account Name &amp; ID</th>
+                        <th>Currency</th>
+                        <th style="text-align:right;">Spend</th>
+                        <th style="text-align:right;">Active Campaigns</th>
+                        <th style="text-align:right;">Ad Leads</th>
+                        <th style="text-align:right;">Cost / Lead</th>
+                        <th style="text-align:center;">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${allAdAccs.map(acc => {
+                        const isTarget = String(acc.id || '').includes('1708985873733763');
+                        const isNzd = (acc.currency || 'NZD').toUpperCase() === 'NZD';
+                        const spendFmt = isNzd ? this.formatMoney(acc.spend || 0) : `${acc.currency || 'USD'} ${Number(acc.spend || 0).toFixed(2)}`;
+                        const cplFmt = acc.cplPlatform !== null && acc.cplPlatform !== undefined ? (isNzd ? this.formatMoney(acc.cplPlatform) : `${acc.currency} ${Number(acc.cplPlatform).toFixed(2)}`) : '—';
+                        return `
+                          <tr style="${isTarget ? 'background:rgba(139, 122, 224, 0.05);' : ''}">
+                            <td>
+                              <div style="font-weight:600;color:var(--ds-ink);">${esc(acc.name || 'Ad Account')}</div>
+                              <div style="font-size:11.5px;color:var(--ds-ink-muted);font-family:monospace;">${esc(acc.id || 'N/A')}</div>
+                            </td>
+                            <td><span class="ds-pill ${isNzd ? 'ds-pill-neutral' : 'ds-pill-warning'}">${esc(acc.currency || 'NZD')}</span></td>
+                            <td style="text-align:right;font-weight:600;">${spendFmt}</td>
+                            <td style="text-align:right;">${acc.activeCampaignsCount !== undefined ? acc.activeCampaignsCount : '—'}</td>
+                            <td style="text-align:right;font-weight:600;color:var(--ds-success);">${acc.platformLeads !== undefined ? acc.platformLeads : 0}</td>
+                            <td style="text-align:right;">${cplFmt}</td>
+                            <td style="text-align:center;">
+                              ${acc.needsPermissions ? `
+                                <span class="ds-pill ds-pill-warning" title="Requires ads_read permission in Meta Business Login">Needs Permission</span>
+                              ` : `
+                                <span class="ds-pill ds-pill-success">Active</span>
+                              `}
+                            </td>
+                          </tr>`;
+                      }).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            `;
+          })()}
 
           ${campaigns.length > 0 ? `
             <div class="ds-card" style="margin-bottom:16px;">
