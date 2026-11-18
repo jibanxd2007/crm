@@ -268,17 +268,23 @@ async function zernioUnifiedHandler(req, res) {
     const since = query.since || body.since || null;
     const until = query.until || body.until || null;
     const pageId = query.pageId || query.page_id || body.pageId || body.page_id || null;
+    const rawSelected = query.selectedAdAccountIds || body.selectedAdAccountIds || null;
+    const selectedAdAccountIds = Array.isArray(rawSelected)
+      ? rawSelected
+      : (typeof rawSelected === 'string' && rawSelected.trim() ? rawSelected.split(',').map(s => s.trim()).filter(Boolean) : null);
     const forceSync = path === 'sync-ads' || url.includes('/sync-ads') || query.refresh === 'true' || req.method === 'POST';
 
-    if (!forceSync && global.ZERNIO_ADS_SYNC_CACHE?.insightsRetrievedSuccessfully && global.ZERNIO_ADS_SYNC_CACHE.lastWindow?.range === range && !pageId) {
+    if (!forceSync && !selectedAdAccountIds && global.ZERNIO_ADS_SYNC_CACHE?.insightsRetrievedSuccessfully && global.ZERNIO_ADS_SYNC_CACHE.lastWindow?.range === range && !pageId) {
       return res.status(200).json({
-        status: 'success',
+        status: global.ZERNIO_ADS_SYNC_CACHE.partialFailure ? 'partial_success' : 'success',
+        partialFailure: Boolean(global.ZERNIO_ADS_SYNC_CACHE.partialFailure),
         cached: true,
         provider: 'zernio',
         currency: 'NZD',
         window: global.ZERNIO_ADS_SYNC_CACHE.lastWindow,
         lastSuccessfulSync: global.ZERNIO_ADS_SYNC_CACHE.lastSuccessfulSync,
         insightsRetrievedSuccessfully: true,
+        allAdAccounts: global.ZERNIO_ADS_SYNC_CACHE.allAdAccounts || [],
         adAccounts: global.ZERNIO_ADS_SYNC_CACHE.adAccounts,
         excludedNonNzdAccounts: global.ZERNIO_ADS_SYNC_CACHE.excludedNonNzdAccounts,
         campaigns: global.ZERNIO_ADS_SYNC_CACHE.campaigns,
@@ -292,7 +298,7 @@ async function zernioUnifiedHandler(req, res) {
 
     try {
       const supabase = getSupabaseAdmin();
-      const result = await syncZernioAdsInsights({ apiKey, supabase, since, until, range, pageId });
+      const result = await syncZernioAdsInsights({ apiKey, supabase, since, until, range, pageId, selectedAdAccountIds });
       return res.status(200).json(result);
     } catch (adsErr) {
       recordDiagnosticError('sync-ads', adsErr);
@@ -1005,7 +1011,14 @@ async function zernioUnifiedHandler(req, res) {
     const profileId = process.env.ZERNIO_PROFILE_ID || '6aca100754c13a71092c1d1c';
     const cleanUrl = url.split('?')[0];
     const pathEnd = cleanUrl.split('/').pop();
-    const channel = (query.channel === 'instagram' || pathEnd === 'instagram') ? 'instagram' : 'facebook';
+    const isMetaAdsConnect = query.channel === 'facebook-ads' || query.channel === 'meta-ads' || pathEnd === 'facebook-ads' || pathEnd === 'meta-ads' || cleanUrl.endsWith('/facebook/ads');
+    const channel = isMetaAdsConnect
+      ? 'facebook/ads'
+      : ((query.channel === 'instagram' || pathEnd === 'instagram') ? 'instagram' : 'facebook');
+    const effectiveLoginMode = isMetaAdsConnect ? (query.loginMode || (query.accountId ? 'classic' : 'business')) : '';
+    const loginModeParam = isMetaAdsConnect
+      ? `&loginMode=${encodeURIComponent(effectiveLoginMode)}${query.accountId ? `&accountId=${encodeURIComponent(query.accountId)}` : ''}`
+      : '';
 
     if (!apiKey) {
       return res.status(500).json({
@@ -1020,7 +1033,7 @@ async function zernioUnifiedHandler(req, res) {
     const options = {
       hostname: 'zernio.com',
       port: 443,
-      path: `/api/v1/connect/${channel}?profileId=${profileId}&redirect_url=${encodeURIComponent(redirectUrl)}`,
+      path: `/api/v1/connect/${channel}?profileId=${profileId}&redirect_url=${encodeURIComponent(redirectUrl)}${loginModeParam}`,
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${apiKey}`,

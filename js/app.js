@@ -1268,6 +1268,17 @@ class MetaCRMApp {
       onConfirm: async () => {
         if (this.svc) await this.svc.logout();
         this.user = null;
+        this.businessStatusCache = null;
+        this.zernioHealthCache = null;
+        this.zernioLeadForms = [];
+        this.reportsData = null;
+        this.activeConvId = null;
+        this.inboxDrafts = {};
+        this._loadedBizStatus = false;
+        this._loadedBizStatusSettings = false;
+        this._loadedZernioMarketing = false;
+        this._fetchedServerConvs = false;
+        this._adsSyncInFlight = null;
         try { localStorage.removeItem('metacrm_authenticated'); } catch (e) {}
         this.toast('You have been signed out.', 'info');
         this.navigate('login');
@@ -5684,10 +5695,14 @@ class MetaCRMApp {
     const btn = document.getElementById('inbox-send-btn');
 
     this._inFlightSends = this._inFlightSends || new Set();
+    this._inFlightConvSends = this._inFlightConvSends || new Set();
 
     const convList = (this.svc ? (this.svc.conversations || []) : []);
     const activeConv = convList.find(c => String(c.id) === String(this.activeConvId)) || convList[0];
     if (!activeConv) return;
+
+    const convLockKey = String(activeConv.id);
+    if (!retryMsgId && this._inFlightConvSends.has(convLockKey)) return;
 
     let text = '';
     let clientMsgId = '';
@@ -5734,6 +5749,8 @@ class MetaCRMApp {
     }
 
     this._inFlightSends.add(clientMsgId);
+    this._inFlightConvSends.add(convLockKey);
+    if (btn) btn.disabled = true;
 
     // Update conversation preview and ordering immediately
     activeConv.preview = 'You: ' + (text || (msgObj.attachment ? '📎 ' + msgObj.attachment.name : 'Message'));
@@ -5753,9 +5770,10 @@ class MetaCRMApp {
     const externalId = activeConv.external_id || activeConv.id;
 
     try {
-      // 1. Try unified POST /api/messages endpoint with deduplication idempotency key
+      // 1. Unified POST /api/messages endpoint with idempotency key (client_msg_id)
       let res = null;
       let data = null;
+      let lostNetworkResponse = false;
 
       try {
         res = await fetch('/api/messages', {
@@ -5783,19 +5801,30 @@ class MetaCRMApp {
           data = await res.json();
         } else if (res.status !== 404) {
           data = await res.json().catch(() => null);
-          if (data && data.error) {
-            throw new Error(data.error);
-          }
+          throw new Error((data && data.error) || `HTTP ${res.status}`);
         }
       } catch (netErr) {
-        if (netErr.message && !netErr.message.includes('fetch')) {
+        // Distinguish lost network response/timeout (provider may have accepted!) from explicit HTTP error
+        if (!res) {
+          lostNetworkResponse = true;
+        } else {
           throw netErr;
         }
-        console.warn('API /api/messages dispatch failed, trying fallback:', netErr);
       }
 
-      // 2. If /api/messages was not available or gave 404, fallback to /api/zernio
-      if (!data || (!res.ok && res.status === 404)) {
+      if (lostNetworkResponse) {
+        // NEVER blindly resend a duplicate message after a timeout/lost response — reconcile first!
+        msgObj.status = 'uncertain';
+        this._updateMessageBubbleStatus(clientMsgId, 'uncertain');
+        this.toast('Connection interrupted while sending. Checking delivery status before resending.', 'warning');
+        if (this.svc && typeof this.svc.fetchRemoteMessages === 'function') {
+          this.svc.fetchRemoteMessages(activeConv.id, activeConv.page_id || accountId).catch(() => {});
+        }
+        return;
+      }
+
+      // 2. ONLY fall back to /api/zernio if /api/messages returned 404
+      if (res && res.status === 404) {
         const zernioRes = await fetch(`/api/zernio?path=inbox-messages&conversationId=${encodeURIComponent(externalId)}&accountId=${encodeURIComponent(accountId)}`, {
           method: 'POST',
           headers: {
@@ -5819,12 +5848,12 @@ class MetaCRMApp {
       }
 
       // Reconcile optimistic message
-      msgObj.status = 'sent';
+      msgObj.status = data?.status === 'delivered' ? 'delivered' : 'sent';
       if (data && (data.messageId || data.id || data.meta_mid)) {
         msgObj.id = data.messageId || data.id;
         msgObj.meta_mid = data.meta_mid || data.messageId || data.id;
       }
-      this._updateMessageBubbleStatus(clientMsgId, 'sent');
+      this._updateMessageBubbleStatus(clientMsgId, msgObj.status);
 
       if (this.svc) {
         if (this.svc._saveToStorage) this.svc._saveToStorage();
@@ -5841,12 +5870,13 @@ class MetaCRMApp {
       this.toast(`Sent as ${this._pageName(activeConv.page_id || accountId)} on ${channelName} ✓`, 'success');
 
     } catch (err) {
-      console.error('[Send Message Error]:', err);
       msgObj.status = 'failed';
       this._updateMessageBubbleStatus(clientMsgId, 'failed');
       this.toast("Your message wasn't sent. Try again.", 'error');
     } finally {
       this._inFlightSends.delete(clientMsgId);
+      this._inFlightConvSends.delete(convLockKey);
+      if (btn) btn.disabled = false;
       if (input) input.focus();
     }
   }
@@ -7668,6 +7698,7 @@ class MetaCRMApp {
 
   closeModal() {
     this.el.mOverlay.classList.remove('open');
+    document.body.classList.remove('modal-open');
   }
 
   confirmDialog({ title = 'Confirm Action', message, confirmText = 'Confirm', isDanger = false, onConfirm }) {
@@ -8436,19 +8467,78 @@ class MetaCRMApp {
     this.renderMetaAds();
   }
 
+  async connectMetaAdsOAuth() {
+    if (this._isConnectingOAuth) {
+      this.toast('Meta Ads connection is already opening. Please wait…', 'info');
+      return;
+    }
+    this._isConnectingOAuth = true;
+    const resetTimer = setTimeout(() => { this._isConnectingOAuth = false; }, 15000);
+    this.toast('Opening Meta Business Login to authorise your ad account…', 'info');
+    try {
+      const zRes = await fetch('/api/zernio/connect/facebook-ads');
+      const zData = await zRes.json();
+      if (zData && zData.authUrl) {
+        window.location.href = zData.authUrl;
+        return;
+      }
+      throw new Error('Meta Ads connection is temporarily unavailable. Try again shortly.');
+    } catch (err) {
+      clearTimeout(resetTimer);
+      this._isConnectingOAuth = false;
+      this.toast('Could not open Meta Ads authorisation right now. Try again shortly.', 'error');
+    }
+  }
+
+  getExcludedAdAccountIds() {
+    try {
+      const raw = localStorage.getItem('metacrm_excluded_ad_accounts');
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) return new Set(arr.map(String));
+      }
+    } catch (e) {}
+    return new Set();
+  }
+
+  toggleAdAccountEnabled(adAccountId, enabled) {
+    const excluded = this.getExcludedAdAccountIds();
+    if (enabled) excluded.delete(String(adAccountId));
+    else excluded.add(String(adAccountId));
+    try { localStorage.setItem('metacrm_excluded_ad_accounts', JSON.stringify(Array.from(excluded))); } catch (e) {}
+    this.toast(enabled ? 'Ad account included in dealership reporting.' : 'Ad account hidden from dealership totals.', 'success');
+    if (this.currentRoute === 'settings') this.renderSettings();
+    else if (this.currentRoute === 'meta-ads') this.renderMetaAds();
+  }
+
   async syncLiveAds() {
+    if (this._adsSyncInFlight) {
+      this.toast('Advertising results are already updating…', 'info');
+      return this._adsSyncInFlight;
+    }
     this.toast('Updating advertising results…');
     if (this.svc && this.svc.syncZernioAds) {
-      try {
-        const res = await this.svc.syncZernioAds(this.adsDateRange || 'last_30d', this.adsPageFilter || 'all', true);
-        if (this.svc.fetchBusinessStatus) {
-          this.businessStatusCache = await this.svc.fetchBusinessStatus().catch(() => this.businessStatusCache);
+      this._adsSyncInFlight = (async () => {
+        try {
+          const res = await this.svc.syncZernioAds(this.adsDateRange || 'last_30d', this.adsPageFilter || 'all', true);
+          if (this.svc.fetchBusinessStatus) {
+            this.businessStatusCache = await this.svc.fetchBusinessStatus().catch(() => this.businessStatusCache);
+          }
+          if (res?.partialFailure) {
+            this.toast('Some advertising accounts could not be updated. Showing available results.', 'warning');
+          } else {
+            this.toast(`Updated ${res.campaigns?.length || 0} New Zealand campaign${(res.campaigns?.length || 0) === 1 ? '' : 's'}.`, 'success');
+          }
+          if (this.currentRoute === 'meta-ads') this.renderMetaAds();
+          else if (this.currentRoute === 'settings') this.renderSettings();
+          return res;
+        } catch (err) {
+          this.toast('Could not update advertising results right now. Try again shortly.', 'error');
+        } finally {
+          this._adsSyncInFlight = null;
         }
-        this.toast(`Updated ${res.campaigns?.length || 0} New Zealand campaign${(res.campaigns?.length || 0) === 1 ? '' : 's'}.`, 'success');
-        this.renderMetaAds();
-      } catch (err) {
-        this.toast('Could not update advertising results right now. Try again shortly.', 'error');
-      }
+      })();
+      return this._adsSyncInFlight;
     }
   }
 

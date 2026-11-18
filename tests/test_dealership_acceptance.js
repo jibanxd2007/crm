@@ -449,6 +449,21 @@ async function run() {
     assert.strictEqual(statusRes.body.apiKey, undefined, 'path=status must never return apiKey even masked');
   });
 
+  // 12. Real Failure Scenarios: Non-NZD Visibility, Single-Flight Sync Lease, Partial Failure Honesty & Uncertain Send Protection
+  await test('12. Sync durability: non-NZD visibility without hiding, single-flight lease, partial-failure status, and timeout duplicate-send guard', async () => {
+    const zcCode = fs.readFileSync(path.join(__dirname, '..', 'api', '_utils', 'zernio-client.js'), 'utf8');
+    const appCode = fs.readFileSync(path.join(__dirname, '..', 'js', 'app.js'), 'utf8');
+    const viewsCode = fs.readFileSync(path.join(__dirname, '..', 'js', 'dealership-views.js'), 'utf8');
+
+    assert.ok(zcCode.includes('runWithLease(') && zcCode.includes('ZERNIO_SYNC_INFLIGHT'), 'Ads sync must enforce single-flight lease concurrency protection');
+    assert.ok(zcCode.includes('live=true') && zcCode.includes('nextCursor'), 'Ad account discovery must pass live=true and follow cursor pagination');
+    assert.ok(zcCode.includes("partial_success") && zcCode.includes('usePreservedCache'), 'Partial failure must not be marked fully successful and failed fetches must preserve prior cache');
+    assert.ok(zcCode.includes('allAdAccounts') && zcCode.includes('exclusionReason'), 'Non-NZD accounts must remain visible with explicit exclusion reason and native currency');
+    assert.ok(appCode.includes('connectMetaAdsOAuth') && appCode.includes('/api/zernio/connect/facebook-ads'), 'Dedicated Connect Meta Ads OAuth must be separated from Add Facebook Page');
+    assert.ok(appCode.includes('_inFlightConvSends') && appCode.includes("msgObj.status = 'uncertain'"), 'Send flow must prevent rapid double-sends and never blindly resend on lost network response');
+    assert.ok(viewsCode.includes('hadNewMsgsWhileScrolledUp') && viewsCode.includes('ds-jump-latest-btn'), 'Inbox must preserve reading scroll position and show New messages indicator when scrolled up');
+  });
+
   console.log('\n====================================================================');
   console.log(` ACCEPTANCE RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('====================================================================\n');

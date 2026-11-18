@@ -69,7 +69,18 @@
   --ds-s6: 24px;
   --ds-s8: 32px;
 
+  /* Coherent Z-Index Layering System */
+  --z-sticky: 20;
+  --z-dropdown: 60;
+  --z-drawer: 90;
+  --z-modal: 120;
+  --z-toast: 150;
+
   --ds-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+body.modal-open {
+  overflow: hidden !important;
 }
 
 html, body {
@@ -1403,11 +1414,44 @@ summary:focus-visible {
   line-height: 1.5;
 }
 
-/* Drawers, Modals & Login Alignment */
+/* Drawers, Modals, Dropdowns & Toasts Layering */
+.conv-item-dropdown,
+.ws-dropdown,
+.notif-popover {
+  z-index: var(--z-dropdown) !important;
+}
+#drawer-overlay {
+  z-index: calc(var(--z-drawer) - 1) !important;
+}
 #drawer {
+  z-index: var(--z-drawer) !important;
   background: var(--ds-surface) !important;
   border-left: 1px solid var(--ds-border) !important;
   box-shadow: var(--ds-shadow-md) !important;
+}
+#modal-overlay {
+  z-index: var(--z-modal) !important;
+}
+#toast-container {
+  z-index: var(--z-toast) !important;
+}
+.ds-jump-latest-btn {
+  position: absolute;
+  right: 24px;
+  bottom: 160px;
+  z-index: var(--z-sticky);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--ds-primary);
+  color: #FFFFFF;
+  border: 1px solid var(--ds-primary);
+  font-size: 12.5px;
+  font-weight: 500;
+  box-shadow: var(--ds-shadow-sm);
+  cursor: pointer;
 }
 .drawer-header, .modal-header {
   border-bottom: 1px solid var(--ds-border) !important;

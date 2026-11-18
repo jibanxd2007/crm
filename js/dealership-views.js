@@ -693,6 +693,16 @@
       facebook: 'Messenger', instagram: 'Instagram', archived: 'Archived'
     }[activeTab] || null;
 
+    // Preserve reading scroll position if re-rendering the same conversation while user is scrolled up
+    const prevThreadEl = document.getElementById('inbox-thread');
+    const sameConvReRender = Boolean(prevThreadEl && activeConv && String(this._lastRenderedInboxConvId || '') === String(activeConv.id));
+    const prevScrollTop = sameConvReRender ? prevThreadEl.scrollTop : 0;
+    const prevWasNearBottom = !sameConvReRender || ((prevThreadEl.scrollHeight - prevThreadEl.scrollTop - prevThreadEl.clientHeight) < 90);
+    const prevMsgCount = sameConvReRender ? (this._lastRenderedInboxMsgCount || 0) : 0;
+    const hadNewMsgsWhileScrolledUp = Boolean(sameConvReRender && !prevWasNearBottom && messages.length > prevMsgCount);
+    this._lastRenderedInboxConvId = activeConv ? String(activeConv.id) : null;
+    this._lastRenderedInboxMsgCount = messages.length;
+
     this.el.content.innerHTML = `
       <div class="inbox-layout ${this.mobileInboxView === 'chat' ? 'view-chat' : 'view-list'} ${detailsCollapsed ? 'details-collapsed' : ''}">
         <!-- COLUMN 0: DEALERSHIP PAGE SELECTOR RAIL -->
@@ -897,6 +907,20 @@
                   }
                   const isSending = m.status === 'sending';
                   const isFailed = m.status === 'failed';
+                  const isUncertain = m.status === 'uncertain';
+                  const isDelivered = m.status === 'delivered';
+                  const isRead = m.status === 'read';
+                  const statusLabel = isSending
+                    ? ' · Sending…'
+                    : isUncertain
+                      ? ' · Delivery status uncertain — refresh before resending'
+                      : isFailed
+                        ? ` · Your message wasn't sent. <button type="button" class="btn-msg-retry" onclick="window.app.retryInboxMessage('${esc(m.id)}')">Try again</button>`
+                        : isRead
+                          ? ' · Read'
+                          : isDelivered
+                            ? ' · Delivered'
+                            : ' · Sent';
                   return `
                     <div class="msg msg-out ${isSending ? 'msg-sending' : ''} ${isFailed ? 'msg-failed' : ''}" data-msg-id="${esc(m.id || '')}">
                       <div class="msg-bubble">
@@ -904,8 +928,7 @@
                         ${esc(m.text || '')}
                       </div>
                       <span class="msg-time">
-                        ${esc(m.time || 'Just now')}
-                        ${isSending ? ' · Sending…' : isFailed ? ` · Your message wasn't sent. <button type="button" class="btn-msg-retry" onclick="window.app.retryInboxMessage('${esc(m.id)}')">Try again</button>` : ' · Sent'}
+                        ${esc(m.time || 'Just now')}${statusLabel}
                       </span>
                     </div>`;
                 }).join('')}
@@ -1110,7 +1133,22 @@
               </div>`;
           })() : ''}
         </aside>
+        ${hadNewMsgsWhileScrolledUp ? `
+          <button type="button" class="ds-jump-latest-btn" id="ds-jump-latest-btn" onclick="const t=document.getElementById('inbox-thread'); if(t){t.scrollTop=t.scrollHeight;} this.remove();">
+            ↓ New messages
+          </button>
+        ` : ''}
       </div>`;
+
+    // Restore scroll position cleanly: auto-scroll only if near bottom or newly opened thread
+    const nextThreadEl = document.getElementById('inbox-thread');
+    if (nextThreadEl) {
+      if (prevWasNearBottom) {
+        nextThreadEl.scrollTop = nextThreadEl.scrollHeight;
+      } else {
+        nextThreadEl.scrollTop = prevScrollTop;
+      }
+    }
   };
 
   proto.toggleSavedRepliesMenu = function (forceState) {
@@ -1792,8 +1830,13 @@
           </div>
 
           ${excludedNonNzd.length > 0 ? `
-            <div style="margin-bottom:14px;padding:10px 14px;background:var(--ds-surface);border:1px solid var(--ds-border);border-radius:8px;font-size:12px;color:var(--ds-ink-secondary);">
-              Showing New Zealand (NZD) campaigns only. Overseas currency ad accounts are excluded from totals.
+            <div style="margin-bottom:16px;padding:12px 16px;background:var(--ds-canvas);border:1px solid var(--ds-border);border-radius:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+              <div style="font-size:13px;color:var(--ds-ink-secondary);">
+                <strong>Non-NZD accounts visible, excluded from NZD totals:</strong>
+                ${excludedNonNzd.map(a => `<span class="ds-pill ds-pill-neutral" style="margin-left:6px;">${esc(a.name)} (${esc(a.currency)})</span>`).join('')}
+                <div style="font-size:12px;color:var(--ds-ink-muted);margin-top:4px;">Spending in other currencies is never converted or mixed into NZD totals. Customer enquiries remain unaffected.</div>
+              </div>
+              <button type="button" class="btn btn-secondary btn-xs" onclick="window.app.settingsTab='accounts';window.app.navigate('settings');">Manage Ad Accounts</button>
             </div>
           ` : ''}
 
@@ -2262,6 +2305,65 @@
                     }).join('')}
                   </tbody>
                 </table>
+              </div>
+            </section>
+
+            <section class="ds-card">
+              <div class="ds-card-header">
+                <div>
+                  <h3 class="ds-card-title">Meta Advertising Accounts (${(this.svc?.zernioAdsState?.allAdAccounts || this.svc?.zernioAdsState?.adAccounts || []).length})</h3>
+                  <div class="ds-card-subtitle">Authorise Meta Ads accounts separately from Facebook Pages, and choose which accounts belong to your dealership.</div>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="window.app.syncLiveAds()">${this._dsIcon('refresh', 13)}<span>Refresh Ad Accounts</span></button>
+                  <button type="button" class="btn btn-primary btn-sm" onclick="window.app.connectMetaAdsOAuth()">${this._dsIcon('plus', 14)}<span>Connect Meta Ads</span></button>
+                </div>
+              </div>
+              <div class="ds-table-wrap">
+                ${(() => {
+                  const allAdAccs = this.svc?.zernioAdsState?.allAdAccounts
+                    || [...(this.svc?.zernioAdsState?.adAccounts || []), ...(this.svc?.zernioAdsState?.excludedNonNzdAccounts || [])];
+                  const excludedByUser = this.getExcludedAdAccountIds ? this.getExcludedAdAccountIds() : new Set();
+                  if (!allAdAccs || allAdAccs.length === 0) {
+                    return `<div style="padding:26px 20px;text-align:center;font-size:13.5px;color:var(--ds-ink-muted);">Click <strong>Refresh Ad Accounts</strong> to view connected Meta Ads accounts, or click <strong>Connect Meta Ads</strong> to authorise a new ad account.</div>`;
+                  }
+                  return `
+                    <table class="ds-table">
+                      <thead>
+                        <tr>
+                          <th>Ad Account</th>
+                          <th>Currency</th>
+                          <th>Reporting Status</th>
+                          <th style="text-align:right;">Dealership Reporting</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${allAdAccs.map(a => {
+                          const isNzd = a.isNzd !== false && String(a.currency || '').toUpperCase() === 'NZD';
+                          const isEnabled = isNzd && !excludedByUser.has(String(a.id));
+                          return `
+                            <tr>
+                              <td>
+                                <div style="font-weight:600;color:var(--ds-ink);">${esc(a.name || a.id)}</div>
+                                <div style="font-size:12px;color:var(--ds-ink-muted);">${esc(a.primaryPageName || 'Connected Meta Ads')}</div>
+                              </td>
+                              <td><span class="ds-pill ${isNzd ? 'ds-pill-info' : 'ds-pill-neutral'}">${esc(a.currency || 'Unknown')}</span></td>
+                              <td style="font-size:13px;color:var(--ds-ink-secondary);">
+                                ${isNzd ? (isEnabled ? '<span class="ds-pill ds-pill-success">Included in NZD totals</span>' : '<span class="ds-pill ds-pill-neutral">Excluded by manager</span>') : `<span class="ds-pill ds-pill-warning">Excluded from NZD totals (${esc(a.currency)})</span>`}
+                              </td>
+                              <td style="text-align:right;">
+                                ${isNzd ? `
+                                  <label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ds-ink-secondary);cursor:pointer;">
+                                    <input type="checkbox" ${isEnabled ? 'checked' : ''} onchange="window.app.toggleAdAccountEnabled('${esc(a.id)}', this.checked)">
+                                    <span>${isEnabled ? 'Enabled' : 'Disabled'}</span>
+                                  </label>
+                                ` : `<span style="font-size:12px;color:var(--ds-ink-muted);">Native currency preserved</span>`}
+                              </td>
+                            </tr>`;
+                        }).join('')}
+                      </tbody>
+                    </table>`;
+                })()}
               </div>
             </section>
           </div>

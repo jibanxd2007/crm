@@ -13,10 +13,14 @@ const { safeDbUpsert } = require('./index.js');
 const PERSONAL_FILTER_TERMS = ['jiban', 'prakash', 'omm'];
 
 global.ZERNIO_ACCOUNT_CACHE = global.ZERNIO_ACCOUNT_CACHE || { fetchedAt: 0, accounts: [], byAccountId: new Map(), byPageId: new Map() };
+global.ZERNIO_SYNC_INFLIGHT = global.ZERNIO_SYNC_INFLIGHT || new Map(); // Per-resource single-flight lock with expiring lease
 global.ZERNIO_ADS_SYNC_CACHE = global.ZERNIO_ADS_SYNC_CACHE || {
   lastSuccessfulSync: null,
+  lastAttemptedSync: null,
   insightsRetrievedSuccessfully: false,
+  partialFailure: false,
   lastWindow: null,
+  allAdAccounts: [],
   adAccounts: [],
   excludedNonNzdAccounts: [],
   campaigns: [],
@@ -29,6 +33,35 @@ global.ZERNIO_LEADS_SYNC_CACHE = global.ZERNIO_LEADS_SYNC_CACHE || {
   recentLeadCount: 0,
   lastLeadReceivedAt: null
 };
+
+async function runWithLease(lockKey, leaseMs, fn) {
+  const now = Date.now();
+  const existing = global.ZERNIO_SYNC_INFLIGHT.get(lockKey);
+  if (existing && existing.expiresAt > now && existing.promise) {
+    return existing.promise;
+  }
+  const promise = Promise.resolve().then(fn).finally(() => {
+    const cur = global.ZERNIO_SYNC_INFLIGHT.get(lockKey);
+    if (cur && cur.promise === promise) {
+      global.ZERNIO_SYNC_INFLIGHT.delete(lockKey);
+    }
+  });
+  global.ZERNIO_SYNC_INFLIGHT.set(lockKey, { promise, startedAt: now, expiresAt: now + leaseMs });
+  return promise;
+}
+
+async function mapWithBoundedConcurrency(items, concurrency, worker) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const runners = Array.from({ length: Math.min(concurrency, Math.max(1, items.length)) }, async () => {
+    while (cursor < items.length) {
+      const idx = cursor++;
+      results[idx] = await worker(items[idx], idx);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
 
 function isExcludedPersonalAccount(acc) {
   const name = String(acc?.metadata?.selectedPageName || acc?.displayName || acc?.username || '').toLowerCase();
@@ -200,98 +233,125 @@ function extractActionCount(actions = [], actionTypes = []) {
 
 /**
  * Syncs Meta Ad Accounts and Campaign Insights through Zernio with:
- * - Date range filtering (Pacific/Auckland default)
- * - Pagination via paging.after
- * - Bounded retries
- * - Ad-account deduplication across shared pages
- * - Strict NZD currency checking (non-NZD accounts isolated & flagged)
+ * - Single-flight per-resource concurrency lease (joining in-flight syncs on rapid Refresh)
+ * - Live paginated ad-account discovery (live=true + cursor pagination)
+ * - Native currency preservation without hiding non-NZD accounts
+ * - Bounded concurrency (4 workers) for fast multi-account sync
+ * - Exact record-grain deduplication (adAccountId + campaignId + since + until + level)
+ * - Partial-failure honesty & cache preservation (never wipes prior records on error)
  * - Attribution linking to CRM enquiries
  */
-async function syncZernioAdsInsights({ apiKey, supabase = null, since = null, until = null, range = 'last_30d', pageId = null, maxPagesPerAccount = 5 } = {}) {
+async function syncZernioAdsInsights({ apiKey, supabase = null, since = null, until = null, range = 'last_30d', pageId = null, selectedAdAccountIds = null, maxPagesPerAccount = 5 } = {}) {
   const windowInfo = resolveDateWindow({ since, until, range });
-  const cache = await getDynamicZernioAccounts(apiKey, { forceRefresh: true });
-  const targetAccounts = pageId && pageId !== 'all'
-    ? cache.accounts.filter(a => a.pageId === String(pageId) || a.accountId === String(pageId))
-    : cache.accounts;
+  const selectedKey = Array.isArray(selectedAdAccountIds) ? selectedAdAccountIds.slice().sort().join(',') : 'all';
+  const leaseKey = `ads_insights::${windowInfo.since}::${windowInfo.until}::${pageId || 'all'}::${selectedKey}`;
 
-  const uniqueAdAccounts = new Map();
-  const errors = [];
+  return runWithLease(leaseKey, 45000, async () => {
+    const tStart = Date.now();
+    const cache = await getDynamicZernioAccounts(apiKey, { forceRefresh: true });
+    const targetAccounts = pageId && pageId !== 'all'
+      ? cache.accounts.filter(a => a.pageId === String(pageId) || a.accountId === String(pageId))
+      : cache.accounts;
 
-  // 1. Discover ad accounts across connected Zernio accounts & deduplicate by adAccountId
-  await Promise.all(targetAccounts.map(async (acc) => {
-    try {
-      const resp = await zernioGetWithRetry(apiKey, `/api/v1/ads/accounts?accountId=${encodeURIComponent(acc.accountId)}`, { maxRetries: 2, timeoutMs: 8000 });
-      const list = Array.isArray(resp?.accounts) ? resp.accounts : (Array.isArray(resp?.adAccounts) ? resp.adAccounts : (Array.isArray(resp?.data) ? resp.data : []));
-      for (const adAcc of list) {
-        const adAccId = String(adAcc.id || adAcc.account_id || '');
-        if (!adAccId) continue;
-        if (!uniqueAdAccounts.has(adAccId)) {
-          uniqueAdAccounts.set(adAccId, {
-            id: adAccId,
-            name: adAcc.name || adAccId,
-            currency: String(adAcc.currency || 'UNKNOWN').toUpperCase(),
-            status: adAcc.accountStatus ?? adAcc.status ?? 'unknown',
-            billingStatus: adAcc.billingStatus || null,
-            timezoneName: adAcc.timezoneName || null,
-            isNzd: String(adAcc.currency || '').toUpperCase() === 'NZD',
-            zernioAccountId: acc.accountId,
-            primaryPageId: acc.pageId,
-            primaryPageName: acc.pageName,
-            linkedPageIds: [acc.pageId],
-            linkedPageNames: [acc.pageName]
-          });
-        } else {
-          const existing = uniqueAdAccounts.get(adAccId);
-          if (!existing.linkedPageIds.includes(acc.pageId)) existing.linkedPageIds.push(acc.pageId);
-          if (!existing.linkedPageNames.includes(acc.pageName)) existing.linkedPageNames.push(acc.pageName);
+    const uniqueAdAccounts = new Map();
+    const errors = [];
+
+    // 1. Discover ALL ad accounts across connected Zernio accounts with live=true & cursor pagination
+    await mapWithBoundedConcurrency(targetAccounts, 4, async (acc) => {
+      let cursor = null;
+      let pageNum = 0;
+      while (pageNum < 5) {
+        pageNum++;
+        try {
+          let adAccPath = `/api/v1/ads/accounts?accountId=${encodeURIComponent(acc.accountId)}&live=true&limit=100`;
+          if (cursor) adAccPath += `&cursor=${encodeURIComponent(cursor)}`;
+          const resp = await zernioGetWithRetry(apiKey, adAccPath, { maxRetries: 2, timeoutMs: 8000 });
+          const list = Array.isArray(resp?.accounts) ? resp.accounts : (Array.isArray(resp?.adAccounts) ? resp.adAccounts : (Array.isArray(resp?.data) ? resp.data : []));
+          for (const adAcc of list) {
+            const adAccId = String(adAcc.id || adAcc.account_id || '');
+            if (!adAccId) continue;
+            // Currency is strictly taken from provider payload — NEVER inferred from account name
+            const nativeCurrency = String(adAcc.currency || 'UNKNOWN').toUpperCase();
+            const isNzd = nativeCurrency === 'NZD';
+            if (!uniqueAdAccounts.has(adAccId)) {
+              uniqueAdAccounts.set(adAccId, {
+                id: adAccId,
+                name: adAcc.name || adAccId,
+                currency: nativeCurrency,
+                status: adAcc.accountStatus ?? adAcc.status ?? 'unknown',
+                billingStatus: adAcc.billingStatus || null,
+                timezoneName: adAcc.timezoneName || null,
+                isNzd,
+                reportingEligibleNzd: isNzd,
+                exclusionReason: isNzd ? null : `Billed in ${nativeCurrency} — excluded from NZD totals`,
+                zernioAccountId: acc.accountId,
+                primaryPageId: acc.pageId,
+                primaryPageName: acc.pageName,
+                linkedPageIds: [acc.pageId],
+                linkedPageNames: [acc.pageName]
+              });
+            } else {
+              const existing = uniqueAdAccounts.get(adAccId);
+              if (!existing.linkedPageIds.includes(acc.pageId)) existing.linkedPageIds.push(acc.pageId);
+              if (!existing.linkedPageNames.includes(acc.pageName)) existing.linkedPageNames.push(acc.pageName);
+            }
+          }
+          const nextCursor = resp?.pagination?.nextCursor || resp?.nextCursor || resp?.paging?.cursors?.after || null;
+          if (!nextCursor || list.length === 0) break;
+          cursor = nextCursor;
+        } catch (err) {
+          errors.push({ scope: 'ad_accounts', accountId: acc.accountId, pageName: acc.pageName, error: err.message });
+          break;
         }
       }
-    } catch (err) {
-      errors.push({ scope: 'ad_accounts', accountId: acc.accountId, pageName: acc.pageName, error: err.message });
-    }
-  }));
+    });
 
-  const allAdAccounts = Array.from(uniqueAdAccounts.values());
-  const nzdAdAccounts = allAdAccounts.filter(a => a.isNzd);
-  const excludedNonNzdAccounts = allAdAccounts.filter(a => !a.isNzd);
+    const allAdAccounts = Array.from(uniqueAdAccounts.values());
+    const allowedSet = Array.isArray(selectedAdAccountIds) && selectedAdAccountIds.length > 0
+      ? new Set(selectedAdAccountIds.map(String))
+      : null;
+    const nzdAdAccounts = allAdAccounts.filter(a => a.isNzd && (!allowedSet || allowedSet.has(a.id)));
+    const excludedNonNzdAccounts = allAdAccounts.filter(a => !a.isNzd);
 
-  // 2. Fetch paginated campaign-level insights for each deduplicated NZD ad account
-  const campaignsById = new Map();
-  let insightsSuccessCount = 0;
+    // 2. Fetch paginated campaign-level insights with bounded concurrency (4 workers)
+    //    Record grain: (adAccountId, campaignId, dateSince, dateUntil, level='campaign')
+    const campaignsByGrain = new Map();
+    let insightsSuccessCount = 0;
 
-  for (const adAcc of nzdAdAccounts) {
-    let afterCursor = null;
-    let pagesFetched = 0;
-    let accountOk = false;
+    await mapWithBoundedConcurrency(nzdAdAccounts, 4, async (adAcc) => {
+      let afterCursor = null;
+      let pagesFetched = 0;
+      let accountOk = false;
 
-    while (pagesFetched < maxPagesPerAccount) {
-      pagesFetched++;
-      let path = `/api/v1/ads/insights?accountId=${encodeURIComponent(adAcc.zernioAccountId)}&objectId=${encodeURIComponent(adAcc.id)}&level=campaign&since=${encodeURIComponent(windowInfo.since)}&until=${encodeURIComponent(windowInfo.until)}&fields=campaign_id,campaign_name,impressions,clicks,spend,actions`;
-      if (afterCursor) path += `&after=${encodeURIComponent(afterCursor)}`;
+      while (pagesFetched < maxPagesPerAccount) {
+        pagesFetched++;
+        let path = `/api/v1/ads/insights?accountId=${encodeURIComponent(adAcc.zernioAccountId)}&objectId=${encodeURIComponent(adAcc.id)}&level=campaign&since=${encodeURIComponent(windowInfo.since)}&until=${encodeURIComponent(windowInfo.until)}&fields=campaign_id,campaign_name,impressions,clicks,spend,actions`;
+        if (afterCursor) path += `&after=${encodeURIComponent(afterCursor)}`;
 
-      try {
-        const resp = await zernioGetWithRetry(apiKey, path, { maxRetries: 3, timeoutMs: 10000 });
-        accountOk = true;
-        const rows = Array.isArray(resp?.insights) ? resp.insights : (Array.isArray(resp?.data) ? resp.data : []);
+        try {
+          const resp = await zernioGetWithRetry(apiKey, path, { maxRetries: 3, timeoutMs: 10000 });
+          accountOk = true;
+          const rows = Array.isArray(resp?.insights) ? resp.insights : (Array.isArray(resp?.data) ? resp.data : []);
 
-        for (const row of rows) {
-          const cid = String(row.campaign_id || row.campaignId || '');
-          if (!cid) continue;
-          const spend = Number(row.spend || 0);
-          const impressions = Number(row.impressions || 0);
-          const clicks = Number(row.clicks || 0);
-          const actions = Array.isArray(row.actions) ? row.actions : [];
-          // Deduplicate platform lead action types carefully (prefer onsite_conversion.lead or lead)
-          const onsiteLead = extractActionCount(actions, ['onsite_conversion.lead']);
-          const genericLead = extractActionCount(actions, ['lead']);
-          const webLead = extractActionCount(actions, ['onsite_web_lead']);
-          const platformLeads = Math.max(onsiteLead, genericLead) + (onsiteLead === 0 && genericLead === 0 ? webLead : 0);
-          const messagingConnections = extractActionCount(actions, ['onsite_conversion.total_messaging_connection', 'onsite_conversion.messaging_conversation_started_7d']);
+          for (const row of rows) {
+            const cid = String(row.campaign_id || row.campaignId || '');
+            if (!cid) continue;
+            const grainKey = `${adAcc.id}::${cid}::${windowInfo.since}::${windowInfo.until}::campaign`;
+            const spend = Math.round(Number(row.spend || 0) * 100) / 100;
+            const impressions = Number(row.impressions || 0);
+            const clicks = Number(row.clicks || 0);
+            const actions = Array.isArray(row.actions) ? row.actions : [];
+            const onsiteLead = extractActionCount(actions, ['onsite_conversion.lead']);
+            const genericLead = extractActionCount(actions, ['lead']);
+            const webLead = extractActionCount(actions, ['onsite_web_lead']);
+            const platformLeads = Math.max(onsiteLead, genericLead) + (onsiteLead === 0 && genericLead === 0 ? webLead : 0);
+            const messagingConnections = extractActionCount(actions, ['onsite_conversion.total_messaging_connection', 'onsite_conversion.messaging_conversation_started_7d']);
 
-          if (!campaignsById.has(cid)) {
-            campaignsById.set(cid, {
+            // Upsert by exact grain key — NEVER double-add duplicate rows for the same campaign/window!
+            campaignsByGrain.set(grainKey, {
               id: cid,
               campaignId: cid,
+              grainKey,
               name: row.campaign_name || row.campaignName || `Campaign ${cid}`,
               adAccountId: adAcc.id,
               adAccountName: adAcc.name,
@@ -300,7 +360,7 @@ async function syncZernioAdsInsights({ apiKey, supabase = null, since = null, un
               linkedPageIds: adAcc.linkedPageIds,
               currency: 'NZD',
               status: spend > 0 ? 'ACTIVE' : 'PAUSED',
-              spend: Math.round(spend * 100) / 100,
+              spend,
               impressions,
               clicks,
               platformLeads,
@@ -314,164 +374,184 @@ async function syncZernioAdsInsights({ apiKey, supabase = null, since = null, un
               dateUntil: windowInfo.until,
               rawActions: actions
             });
-          } else {
-            const cur = campaignsById.get(cid);
-            cur.spend = Math.round((cur.spend + spend) * 100) / 100;
-            cur.impressions += impressions;
-            cur.clicks += clicks;
-            cur.platformLeads += platformLeads;
-            cur.messagingConnections += messagingConnections;
-            cur.ctr = cur.impressions > 0 ? Math.round((cur.clicks / cur.impressions) * 10000) / 100 : 0;
-            cur.cplPlatform = cur.platformLeads > 0 ? Math.round((cur.spend / cur.platformLeads) * 100) / 100 : null;
           }
-        }
 
-        const nextAfter = resp?.paging?.cursors?.after || resp?.paging?.after || null;
-        if (!nextAfter || rows.length === 0) break;
-        afterCursor = nextAfter;
-      } catch (err) {
-        errors.push({ scope: 'insights', adAccountId: adAcc.id, adAccountName: adAcc.name, error: err.message });
-        break;
+          const nextAfter = resp?.paging?.cursors?.after || resp?.paging?.after || null;
+          if (!nextAfter || rows.length === 0) break;
+          afterCursor = nextAfter;
+        } catch (err) {
+          errors.push({ scope: 'insights', adAccountId: adAcc.id, adAccountName: adAcc.name, error: err.message });
+          break;
+        }
+      }
+
+      if (accountOk) insightsSuccessCount++;
+    });
+
+    const campaignsById = new Map();
+    for (const c of campaignsByGrain.values()) {
+      campaignsById.set(c.campaignId, c);
+    }
+
+    // 3. Cross-link captured CRM leads to campaigns by campaign_id
+    let crmLeads = Array.from((global.CRM_INGESTED_LEADS || new Map()).values());
+    if (supabase) {
+      try {
+        const { data: dbLeads } = await supabase
+          .from('leads')
+          .select('id, campaign_id, status, sale_value_nzd, deal_value, created_at')
+          .gte('created_at', `${windowInfo.since}T00:00:00Z`);
+        if (Array.isArray(dbLeads) && dbLeads.length > 0) crmLeads = dbLeads;
+      } catch (e) {}
+    }
+
+    for (const l of crmLeads) {
+      if (!l.campaign_id) continue;
+      const cid = String(l.campaign_id);
+      if (campaignsById.has(cid)) {
+        const c = campaignsById.get(cid);
+        c.crmLeadsCount++;
+        if (l.status === 'Won' || l.status === 'Converted' || l.status === 'Sold') c.crmWonCount++;
+        c.cplCrm = c.crmLeadsCount > 0 ? Math.round((c.spend / c.crmLeadsCount) * 100) / 100 : null;
       }
     }
 
-    if (accountOk) insightsSuccessCount++;
-  }
+    const fetchedCampaigns = Array.from(campaignsByGrain.values()).sort((a, b) => b.spend - a.spend);
+    const syncedAt = new Date().toISOString();
+    const hadAnyFailure = errors.length > 0;
+    const insightsRetrievedSuccessfully = insightsSuccessCount > 0;
+    // Preserve prior cached campaigns if this fetch failed completely (NEVER wipe records on provider error!)
+    const usePreservedCache = !insightsRetrievedSuccessfully && Array.isArray(global.ZERNIO_ADS_SYNC_CACHE?.campaigns) && global.ZERNIO_ADS_SYNC_CACHE.campaigns.length > 0;
+    const campaigns = usePreservedCache ? global.ZERNIO_ADS_SYNC_CACHE.campaigns : fetchedCampaigns;
 
-  // 3. Cross-link captured CRM leads to campaigns by campaign_id
-  let crmLeads = Array.from((global.CRM_INGESTED_LEADS || new Map()).values());
-  if (supabase) {
-    try {
-      const { data: dbLeads } = await supabase
-        .from('leads')
-        .select('id, campaign_id, status, sale_value_nzd, deal_value, created_at')
-        .gte('created_at', `${windowInfo.since}T00:00:00Z`);
-      if (Array.isArray(dbLeads) && dbLeads.length > 0) crmLeads = dbLeads;
-    } catch (e) {}
-  }
+    const totalSpendNzd = Math.round(campaigns.reduce((s, c) => s + c.spend, 0) * 100) / 100;
+    const totalImpressions = campaigns.reduce((s, c) => s + c.impressions, 0);
+    const totalClicks = campaigns.reduce((s, c) => s + c.clicks, 0);
+    const totalPlatformLeads = campaigns.reduce((s, c) => s + c.platformLeads, 0);
+    const totalCrmLeads = campaigns.reduce((s, c) => s + c.crmLeadsCount, 0);
+    const totalMessagingConnections = campaigns.reduce((s, c) => s + c.messagingConnections, 0);
 
-  for (const l of crmLeads) {
-    if (!l.campaign_id) continue;
-    const cid = String(l.campaign_id);
-    if (campaignsById.has(cid)) {
-      const c = campaignsById.get(cid);
-      c.crmLeadsCount++;
-      if (l.status === 'Won' || l.status === 'Converted' || l.status === 'Sold') c.crmWonCount++;
-      c.cplCrm = c.crmLeadsCount > 0 ? Math.round((c.spend / c.crmLeadsCount) * 100) / 100 : null;
+    // 4. Persist to Supabase tables if migrated (best-effort additive upsert on exact grain)
+    if (supabase && insightsRetrievedSuccessfully) {
+      for (const adAcc of allAdAccounts) {
+        try {
+          await safeDbUpsert(supabase, 'ad_accounts', {
+            id: adAcc.id,
+            provider: 'zernio',
+            zernio_account_id: adAcc.zernioAccountId,
+            page_id: adAcc.primaryPageId,
+            name: adAcc.name,
+            currency: adAcc.currency,
+            account_status: String(adAcc.status),
+            is_nzd: adAcc.isNzd,
+            last_synced_at: syncedAt,
+            updated_at: syncedAt
+          }, 'id');
+        } catch (e) {}
+      }
+      for (const c of fetchedCampaigns) {
+        try {
+          await safeDbUpsert(supabase, 'campaigns', {
+            id: c.id,
+            ad_account_id: c.adAccountId,
+            page_id: c.pageId,
+            name: c.name,
+            status: c.status,
+            currency: 'NZD',
+            spend: c.spend,
+            impressions: c.impressions,
+            clicks: c.clicks,
+            platform_leads: c.platformLeads,
+            messaging_connections: c.messagingConnections,
+            date_since: windowInfo.since,
+            date_until: windowInfo.until,
+            last_synced_at: syncedAt,
+            updated_at: syncedAt
+          }, 'id');
+          await safeDbUpsert(supabase, 'ad_insights', {
+            ad_account_id: c.adAccountId,
+            campaign_id: c.id,
+            campaign_name: c.name,
+            page_id: c.pageId,
+            date_since: windowInfo.since,
+            date_until: windowInfo.until,
+            currency: 'NZD',
+            spend: c.spend,
+            impressions: c.impressions,
+            clicks: c.clicks,
+            platform_leads: c.platformLeads,
+            messaging_connections: c.messagingConnections,
+            raw_actions: c.rawActions,
+            synced_at: syncedAt
+          }, 'ad_account_id,campaign_id,date_since,date_until');
+        } catch (e) {}
+      }
     }
-  }
 
-  const campaigns = Array.from(campaignsById.values()).sort((a, b) => b.spend - a.spend);
-  const totalSpendNzd = Math.round(campaigns.reduce((s, c) => s + c.spend, 0) * 100) / 100;
-  const totalImpressions = campaigns.reduce((s, c) => s + c.impressions, 0);
-  const totalClicks = campaigns.reduce((s, c) => s + c.clicks, 0);
-  const totalPlatformLeads = campaigns.reduce((s, c) => s + c.platformLeads, 0);
-  const totalCrmLeads = campaigns.reduce((s, c) => s + c.crmLeadsCount, 0);
-  const totalMessagingConnections = campaigns.reduce((s, c) => s + c.messagingConnections, 0);
+    const syncStatus = !insightsRetrievedSuccessfully
+      ? (nzdAdAccounts.length === 0 ? 'no_nzd_ad_accounts' : 'error')
+      : (hadAnyFailure ? 'partial_success' : 'success');
 
-  const syncedAt = new Date().toISOString();
+    const result = {
+      status: syncStatus,
+      partialFailure: hadAnyFailure,
+      stale: usePreservedCache,
+      provider: 'zernio',
+      currency: 'NZD',
+      window: windowInfo,
+      reportingMetadata: {
+        timezone: 'Pacific/Auckland',
+        attributionWindow: 'Meta account default (typically 7-day click / 1-day view)',
+        grain: 'ad_account_id + campaign_id + date_since + date_until (campaign level)',
+        currencyPolicy: 'NZD totals include NZD ad accounts only; non-NZD accounts remain visible with native currency labels and are never converted or mixed.'
+      },
+      durationMs: Date.now() - tStart,
+      lastSuccessfulSync: (insightsRetrievedSuccessfully && !hadAnyFailure) ? syncedAt : (insightsRetrievedSuccessfully ? syncedAt : global.ZERNIO_ADS_SYNC_CACHE.lastSuccessfulSync),
+      lastAttemptedSync: syncedAt,
+      insightsRetrievedSuccessfully,
+      allAdAccounts,
+      adAccounts: nzdAdAccounts,
+      excludedNonNzdAccounts,
+      campaigns,
+      totals: {
+        spendNzd: totalSpendNzd,
+        impressions: totalImpressions,
+        clicks: totalClicks,
+        ctr: totalImpressions > 0 ? Math.round((totalClicks / totalImpressions) * 10000) / 100 : 0,
+        platformLeads: totalPlatformLeads,
+        crmAttributedLeads: totalCrmLeads,
+        messagingConnections: totalMessagingConnections,
+        cplPlatformNzd: totalPlatformLeads > 0 ? Math.round((totalSpendNzd / totalPlatformLeads) * 100) / 100 : null,
+        cplCrmNzd: totalCrmLeads > 0 ? Math.round((totalSpendNzd / totalCrmLeads) * 100) / 100 : null
+      },
+      providerLimitations: [
+        'Zernio GET /api/v1/ads/campaigns only returns campaigns created inside Zernio; native Meta Ads Manager campaigns are retrieved via GET /api/v1/ads/insights?level=campaign.',
+        excludedNonNzdAccounts.length > 0
+          ? `${excludedNonNzdAccounts.length} non-NZD ad account(s) (${excludedNonNzdAccounts.map(a => `${a.name} [${a.currency}]`).join(', ')}) are listed separately and excluded from NZD totals.`
+          : null
+      ].filter(Boolean),
+      errors: errors.length > 0 ? errors : undefined,
+      timestamp: syncedAt
+    };
 
-  // 4. Persist to Supabase tables if migrated (best-effort additive write)
-  if (supabase) {
-    for (const adAcc of allAdAccounts) {
-      try {
-        await safeDbUpsert(supabase, 'ad_accounts', {
-          id: adAcc.id,
-          provider: 'zernio',
-          zernio_account_id: adAcc.zernioAccountId,
-          page_id: adAcc.primaryPageId,
-          name: adAcc.name,
-          currency: adAcc.currency,
-          account_status: String(adAcc.status),
-          is_nzd: adAcc.isNzd,
-          last_synced_at: syncedAt,
-          updated_at: syncedAt
-        }, 'id');
-      } catch (e) {}
+    if (insightsRetrievedSuccessfully || allAdAccounts.length > 0) {
+      global.ZERNIO_ADS_SYNC_CACHE = {
+        lastSuccessfulSync: result.lastSuccessfulSync,
+        lastAttemptedSync: syncedAt,
+        insightsRetrievedSuccessfully: insightsRetrievedSuccessfully || global.ZERNIO_ADS_SYNC_CACHE.insightsRetrievedSuccessfully,
+        partialFailure: hadAnyFailure,
+        lastWindow: windowInfo,
+        allAdAccounts: allAdAccounts.length > 0 ? allAdAccounts : global.ZERNIO_ADS_SYNC_CACHE.allAdAccounts,
+        adAccounts: nzdAdAccounts.length > 0 ? nzdAdAccounts : global.ZERNIO_ADS_SYNC_CACHE.adAccounts,
+        excludedNonNzdAccounts: allAdAccounts.length > 0 ? excludedNonNzdAccounts : global.ZERNIO_ADS_SYNC_CACHE.excludedNonNzdAccounts,
+        campaigns,
+        totals: result.totals,
+        errors
+      };
     }
-    for (const c of campaigns) {
-      try {
-        await safeDbUpsert(supabase, 'campaigns', {
-          id: c.id,
-          ad_account_id: c.adAccountId,
-          page_id: c.pageId,
-          name: c.name,
-          status: c.status,
-          currency: 'NZD',
-          spend: c.spend,
-          impressions: c.impressions,
-          clicks: c.clicks,
-          platform_leads: c.platformLeads,
-          messaging_connections: c.messagingConnections,
-          date_since: windowInfo.since,
-          date_until: windowInfo.until,
-          last_synced_at: syncedAt,
-          updated_at: syncedAt
-        }, 'id');
-        await safeDbUpsert(supabase, 'ad_insights', {
-          ad_account_id: c.adAccountId,
-          campaign_id: c.id,
-          campaign_name: c.name,
-          page_id: c.pageId,
-          date_since: windowInfo.since,
-          date_until: windowInfo.until,
-          currency: 'NZD',
-          spend: c.spend,
-          impressions: c.impressions,
-          clicks: c.clicks,
-          platform_leads: c.platformLeads,
-          messaging_connections: c.messagingConnections,
-          raw_actions: c.rawActions,
-          synced_at: syncedAt
-        }, 'ad_account_id,campaign_id,date_since,date_until');
-      } catch (e) {}
-    }
-  }
 
-  const insightsRetrievedSuccessfully = insightsSuccessCount > 0;
-  const result = {
-    status: insightsRetrievedSuccessfully ? 'success' : (nzdAdAccounts.length === 0 ? 'no_nzd_ad_accounts' : 'partial_error'),
-    provider: 'zernio',
-    currency: 'NZD',
-    window: windowInfo,
-    lastSuccessfulSync: insightsRetrievedSuccessfully ? syncedAt : global.ZERNIO_ADS_SYNC_CACHE.lastSuccessfulSync,
-    insightsRetrievedSuccessfully,
-    adAccounts: nzdAdAccounts,
-    excludedNonNzdAccounts,
-    campaigns,
-    totals: {
-      spendNzd: totalSpendNzd,
-      impressions: totalImpressions,
-      clicks: totalClicks,
-      ctr: totalImpressions > 0 ? Math.round((totalClicks / totalImpressions) * 10000) / 100 : 0,
-      platformLeads: totalPlatformLeads,
-      crmAttributedLeads: totalCrmLeads,
-      messagingConnections: totalMessagingConnections,
-      cplPlatformNzd: totalPlatformLeads > 0 ? Math.round((totalSpendNzd / totalPlatformLeads) * 100) / 100 : null,
-      cplCrmNzd: totalCrmLeads > 0 ? Math.round((totalSpendNzd / totalCrmLeads) * 100) / 100 : null
-    },
-    providerLimitations: [
-      'Zernio GET /api/v1/ads/campaigns only returns campaigns created inside Zernio; native Meta Ads Manager campaigns are retrieved via GET /api/v1/ads/insights?level=campaign.',
-      excludedNonNzdAccounts.length > 0
-        ? `Excluded ${excludedNonNzdAccounts.length} non-NZD ad account(s) (${excludedNonNzdAccounts.map(a => `${a.name} [${a.currency}]`).join(', ')}) from NZD spend totals to prevent mixed-currency distortion.`
-        : null
-    ].filter(Boolean),
-    errors: errors.length > 0 ? errors : undefined,
-    timestamp: syncedAt
-  };
-
-  global.ZERNIO_ADS_SYNC_CACHE = {
-    lastSuccessfulSync: result.lastSuccessfulSync,
-    insightsRetrievedSuccessfully,
-    lastWindow: windowInfo,
-    adAccounts: nzdAdAccounts,
-    excludedNonNzdAccounts,
-    campaigns,
-    totals: result.totals,
-    errors
-  };
-
-  return result;
+    return result;
+  });
 }
 
 /**
