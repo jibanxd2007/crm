@@ -1870,7 +1870,7 @@
             <div class="ds-card-header">
               <div>
                 <h3 class="ds-card-title">All New Zealand Campaigns (${campaigns.length})</h3>
-                <div class="ds-card-subtitle">Click a campaign row to view its customer enquiries.</div>
+                <div class="ds-card-subtitle">Click a campaign row to view its customer enquiries. Missing a campaign? Check <a href="#settings" onclick="window.app.navigate('settings');return false;" style="color:var(--ds-accent);text-decoration:underline;">Settings → Accounts</a>.</div>
               </div>
               <input type="text" class="input" style="width:220px;" placeholder="Filter campaigns…" value="${esc(this.adsSearchQuery)}" oninput="window.app.searchAds(this.value)">
             </div>
@@ -2364,6 +2364,9 @@
                       </tbody>
                     </table>`;
                 })()}
+              </div>
+              <div style="padding:12px 16px;background:#F9F9FB;border-top:1px solid var(--ds-border);font-size:12.5px;color:var(--ds-ink-secondary);line-height:1.5;">
+                <strong>Missing an ad account?</strong> If an ad account running in Meta Ads Manager (such as <code>1708985873733763</code>) is not appearing above, click <strong>Connect Meta Ads</strong> to sign in with the Facebook account that owns that ad account, or add your connected Facebook profile as an ad account administrator in Meta Business Suite.
               </div>
             </section>
           </div>

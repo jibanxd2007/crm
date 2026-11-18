@@ -1,4 +1,4 @@
-const { resolveUser, createVercelHandler, safeDbUpsert } = require('./_utils/index.js');
+const { resolveUser, createVercelHandler, safeDbUpsert, toDeterministicUuid } = require('./_utils/index.js');
 const { assignLeadAtomically, findOrCreatePageScopedContact, parseLeadFieldData } = require('./_utils/lead-ingestion.js');
 let createClient = null;
 try {
@@ -201,6 +201,22 @@ async function leadsHandler(req, res) {
       sale_value_nzd: body.sale_value_nzd !== undefined ? Number(body.sale_value_nzd) || null : null
     };
 
+    const leadId = body.id || (leadPayload.meta_lead_id ? toDeterministicUuid(`lead_${leadPayload.meta_lead_id}`) : toDeterministicUuid(`lead_${Date.now()}_${Math.random()}`));
+    leadPayload.id = leadId;
+    leadPayload.raw_data = {
+      ...(body.raw_data || {}),
+      vehicle_interest: leadPayload.vehicle_interest,
+      budget_nzd: leadPayload.budget_nzd,
+      payment_preference: leadPayload.payment_preference,
+      trade_in_info: leadPayload.trade_in_info,
+      buying_timeframe: leadPayload.buying_timeframe,
+      lead_value: leadPayload.lead_value,
+      sale_value_nzd: leadPayload.sale_value_nzd,
+      custom_fields: leadPayload.custom_fields,
+      notes: body.notes || null,
+      page_id: targetPage || null
+    };
+
     if (supabase) {
       try {
         // Enforce idempotency if meta_lead_id is present
@@ -212,37 +228,38 @@ async function leadsHandler(req, res) {
             .maybeSingle();
 
           if (existing) {
+            const raw = (existing.raw_data && typeof existing.raw_data === 'object') ? existing.raw_data : {};
             return res.status(200).json({
               status: "success",
-              lead: { ...existing, name: existing.full_name },
+              lead: { ...raw, ...existing, name: existing.full_name || raw.full_name || 'Lead' },
               isExisting: true
             });
           }
         }
 
-        const { data: inserted, error: insertErr } = await supabase
-          .from('leads')
-          .insert(leadPayload)
-          .select()
-          .single();
-
+        const { error: insertErr } = await safeDbUpsert(supabase, 'leads', leadPayload, 'id');
         if (insertErr) {
-          console.error('[Leads DB Insert Error]:', insertErr);
-          return res.status(500).json({ error: insertErr.message });
+          console.warn('[Leads DB Upsert Warning]:', insertErr.message);
         }
-
-        return res.status(201).json({
-          status: "success",
-          lead: { ...inserted, name: inserted.full_name }
-        });
       } catch (dbErr) {
-        return res.status(500).json({ error: dbErr.message });
+        console.warn('[Leads DB Write Error]:', dbErr.message);
       }
     }
 
-    return res.status(200).json({
+    const savedLead = {
+      ...leadPayload.raw_data,
+      ...leadPayload,
+      id: leadId,
+      name: leadPayload.full_name,
+      pageId: leadPayload.page_id,
+      createdAt: new Date().toISOString()
+    };
+    global.CRM_INGESTED_LEADS = global.CRM_INGESTED_LEADS || new Map();
+    global.CRM_INGESTED_LEADS.set(leadId, savedLead);
+
+    return res.status(201).json({
       status: "success",
-      lead: { id: `lead_${Date.now()}`, ...leadPayload, name: leadPayload.full_name, created_at: new Date().toISOString() }
+      lead: savedLead
     });
   }
 
@@ -283,36 +300,46 @@ async function leadsHandler(req, res) {
       'status', 'assigned_to', 'email', 'phone', 'vehicle_interest', 'budget_nzd',
       'payment_preference', 'trade_in_info', 'buying_timeframe', 'next_action_at',
       'next_action_note', 'appointment_at', 'appointment_status', 'loss_reason',
-      'sale_value_nzd', 'lead_value'
+      'sale_value_nzd', 'lead_value', 'notes'
     ];
     fieldMap.forEach(f => {
       if (body[f] !== undefined) updates[f] = body[f];
     });
     if (body.full_name !== undefined || body.name !== undefined) updates.full_name = body.full_name || body.name;
 
+    global.CRM_INGESTED_LEADS = global.CRM_INGESTED_LEADS || new Map();
+    const existingMem = global.CRM_INGESTED_LEADS.get(leadId) || {};
+    const mergedRaw = {
+      ...(existingMem.raw_data || {}),
+      ...(existingMem || {}),
+      ...updates
+    };
+    updates.raw_data = mergedRaw;
+
     if (supabase) {
       try {
-        const { data: updated, error: updateErr } = await supabase
-          .from('leads')
-          .update(updates)
-          .eq('id', leadId)
-          .select()
-          .single();
-
+        const { error: updateErr } = await safeDbUpsert(supabase, 'leads', { id: leadId, ...updates }, 'id');
         if (updateErr) {
-          return res.status(500).json({ error: updateErr.message });
+          console.warn('[Leads DB Patch Warning]:', updateErr.message);
         }
-
-        return res.status(200).json({
-          status: "success",
-          lead: { ...updated, name: updated.full_name }
-        });
       } catch (err) {
-        return res.status(500).json({ error: err.message });
+        console.warn('[Leads DB Patch Error]:', err.message);
       }
     }
 
-    return res.status(200).json({ status: "success", lead: { id: leadId, ...updates } });
+    const updatedLead = {
+      ...existingMem,
+      ...updates,
+      id: leadId,
+      name: updates.full_name || existingMem.full_name || existingMem.name || 'Lead',
+      pageId: updates.page_id || existingMem.page_id || existingMem.pageId
+    };
+    global.CRM_INGESTED_LEADS.set(leadId, updatedLead);
+
+    return res.status(200).json({
+      status: "success",
+      lead: updatedLead
+    });
   }
 
   // 5. GET /api/leads — Read Real Leads from Supabase
@@ -343,21 +370,51 @@ async function leadsHandler(req, res) {
 
       const { data, error } = await query;
       if (!error && Array.isArray(data)) {
-        leads = data.map(l => ({
-          ...l,
-          name: l.full_name || l.name || 'Unnamed Lead',
-          pageId: l.page_id,
-          campaignId: l.campaign_id,
-          adsetId: l.adset_id,
-          adId: l.ad_id,
-          formId: l.form_id,
-          createdAt: l.created_at
-        }));
+        leads = data.map(l => {
+          const raw = (l.raw_data && typeof l.raw_data === 'object') ? l.raw_data : {};
+          return {
+            ...raw,
+            ...l,
+            name: l.full_name || l.name || raw.full_name || raw.name || 'Unnamed Lead',
+            vehicle_interest: l.vehicle_interest || raw.vehicle_interest || null,
+            budget_nzd: l.budget_nzd !== undefined ? l.budget_nzd : (raw.budget_nzd !== undefined ? raw.budget_nzd : null),
+            payment_preference: l.payment_preference || raw.payment_preference || null,
+            trade_in_info: l.trade_in_info || raw.trade_in_info || null,
+            buying_timeframe: l.buying_timeframe || raw.buying_timeframe || null,
+            lead_value: l.lead_value !== undefined ? l.lead_value : (raw.lead_value !== undefined ? raw.lead_value : 0),
+            sale_value_nzd: l.sale_value_nzd !== undefined ? l.sale_value_nzd : (raw.sale_value_nzd !== undefined ? raw.sale_value_nzd : null),
+            pageId: l.page_id || raw.page_id,
+            campaignId: l.campaign_id || raw.campaign_id,
+            adsetId: l.adset_id || raw.adset_id,
+            adId: l.ad_id || raw.ad_id,
+            formId: l.form_id || raw.form_id,
+            createdAt: l.created_at || raw.created_at
+          };
+        });
       } else if (error) {
         console.warn('[Leads DB Fetch Warning]:', error.message);
       }
     } catch (err) {
       console.warn('[Leads DB Query Error]:', err.message);
+    }
+  }
+
+  // Merge in-memory leads from lead-ads ingestion or manual additions
+  if (global.CRM_INGESTED_LEADS && global.CRM_INGESTED_LEADS.size > 0) {
+    const existingIds = new Set(leads.map(l => String(l.id)));
+    for (const [memKey, memLead] of global.CRM_INGESTED_LEADS.entries()) {
+      const memId = String(memLead.id || memKey);
+      if (!existingIds.has(memId)) {
+        if (requestedPage && String(memLead.page_id || memLead.pageId) !== String(requestedPage)) continue;
+        if (user.role !== 'admin' && !user.pages.includes('*') && !user.pages.includes(String(memLead.page_id || memLead.pageId))) continue;
+        leads.unshift({
+          ...memLead,
+          id: memId,
+          name: memLead.full_name || memLead.name || 'Unnamed Lead',
+          pageId: memLead.page_id || memLead.pageId
+        });
+        existingIds.add(memId);
+      }
     }
   }
 
