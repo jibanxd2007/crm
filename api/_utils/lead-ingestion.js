@@ -234,7 +234,7 @@ async function findOrCreatePageScopedContact(supabase, { pageId, fullName, email
  * Two concurrent workers calling assignLeadAtomically for the same leadId will serialize
  * and resolve to the exact same single owner — never conflicting owners!
  */
-async function assignLeadAtomically(supabase, { leadId, pageId, eligibleStaffIds = [], manualStaffId = null }) {
+async function assignLeadAtomically(supabase, { leadId, pageId, eligibleStaffIds, manualStaffId = null } = {}) {
   const lockKey = String(leadId || `lead_${Date.now()}`);
 
   // Serialize concurrent workers targeting the same leadId within this runtime
@@ -268,18 +268,32 @@ async function assignLeadAtomically(supabase, { leadId, pageId, eligibleStaffIds
     }
 
     // Resolve eligible staff for this page strictly
-    let pool = Array.isArray(eligibleStaffIds) ? eligibleStaffIds.filter(Boolean).map(String) : [];
+    let pool = Array.isArray(eligibleStaffIds) ? eligibleStaffIds.filter(Boolean).map(String) : null;
 
-    if (pool.length === 0 && supabase && pageId) {
-      try {
-        const { data: members } = await supabase
-          .from('page_members')
-          .select('user_id')
-          .eq('page_id', pageId);
-        if (Array.isArray(members) && members.length > 0) {
-          pool = members.map(m => String(m.user_id));
+    if (pool === null) {
+      pool = [];
+      if (supabase && pageId) {
+        try {
+          const { data: members } = await supabase
+            .from('page_members')
+            .select('user_id')
+            .eq('page_id', pageId);
+          if (Array.isArray(members) && members.length > 0) {
+            pool = members.map(m => String(m.user_id));
+          }
+        } catch (e) {}
+      }
+
+      if (pool.length === 0 && global.CRM_USER_STORE && global.CRM_USER_STORE.size > 0) {
+        const activeStaff = Array.from(global.CRM_USER_STORE.values()).filter(u => u.role === 'staff' && u.status === 'active');
+        const matchingStaff = activeStaff.filter(u => {
+          if (!u.assignedPages || u.assignedPages.length === 0) return false;
+          return u.assignedPages.includes('*') || (pageId && u.assignedPages.includes(String(pageId)));
+        });
+        if (matchingStaff.length > 0) {
+          pool = matchingStaff.map(u => String(u.id));
         }
-      } catch (e) {}
+      }
     }
 
     // Deduplicate and sort for deterministic round-robin
@@ -398,21 +412,23 @@ async function ingestLeadAdEvent(supabase, rawPayload = {}, options = {}) {
   // 1. Fast in-memory idempotency check
   if (global.CRM_INGESTED_LEADS.has(leadgenId)) {
     const existing = global.CRM_INGESTED_LEADS.get(leadgenId);
-    await logWebhookEvent(supabase, { provider, eventType: 'leadgen', externalEventId: `lead_${leadgenId}`, pageId: rawPageId, status: 'duplicate', payload });
+    if (supabase && !options.skipDbWrite) {
+      logWebhookEvent(supabase, { provider, eventType: 'leadgen', externalEventId: `lead_${leadgenId}`, pageId: rawPageId, status: 'duplicate', payload }).catch(() => {});
+    }
     return { status: 'success', isDuplicate: true, lead: existing };
   }
 
-  // 2. Database idempotency check
-  if (supabase) {
+  // 2. Database idempotency check (only when DB writes are enabled)
+  if (supabase && !options.skipDbWrite) {
     try {
       const { data: existingLead } = await supabase
         .from('leads')
-        .select('*')
-        .eq('meta_lead_id', leadgenId)
+        .select('id, page_id, full_name, email, phone, status, source, assigned_to, raw_data')
+        .eq('id', leadgenId)
         .maybeSingle();
       if (existingLead) {
         global.CRM_INGESTED_LEADS.set(leadgenId, existingLead);
-        await logWebhookEvent(supabase, { provider, eventType: 'leadgen', externalEventId: `lead_${leadgenId}`, pageId: rawPageId, status: 'duplicate', payload });
+        logWebhookEvent(supabase, { provider, eventType: 'leadgen', externalEventId: `lead_${leadgenId}`, pageId: rawPageId, status: 'duplicate', payload }).catch(() => {});
         return { status: 'success', isDuplicate: true, lead: { ...existingLead, name: existingLead.full_name } };
       }
     } catch (e) {}
@@ -517,6 +533,7 @@ async function ingestLeadAdEvent(supabase, rawPayload = {}, options = {}) {
 
   const insertData = {
     page_id: effectivePageId,
+    page_name: resolvedPageName || pageName || 'Connected Page',
     contact_id: contactRes.contactId,
     meta_lead_id: leadgenId,
     full_name: parsed.fullName,

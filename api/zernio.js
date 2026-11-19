@@ -16,6 +16,7 @@ const {
 } = require('./_utils/index.js');
 const { ingestLeadAdEvent, logWebhookEvent } = require('./_utils/lead-ingestion.js');
 const {
+  mapWithBoundedConcurrency,
   getDynamicZernioAccounts,
   resolveDynamicAccount,
   syncZernioAdsInsights,
@@ -716,8 +717,12 @@ async function zernioUnifiedHandler(req, res) {
     }
 
     // Resolve accountId dynamically from active Zernio accounts (never hardcoded)
+    global.CONVERSATION_ACCOUNT_MAP = global.CONVERSATION_ACCOUNT_MAP || new Map();
+    if (!accountId && targetZernioConvId) {
+      accountId = global.CONVERSATION_ACCOUNT_MAP.get(String(targetZernioConvId)) || null;
+    }
     if (!accountId) {
-      const dynamicAcc = await resolveDynamicAccount(apiKey, null);
+      const dynamicAcc = await resolveDynamicAccount(apiKey, targetZernioConvId || null);
       if (dynamicAcc) accountId = dynamicAcc.accountId;
     }
     if (!accountId) {
@@ -915,10 +920,13 @@ async function zernioUnifiedHandler(req, res) {
       const parsed = await fetchAccountConvs(targetAccount, reqLimit, reqCursor);
       let convList = parsed.data || parsed.conversations || [];
       if (Array.isArray(convList)) {
+        global.CONVERSATION_ACCOUNT_MAP = global.CONVERSATION_ACCOUNT_MAP || new Map();
         convList.forEach(c => {
           c.accountId = c.accountId || targetAccount;
           c.page_id = c.page_id || targetAccount;
           c.last_message_at = c.last_message_at || c.lastMessageAt || c.updatedTime || c.updated_at || c.time || new Date().toISOString();
+          const convKey = String(c._id || c.id || c.conversationId);
+          if (convKey) global.CONVERSATION_ACCOUNT_MAP.set(convKey, targetAccount);
         });
         if (searchQ) {
           convList = convList.filter(c => {
@@ -937,7 +945,7 @@ async function zernioUnifiedHandler(req, res) {
 
     // No target account specified: query across dynamic Zernio accounts
     const allAccounts = await getDynamicZernioAccounts(apiKey);
-    const validAccounts = (Array.isArray(allAccounts) && allAccounts.length > 0) ? allAccounts : [];
+    const validAccounts = Array.isArray(allAccounts) ? allAccounts : (allAccounts?.accounts || []);
 
     if (validAccounts.length === 0) {
       const defaultParsed = await new Promise((resolve) => {
@@ -961,25 +969,29 @@ async function zernioUnifiedHandler(req, res) {
       return res.status(200).json(defaultParsed);
     }
 
-    const results = await mapWithBoundedConcurrency(validAccounts, async (acc) => {
+    global.CONVERSATION_ACCOUNT_MAP = global.CONVERSATION_ACCOUNT_MAP || new Map();
+    const results = await mapWithBoundedConcurrency(validAccounts, 3, async (acc) => {
       const accId = acc._id || acc.id || acc.accountId;
       const res = await fetchAccountConvs(accId, reqLimit, reqCursor);
       const list = res.data || res.conversations || [];
       list.forEach(c => {
         c.accountId = c.accountId || accId;
         c.page_id = c.page_id || accId;
-        c.accountName = acc.name || c.accountName;
+        c.accountName = acc.pageName || acc.name || c.accountName;
+        c.pageName = acc.pageName || acc.name || 'Connected Page';
         c.last_message_at = c.last_message_at || c.lastMessageAt || c.updatedTime || c.updated_at || c.time || new Date().toISOString();
+        const convKey = String(c.id || c.conversationId || c._id);
+        if (convKey) global.CONVERSATION_ACCOUNT_MAP.set(convKey, accId);
       });
       return list;
-    }, 3);
+    });
 
     let merged = [];
     const seenIds = new Set();
     for (const sublist of results) {
       if (Array.isArray(sublist)) {
         for (const conv of sublist) {
-          const cid = String(conv.id || conv.conversationId);
+          const cid = String(conv.id || conv.conversationId || conv._id);
           if (cid && !seenIds.has(cid)) {
             seenIds.add(cid);
             merged.push(conv);
@@ -1025,9 +1037,10 @@ async function zernioUnifiedHandler(req, res) {
       const targetAccount = query.accountId || null;
 
       const dynamicAccounts = await getDynamicZernioAccounts(apiKey);
+      const dynList = Array.isArray(dynamicAccounts) ? dynamicAccounts : (dynamicAccounts?.accounts || []);
       const accountsToSync = targetAccount
         ? [{ _id: targetAccount }]
-        : (Array.isArray(dynamicAccounts) && dynamicAccounts.length > 0 ? dynamicAccounts : [{ _id: null }]);
+        : (dynList.length > 0 ? dynList : [{ _id: null }]);
 
       let totalSyncedConvs = 0;
       let totalSyncedMsgs = 0;
@@ -1065,16 +1078,16 @@ async function zernioUnifiedHandler(req, res) {
         const syncedConvs = await syncConversationsToSupabase(convList.slice(0, 25));
         totalSyncedConvs += syncedConvs;
 
-        for (const conv of convList.slice(0, syncBatchLimit)) {
-          if (!conv.id) continue;
+        const batchToFetch = convList.slice(0, syncBatchLimit).filter(c => c && c.id);
+        await mapWithBoundedConcurrency(batchToFetch, 3, async (conv) => {
           try {
             const thisAccId = conv.accountId || accId;
-            if (!thisAccId) continue;
+            if (!thisAccId) return;
             const msgsResp = await new Promise((resolve) => {
               const mReq = https.get({
                 hostname: 'zernio.com',
                 port: 443,
-                path: `/api/v1/inbox/conversations/${conv.id}/messages?accountId=${encodeURIComponent(thisAccId)}`,
+                path: `/api/v1/inbox/conversations/${encodeURIComponent(conv.id)}/messages?accountId=${encodeURIComponent(thisAccId)}`,
                 headers: { 'Authorization': `Bearer ${apiKey}`, 'Accept': 'application/json' }
               }, (mResp) => {
                 let mData = '';
@@ -1083,7 +1096,7 @@ async function zernioUnifiedHandler(req, res) {
                   try { resolve(JSON.parse(mData)); } catch(e) { resolve(null); }
                 });
               });
-              mReq.setTimeout(5000, () => { mReq.destroy(); resolve(null); });
+              mReq.setTimeout(4000, () => { mReq.destroy(); resolve(null); });
               mReq.on('error', () => resolve(null));
             });
             const msgList = msgsResp?.messages || msgsResp?.data || [];
@@ -1091,7 +1104,7 @@ async function zernioUnifiedHandler(req, res) {
               totalSyncedMsgs += await syncMessagesToSupabase(conv.id, msgList, thisAccId);
             }
           } catch (mErr) {}
-        }
+        });
       }
 
       return res.status(200).json({

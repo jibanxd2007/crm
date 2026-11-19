@@ -17,6 +17,18 @@ const RATE_LIMITS = global.CRM_RATE_LIMITS;
 // ------------------------------------------------------------------------------
 // Exactly seven unique accounts. admina@novaautos.co.nz is Joy, the sole administrator.
 // All emails normalized to lowercase.
+const CANONICAL_DEALERSHIP_PAGE_IDS = [
+  '6accd8b0d52dc43d8bf6034c', // Nova cars Samoa nz
+  '6acd4daed19284a3227d7870', // Nova auto nz
+  '6aea527fa5c031c687ccba15', // Car4u Ma’a Tonga NZ
+  '6aea5280a5c031c687ccba16', // Car4u
+  '6aea5280a5c031c687ccba17', // Zodiac Motor Company
+  '6aea5281a5c031c687ccba18', // Car4u Mo Samoa NZ
+  '1330954980099743',
+  '107386827827827',
+  '1271057346092106'
+];
+
 const INITIAL_CANONICAL_USERS = [
   {
     id: '00000000-0000-4001-a001-000000000001',
@@ -41,7 +53,7 @@ const INITIAL_CANONICAL_USERS = [
     setupToken: 'stp_dan_2026',
     setup_token: 'stp_dan_2026',
     setupExpiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
-    assignedPages: [],
+    assignedPages: [...CANONICAL_DEALERSHIP_PAGE_IDS],
     createdAt: new Date().toISOString()
   },
   {
@@ -54,7 +66,7 @@ const INITIAL_CANONICAL_USERS = [
     setupToken: 'stp_maki_2026',
     setup_token: 'stp_maki_2026',
     setupExpiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
-    assignedPages: [],
+    assignedPages: [...CANONICAL_DEALERSHIP_PAGE_IDS],
     createdAt: new Date().toISOString()
   },
   {
@@ -67,7 +79,7 @@ const INITIAL_CANONICAL_USERS = [
     setupToken: 'stp_seni_2026',
     setup_token: 'stp_seni_2026',
     setupExpiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
-    assignedPages: [],
+    assignedPages: [...CANONICAL_DEALERSHIP_PAGE_IDS],
     createdAt: new Date().toISOString()
   },
   {
@@ -80,7 +92,7 @@ const INITIAL_CANONICAL_USERS = [
     setupToken: 'stp_tala_2026',
     setup_token: 'stp_tala_2026',
     setupExpiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
-    assignedPages: [],
+    assignedPages: [...CANONICAL_DEALERSHIP_PAGE_IDS],
     createdAt: new Date().toISOString()
   },
   {
@@ -93,7 +105,7 @@ const INITIAL_CANONICAL_USERS = [
     setupToken: 'stp_massih_2026',
     setup_token: 'stp_massih_2026',
     setupExpiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
-    assignedPages: [],
+    assignedPages: [...CANONICAL_DEALERSHIP_PAGE_IDS],
     createdAt: new Date().toISOString()
   },
   {
@@ -106,7 +118,7 @@ const INITIAL_CANONICAL_USERS = [
     setupToken: 'stp_ania_2026',
     setup_token: 'stp_ania_2026',
     setupExpiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
-    assignedPages: [],
+    assignedPages: [...CANONICAL_DEALERSHIP_PAGE_IDS],
     createdAt: new Date().toISOString()
   }
 ];
@@ -374,7 +386,7 @@ function resolveUser(headers = {}) {
             displayName: u.name,
             role: u.role,
             status: u.status,
-            pages: u.role === 'admin' ? ['*'] : (u.assignedPages || []),
+            pages: u.role === 'admin' ? ['*'] : ((u.assignedPages && u.assignedPages.length > 0) ? u.assignedPages : CANONICAL_DEALERSHIP_PAGE_IDS),
             convs: u.role === 'admin' ? ['*'] : []
           };
         }
@@ -410,7 +422,7 @@ function resolveUser(headers = {}) {
         displayName: candidate.name,
         role: candidate.role,
         status: candidate.status,
-        pages: candidate.role === 'admin' ? ['*'] : (candidate.assignedPages || []),
+        pages: candidate.role === 'admin' ? ['*'] : ((candidate.assignedPages && candidate.assignedPages.length > 0) ? candidate.assignedPages : CANONICAL_DEALERSHIP_PAGE_IDS),
         convs: candidate.role === 'admin' ? ['*'] : []
       };
     }
@@ -444,7 +456,7 @@ function resolveUser(headers = {}) {
         displayName: candidate.name,
         role: candidate.role,
         status: candidate.status,
-        pages: candidate.role === 'admin' ? ['*'] : (candidate.assignedPages || []),
+        pages: candidate.role === 'admin' ? ['*'] : ((candidate.assignedPages && candidate.assignedPages.length > 0) ? candidate.assignedPages : CANONICAL_DEALERSHIP_PAGE_IDS),
         convs: candidate.role === 'admin' ? ['*'] : []
       };
     }

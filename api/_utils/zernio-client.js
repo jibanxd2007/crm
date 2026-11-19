@@ -51,6 +51,12 @@ async function runWithLease(lockKey, leaseMs, fn) {
 }
 
 async function mapWithBoundedConcurrency(items, concurrency, worker) {
+  if (typeof concurrency === 'function') {
+    const tmp = concurrency;
+    concurrency = typeof worker === 'number' ? worker : 4;
+    worker = tmp;
+  }
+  concurrency = typeof concurrency === 'number' && concurrency > 0 ? concurrency : 4;
   const results = new Array(items.length);
   let cursor = 0;
   const runners = Array.from({ length: Math.min(concurrency, Math.max(1, items.length)) }, async () => {

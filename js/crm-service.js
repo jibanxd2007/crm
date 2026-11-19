@@ -460,12 +460,60 @@ class CRMService {
       const res = await fetch('/api/leads', { headers }).catch(() => null);
       if (res && res.ok) {
         const data = await res.json();
-        if (data && Array.isArray(data.leads)) {
-          this.leads = data.leads.map(l => ({
-            ...l,
-            name: l.full_name || l.name || 'Meta Lead',
-            value: Number(l.lead_value || l.value || 0)
-          }));
+        const incomingLeads = (data && Array.isArray(data.leads)) ? data.leads : [];
+        if (incomingLeads.length > 0) {
+          const currentMap = new Map((this.leads || []).map(l => [String(l.id), l]));
+
+          for (const raw of incomingLeads) {
+            const lid = String(raw.id);
+            const existing = currentMap.get(lid);
+            if (existing) {
+              // Smart merge: update server fields but preserve local user modifications
+              const resolvedName = existing.name || raw.full_name || raw.name || 'Meta Lead';
+              const resolvedStatus = existing.status || raw.status || 'New';
+              currentMap.set(lid, {
+                ...raw,
+                ...existing,
+                name: resolvedName,
+                full_name: raw.full_name || existing.full_name || resolvedName,
+                phone: raw.phone || existing.phone || '',
+                email: raw.email || existing.email || '',
+                page_id: raw.page_id || existing.page_id,
+                page_name: raw.page_name || existing.page_name || this.resolvePageRecord(raw.page_id)?.name || 'Connected Page',
+                assigned_to: existing.assigned_to || raw.assigned_to || null,
+                assigned_staff_id: existing.assigned_staff_id || raw.assigned_to || null,
+                status: resolvedStatus,
+                stage: existing.stage || resolvedStatus,
+                vehicle_interest: existing.vehicle_interest || raw.vehicle_interest || null,
+                budget_nzd: existing.budget_nzd !== undefined ? existing.budget_nzd : (raw.budget_nzd !== undefined ? raw.budget_nzd : null),
+                payment_preference: existing.payment_preference || raw.payment_preference || null,
+                trade_in_info: existing.trade_in_info || raw.trade_in_info || null,
+                buying_timeframe: existing.buying_timeframe || raw.buying_timeframe || null,
+                notes: (existing.notes && existing.notes.length > 0) ? existing.notes : (raw.notes || []),
+                activities: (existing.activities && existing.activities.length > 0) ? existing.activities : (raw.activities || []),
+                value: Number(existing.value || existing.lead_value || raw.lead_value || raw.value || 0),
+                lead_value: Number(existing.lead_value || existing.value || raw.lead_value || raw.value || 0)
+              });
+            } else {
+              const pName = raw.page_name || this.resolvePageRecord(raw.page_id)?.name || 'Connected Page';
+              const nameVal = raw.full_name || raw.name || 'Meta Lead';
+              currentMap.set(lid, {
+                ...raw,
+                id: lid,
+                name: nameVal,
+                full_name: nameVal,
+                page_name: pName,
+                status: raw.status || 'New',
+                stage: raw.stage || raw.status || 'New',
+                value: Number(raw.lead_value || raw.value || 0),
+                lead_value: Number(raw.lead_value || raw.value || 0),
+                created_at: raw.created_at || new Date().toISOString()
+              });
+            }
+          }
+
+          this.leads = Array.from(currentMap.values());
+          this.leads.sort((a, b) => new Date(b.created_at || b.createdAt || 0) - new Date(a.created_at || a.createdAt || 0));
           this.saveLeads();
           this.notifyChange('leads_updated');
           return this.leads;
@@ -874,6 +922,94 @@ class CRMService {
       localStorage.setItem(this.conversationsKey, JSON.stringify(this.conversations));
     } catch (e) {
       console.warn("Conversations storage save error:", e);
+    }
+  }
+
+  saveLeads() {
+    try {
+      localStorage.setItem(this.leadsKey, JSON.stringify(this.leads));
+    } catch (e) {
+      console.warn("Leads storage save error:", e);
+    }
+  }
+
+  savePages() {
+    try {
+      localStorage.setItem(this.pagesKey, JSON.stringify(this.pages));
+    } catch (e) {
+      console.warn("Pages storage save error:", e);
+    }
+  }
+
+  saveStaff() {
+    try {
+      localStorage.setItem(this.staffKey, JSON.stringify(this.staff));
+    } catch (e) {
+      console.warn("Staff storage save error:", e);
+    }
+  }
+
+  saveContacts() {
+    try {
+      localStorage.setItem(this.contactsKey, JSON.stringify(this.contacts));
+    } catch (e) {
+      console.warn("Contacts storage save error:", e);
+    }
+  }
+
+  saveDeals() {
+    try {
+      localStorage.setItem(this.dealsKey, JSON.stringify(this.deals));
+    } catch (e) {
+      console.warn("Deals storage save error:", e);
+    }
+  }
+
+  savePipelines() {
+    try {
+      localStorage.setItem(this.pipelinesKey, JSON.stringify(this.pipelines));
+    } catch (e) {
+      console.warn("Pipelines storage save error:", e);
+    }
+  }
+
+  saveTasks() {
+    try {
+      localStorage.setItem(this.tasksKey, JSON.stringify(this.tasks));
+    } catch (e) {
+      console.warn("Tasks storage save error:", e);
+    }
+  }
+
+  saveAutomations() {
+    try {
+      localStorage.setItem(this.automationsKey, JSON.stringify(this.automations));
+    } catch (e) {
+      console.warn("Automations storage save error:", e);
+    }
+  }
+
+  saveStageHistory() {
+    try {
+      localStorage.setItem(this.stageHistoryKey, JSON.stringify(this.stageHistory));
+    } catch (e) {
+      console.warn("StageHistory storage save error:", e);
+    }
+  }
+
+  saveAuditLogs() {
+    try {
+      localStorage.setItem(this.auditKey, JSON.stringify(this.auditLogs));
+    } catch (e) {
+      console.warn("AuditLogs storage save error:", e);
+    }
+  }
+
+  saveNotifications() {
+    try {
+      localStorage.setItem(this.notifsKey, JSON.stringify(this.notifications));
+    } catch (e) {
+      console.warn("Notifications storage save error:", e);
     }
   }
 

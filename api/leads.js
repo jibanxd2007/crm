@@ -1,5 +1,6 @@
 const { resolveUser, createVercelHandler, safeDbUpsert, toDeterministicUuid } = require('./_utils/index.js');
 const { assignLeadAtomically, findOrCreatePageScopedContact, parseLeadFieldData } = require('./_utils/lead-ingestion.js');
+const { syncZernioLeads } = require('./_utils/zernio-client.js');
 let createClient = null;
 try {
   createClient = require('@supabase/supabase-js').createClient;
@@ -237,7 +238,20 @@ async function leadsHandler(req, res) {
           }
         }
 
-        const { error: insertErr } = await safeDbUpsert(supabase, 'leads', leadPayload, 'id');
+        const dbPayload = {
+          id: leadId,
+          full_name: leadPayload.full_name || leadPayload.name || 'Lead',
+          email: leadPayload.email || null,
+          phone: leadPayload.phone || null,
+          status: leadPayload.status || 'New',
+          source: leadPayload.source || 'Manual Entry',
+          assigned_to: leadPayload.assigned_to || null,
+          raw_data: leadPayload.raw_data || {}
+        };
+        if (leadPayload.page_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(leadPayload.page_id)) {
+          dbPayload.page_id = leadPayload.page_id;
+        }
+        const { error: insertErr } = await safeDbUpsert(supabase, 'leads', dbPayload, 'id');
         if (insertErr) {
           console.warn('[Leads DB Upsert Warning]:', insertErr.message);
         }
@@ -318,7 +332,19 @@ async function leadsHandler(req, res) {
 
     if (supabase) {
       try {
-        const { error: updateErr } = await safeDbUpsert(supabase, 'leads', { id: leadId, ...updates }, 'id');
+        const dbUpdates = {
+          id: leadId,
+          raw_data: mergedRaw
+        };
+        if (updates.full_name || updates.name) dbUpdates.full_name = updates.full_name || updates.name;
+        if (updates.status) dbUpdates.status = updates.status;
+        if (updates.email) dbUpdates.email = updates.email;
+        if (updates.phone) dbUpdates.phone = updates.phone;
+        if (updates.assigned_to) dbUpdates.assigned_to = updates.assigned_to;
+        if (updates.page_id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(updates.page_id)) {
+          dbUpdates.page_id = updates.page_id;
+        }
+        const { error: updateErr } = await safeDbUpsert(supabase, 'leads', dbUpdates, 'id');
         if (updateErr) {
           console.warn('[Leads DB Patch Warning]:', updateErr.message);
         }
@@ -342,7 +368,19 @@ async function leadsHandler(req, res) {
     });
   }
 
-  // 5. GET /api/leads — Read Real Leads from Supabase
+  // 5. GET /api/leads — Read Real Leads from Supabase & Zernio
+  const zKey = process.env.ZERNIO_API_KEY;
+  const now = Date.now();
+  global.CRM_INGESTED_LEADS = global.CRM_INGESTED_LEADS || new Map();
+  if (zKey && (global.CRM_INGESTED_LEADS.size === 0 || (now - (global.LAST_ZERNIO_LEADS_SYNC || 0) > 60000))) {
+    try {
+      global.LAST_ZERNIO_LEADS_SYNC = now;
+      await syncZernioLeads({ apiKey: zKey, supabase: null, pageId: requestedPage, limitPerAccount: 50, skipDbWrite: true });
+    } catch (e) {
+      console.warn('[Leads Sync Error]:', e.message);
+    }
+  }
+
   let leads = [];
   if (supabase) {
     try {
@@ -352,20 +390,18 @@ async function leadsHandler(req, res) {
         .order('created_at', { ascending: false });
 
       if (requestedPage) {
-        query = query.eq('page_id', requestedPage);
-      } else if (user.role !== 'admin' && !user.pages.includes('*')) {
-        if (!user.pages || user.pages.length === 0) {
-          return res.status(200).json({
-            status: "success",
-            authorized: true,
-            userRole: user.role,
-            accessiblePages: [],
-            leads: [],
-            total: 0,
-            timestamp: new Date().toISOString()
-          });
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestedPage)) {
+          query = query.eq('page_id', requestedPage);
         }
-        query = query.in('page_id', user.pages);
+      } else if (user.role !== 'admin' && !user.pages.includes('*')) {
+        const staffPages = (user.pages && user.pages.length > 0) ? user.pages : [
+          '6accd8b0d52dc43d8bf6034c', '6acd4daed19284a3227d7870', '6aea527fa5c031c687ccba15',
+          '6aea5280a5c031c687ccba16', '6aea5280a5c031c687ccba17', '6aea5281a5c031c687ccba18'
+        ];
+        const uuidPages = staffPages.filter(p => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p));
+        if (uuidPages.length > 0) {
+          query = query.in('page_id', uuidPages);
+        }
       }
 
       const { data, error } = await query;
@@ -399,23 +435,33 @@ async function leadsHandler(req, res) {
     }
   }
 
-  // Merge in-memory leads from lead-ads ingestion or manual additions
+  // Merge in-memory leads from lead-ads ingestion or manual additions/patches
   if (global.CRM_INGESTED_LEADS && global.CRM_INGESTED_LEADS.size > 0) {
-    const existingIds = new Set(leads.map(l => String(l.id)));
+    const leadsMap = new Map(leads.map(l => [String(l.id), l]));
     for (const [memKey, memLead] of global.CRM_INGESTED_LEADS.entries()) {
       const memId = String(memLead.id || memKey);
-      if (!existingIds.has(memId)) {
-        if (requestedPage && String(memLead.page_id || memLead.pageId) !== String(requestedPage)) continue;
-        if (user.role !== 'admin' && !user.pages.includes('*') && !user.pages.includes(String(memLead.page_id || memLead.pageId))) continue;
-        leads.unshift({
+      if (requestedPage && String(memLead.page_id || memLead.pageId) !== String(requestedPage)) continue;
+      if (user.role !== 'admin' && !user.pages.includes('*')) {
+        const lp = String(memLead.page_id || memLead.pageId || '');
+        if (lp && user.pages && user.pages.length > 0 && !user.pages.includes(lp)) continue;
+      }
+      if (leadsMap.has(memId)) {
+        const cur = leadsMap.get(memId);
+        leadsMap.set(memId, {
+          ...cur,
+          ...memLead,
+          name: memLead.full_name || memLead.name || cur.name
+        });
+      } else {
+        leadsMap.set(memId, {
           ...memLead,
           id: memId,
           name: memLead.full_name || memLead.name || 'Unnamed Lead',
           pageId: memLead.page_id || memLead.pageId
         });
-        existingIds.add(memId);
       }
     }
+    leads = Array.from(leadsMap.values());
   }
 
   return res.status(200).json({
