@@ -631,8 +631,8 @@ async function messagesHandler(req, res) {
     return res.status(200).json(successRes);
   }
 
-  // 5. GET /api/messages — Server-side Sorting & Archive Filtering
-  const limit = Math.min(parseInt(req.query?.limit || '50', 10), 100);
+  // 5. GET /api/messages — Server-side Sorting, Archive Filtering & Full Historical Depth
+  const limit = Math.min(parseInt(req.query?.limit || '5000', 10), 10000);
   const offset = parseInt(req.query?.offset || '0', 10);
 
   if (supabase) {
@@ -877,7 +877,7 @@ async function messagesHandler(req, res) {
         }
 
         const { data: convData, count: totalCount, error: convErr } = await convQuery;
-        if (!convErr && Array.isArray(convData)) {
+        if (!convErr && Array.isArray(convData) && convData.length > 0) {
           return res.status(200).json({
             status: "success",
             authorized: true,
@@ -912,7 +912,9 @@ async function messagesHandler(req, res) {
           path: requestedConv ? 'inbox-messages' : 'inbox-conversations',
           conversationId: requestedConv,
           externalId: req.query?.external_id || req.query?.externalId,
-          accountId: req.query?.accountId || req.query?.account_id
+          accountId: req.query?.accountId || req.query?.account_id || req.query?.page_id || req.query?.pageId,
+          limit: req.query?.limit || '5000',
+          all: req.query?.all || 'true'
         }
       };
       return await zernioFn(zReq, res);

@@ -5241,7 +5241,7 @@ class MetaCRMApp {
     if (clearBtn) clearBtn.style.display = 'none';
     if (this.svc) {
       const pageId = (this.selectedInboxPage && this.selectedInboxPage !== 'all') ? this.selectedInboxPage : null;
-      this.svc.fetchRemoteConversations({ pageId }).then(() => this.renderInbox());
+      this.svc.fetchRemoteConversations({ pageId, all: true }).then(() => this.renderInbox());
     } else {
       this.renderInbox();
     }
@@ -5557,7 +5557,9 @@ class MetaCRMApp {
       await this.svc.fetchRemoteConversations({
         pageId,
         q,
-        append: true
+        append: true,
+        limit: 5000,
+        all: true
       });
       this.renderInbox();
     } catch (e) {

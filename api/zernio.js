@@ -872,20 +872,32 @@ async function zernioUnifiedHandler(req, res) {
     });
   }
 
-  // 1.7 REAL INBOX CONVERSATIONS LIST
+  // 1.7 REAL INBOX CONVERSATIONS LIST (FULL HISTORICAL BACKFILL & HIGH-SPEED CACHE)
   if (path === 'inbox-conversations' || (path.startsWith('inbox') && !url.includes('/messages')) || (url.includes('/inbox/conversations') && !url.includes('/messages'))) {
     res.setHeader('Content-Type', 'application/json');
     const apiKey = process.env.ZERNIO_API_KEY;
-    const reqLimit = Math.min(parseInt(query.limit || '50', 10), 100);
+    const reqLimit = Math.min(parseInt(query.limit || '5000', 10), 10000);
+    const reqOffset = Math.max(parseInt(query.offset || '0', 10), 0);
     if (!apiKey) {
       return res.status(200).json({ conversations: [], data: [], pagination: { limit: reqLimit, count: 0, hasMore: false } });
     }
 
-    const targetAccount = query.accountId || query.account_id || query.pageId || query.page_id || null;
-    const reqCursor = query.cursor || query.after || null;
+    const rawTarget = query.accountId || query.account_id || query.pageId || query.page_id || null;
     const searchQ = (query.q || '').trim().toLowerCase();
+    const forceRefresh = query.refresh === 'true' || query.nocache === 'true';
 
-    const fetchAccountConvs = (accId, limitVal, cursorVal) => {
+    // Global in-memory cache for historical conversations (3-minute TTL)
+    global.ZERNIO_HISTORICAL_CACHE = global.ZERNIO_HISTORICAL_CACHE || {
+      timestamp: 0,
+      byAccount: new Map(),
+      all: [],
+      fetchingPromise: null
+    };
+
+    const isCacheFresh = (Date.now() - global.ZERNIO_HISTORICAL_CACHE.timestamp) < (3 * 60 * 1000);
+
+    // Single-page HTTP fetcher
+    const fetchAccountConvsPage = (accId, limitVal, cursorVal) => {
       let p = `/api/v1/inbox/conversations?accountId=${encodeURIComponent(accId)}&limit=${limitVal}`;
       if (cursorVal) p += `&cursor=${encodeURIComponent(cursorVal)}`;
       return new Promise((resolve) => {
@@ -903,122 +915,180 @@ async function zernioUnifiedHandler(req, res) {
           resp.on('data', chunk => { d += chunk; });
           resp.on('end', () => {
             try {
-              const parsed = JSON.parse(d);
-              resolve(parsed);
+              resolve(JSON.parse(d));
             } catch (e) {
               resolve({ data: [], pagination: { hasMore: false } });
             }
           });
         });
-        req.setTimeout(6500, () => { req.destroy(); resolve({ data: [], pagination: { hasMore: false } }); });
+        req.setTimeout(8500, () => { req.destroy(); resolve({ data: [], pagination: { hasMore: false } }); });
         req.on('error', () => resolve({ data: [], pagination: { hasMore: false } }));
         req.end();
       });
     };
 
-    if (targetAccount) {
-      const parsed = await fetchAccountConvs(targetAccount, reqLimit, reqCursor);
-      let convList = parsed.data || parsed.conversations || [];
-      if (Array.isArray(convList)) {
-        global.CONVERSATION_ACCOUNT_MAP = global.CONVERSATION_ACCOUNT_MAP || new Map();
-        convList.forEach(c => {
-          c.accountId = c.accountId || targetAccount;
-          c.page_id = c.page_id || targetAccount;
-          c.last_message_at = c.last_message_at || c.lastMessageAt || c.updatedTime || c.updated_at || c.time || new Date().toISOString();
-          const convKey = String(c._id || c.id || c.conversationId);
-          if (convKey) global.CONVERSATION_ACCOUNT_MAP.set(convKey, targetAccount);
-        });
-        if (searchQ) {
-          convList = convList.filter(c => {
-            const name = (c.customerName || c.participantName || c.name || '').toLowerCase();
-            const msg = (c.lastMessage || c.preview || '').toLowerCase();
-            return name.includes(searchQ) || msg.includes(searchQ);
-          });
-        }
-        convList.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
-        parsed.data = convList;
-        parsed.conversations = convList;
-        syncConversationsToSupabase(convList).catch(() => {});
-      }
-      return res.status(200).json(parsed);
-    }
+    // Full account conversation fetcher across all cursor pages (up to 25 pages = up to 1,250 convs/acc)
+    const fetchAllAccountConvs = async (accId, pageName = '', maxPages = 25) => {
+      let allConvs = [];
+      const seenIds = new Set();
+      let cursor = null;
+      let page = 0;
+      global.CONVERSATION_ACCOUNT_MAP = global.CONVERSATION_ACCOUNT_MAP || new Map();
 
-    // No target account specified: query across dynamic Zernio accounts
-    const allAccounts = await getDynamicZernioAccounts(apiKey);
-    const validAccounts = Array.isArray(allAccounts) ? allAccounts : (allAccounts?.accounts || []);
+      while (page < maxPages) {
+        page++;
+        const resp = await fetchAccountConvsPage(accId, 100, cursor);
+        const list = resp.data || resp.conversations || [];
+        if (!Array.isArray(list) || list.length === 0) break;
 
-    if (validAccounts.length === 0) {
-      const defaultParsed = await new Promise((resolve) => {
-        const req = https.request({
-          hostname: 'zernio.com',
-          port: 443,
-          path: `/api/v1/inbox/conversations?limit=${reqLimit}`,
-          method: 'GET',
-          headers: { 'Authorization': `Bearer ${apiKey}`, 'Accept': 'application/json' }
-        }, (resp) => {
-          let d = '';
-          resp.on('data', chunk => { d += chunk; });
-          resp.on('end', () => {
-            try { resolve(JSON.parse(d)); } catch(e) { resolve({ data: [] }); }
-          });
-        });
-        req.setTimeout(6500, () => { req.destroy(); resolve({ data: [] }); });
-        req.on('error', () => resolve({ data: [] }));
-        req.end();
-      });
-      return res.status(200).json(defaultParsed);
-    }
-
-    global.CONVERSATION_ACCOUNT_MAP = global.CONVERSATION_ACCOUNT_MAP || new Map();
-    const results = await mapWithBoundedConcurrency(validAccounts, 3, async (acc) => {
-      const accId = acc._id || acc.id || acc.accountId;
-      const res = await fetchAccountConvs(accId, reqLimit, reqCursor);
-      const list = res.data || res.conversations || [];
-      list.forEach(c => {
-        c.accountId = c.accountId || accId;
-        c.page_id = c.page_id || accId;
-        c.accountName = acc.pageName || acc.name || c.accountName;
-        c.pageName = acc.pageName || acc.name || 'Connected Page';
-        c.last_message_at = c.last_message_at || c.lastMessageAt || c.updatedTime || c.updated_at || c.time || new Date().toISOString();
-        const convKey = String(c.id || c.conversationId || c._id);
-        if (convKey) global.CONVERSATION_ACCOUNT_MAP.set(convKey, accId);
-      });
-      return list;
-    });
-
-    let merged = [];
-    const seenIds = new Set();
-    for (const sublist of results) {
-      if (Array.isArray(sublist)) {
-        for (const conv of sublist) {
-          const cid = String(conv.id || conv.conversationId || conv._id);
+        for (const c of list) {
+          const cid = String(c._id || c.id || c.conversationId);
           if (cid && !seenIds.has(cid)) {
             seenIds.add(cid);
-            merged.push(conv);
+            c.id = cid;
+            c.conversationId = cid;
+            c.accountId = c.accountId || accId;
+            c.page_id = c.page_id || accId;
+            c.name = c.name || c.participantName || c.customerName || 'Customer';
+            c.participant_name = c.participant_name || c.participantName || c.customerName || c.name;
+            c.preview = c.preview || c.lastMessage || 'Direct message';
+            c.last_message = c.last_message || c.lastMessage || 'Direct message';
+            if (pageName) {
+              c.accountName = c.accountName || pageName;
+              c.pageName = c.pageName || pageName;
+            }
+            c.last_message_at = c.last_message_at || c.lastMessageAt || c.updatedTime || c.updated_at || c.time || new Date().toISOString();
+            global.CONVERSATION_ACCOUNT_MAP.set(cid, accId);
+            allConvs.push(c);
           }
         }
+
+        const nextCursor = resp.nextCursor || resp.cursor || (resp.pagination && (resp.pagination.nextCursor || resp.pagination.cursor));
+        const hasMore = resp.pagination ? resp.pagination.hasMore !== false : Boolean(nextCursor);
+        if (!hasMore || !nextCursor || list.length < 50) break;
+        cursor = nextCursor;
       }
+
+      allConvs.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
+      return allConvs;
+    };
+
+    // Case 1: Filtered by specific page or account
+    if (rawTarget && rawTarget !== 'all') {
+      let resolvedAccId = rawTarget;
+      let targetPageName = '';
+      try {
+        const dynAcc = await resolveDynamicAccount(apiKey, rawTarget).catch(() => null);
+        if (dynAcc && dynAcc.accountId) {
+          resolvedAccId = dynAcc.accountId;
+          targetPageName = dynAcc.pageName || '';
+        }
+      } catch (e) {}
+
+      let convList = [];
+      if (!forceRefresh && isCacheFresh && global.ZERNIO_HISTORICAL_CACHE.byAccount.has(resolvedAccId)) {
+        convList = global.ZERNIO_HISTORICAL_CACHE.byAccount.get(resolvedAccId) || [];
+      } else {
+        convList = await fetchAllAccountConvs(resolvedAccId, targetPageName, 25);
+        global.ZERNIO_HISTORICAL_CACHE.byAccount.set(resolvedAccId, convList);
+      }
+
+      let filtered = convList;
+      if (searchQ) {
+        filtered = convList.filter(c => {
+          const name = (c.customerName || c.participantName || c.name || '').toLowerCase();
+          const msg = (c.lastMessage || c.preview || '').toLowerCase();
+          return name.includes(searchQ) || msg.includes(searchQ);
+        });
+      }
+
+      const returned = (query.all === 'true' || reqLimit >= 3000) ? filtered : filtered.slice(reqOffset, reqOffset + reqLimit);
+      syncConversationsToSupabase(returned.slice(0, 50)).catch(() => {});
+
+      return res.status(200).json({
+        status: "success",
+        conversations: returned,
+        data: returned,
+        pagination: {
+          total: filtered.length,
+          count: returned.length,
+          offset: reqOffset,
+          limit: reqLimit,
+          hasMore: (reqOffset + returned.length) < filtered.length
+        }
+      });
     }
 
+    // Case 2: All connected dealership pages / accounts
+    let merged = [];
+    if (!forceRefresh && isCacheFresh && global.ZERNIO_HISTORICAL_CACHE.all.length > 0) {
+      merged = global.ZERNIO_HISTORICAL_CACHE.all;
+    } else {
+      if (!global.ZERNIO_HISTORICAL_CACHE.fetchingPromise) {
+        global.ZERNIO_HISTORICAL_CACHE.fetchingPromise = (async () => {
+          const allAccounts = await getDynamicZernioAccounts(apiKey);
+          const validAccounts = Array.isArray(allAccounts) ? allAccounts : (allAccounts?.accounts || []);
+
+          if (validAccounts.length === 0) {
+            return [];
+          }
+
+          const results = await mapWithBoundedConcurrency(validAccounts, 6, async (acc) => {
+            const accId = acc._id || acc.id || acc.accountId;
+            const pName = acc.pageName || acc.name || '';
+            const accConvs = await fetchAllAccountConvs(accId, pName, 25);
+            global.ZERNIO_HISTORICAL_CACHE.byAccount.set(accId, accConvs);
+            return accConvs;
+          });
+
+          const combined = [];
+          const seen = new Set();
+          for (const sublist of results) {
+            if (Array.isArray(sublist)) {
+              for (const conv of sublist) {
+                const cid = String(conv.id || conv.conversationId || conv._id);
+                if (cid && !seen.has(cid)) {
+                  seen.add(cid);
+                  combined.push(conv);
+                }
+              }
+            }
+          }
+
+          combined.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
+          global.ZERNIO_HISTORICAL_CACHE.all = combined;
+          global.ZERNIO_HISTORICAL_CACHE.timestamp = Date.now();
+          return combined;
+        })().finally(() => {
+          global.ZERNIO_HISTORICAL_CACHE.fetchingPromise = null;
+        });
+      }
+
+      merged = await global.ZERNIO_HISTORICAL_CACHE.fetchingPromise;
+    }
+
+    let filtered = merged;
     if (searchQ) {
-      merged = merged.filter(c => {
+      filtered = merged.filter(c => {
         const name = (c.customerName || c.participantName || c.name || '').toLowerCase();
         const msg = (c.lastMessage || c.preview || '').toLowerCase();
         return name.includes(searchQ) || msg.includes(searchQ);
       });
     }
 
-    merged.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
-    syncConversationsToSupabase(merged).catch(() => {});
+    const returned = (query.all === 'true' || reqLimit >= 3000) ? filtered : filtered.slice(reqOffset, reqOffset + reqLimit);
+    syncConversationsToSupabase(returned.slice(0, 50)).catch(() => {});
 
     return res.status(200).json({
       status: "success",
-      conversations: merged,
-      data: merged,
+      conversations: returned,
+      data: returned,
       pagination: {
-        totalAccounts: validAccounts.length,
-        count: merged.length,
-        hasMore: false
+        total: filtered.length,
+        count: returned.length,
+        offset: reqOffset,
+        limit: reqLimit,
+        hasMore: (reqOffset + returned.length) < filtered.length
       }
     });
   }

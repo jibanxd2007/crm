@@ -704,12 +704,12 @@ class CRMService {
       if (authUser && authUser.id) headers['X-User-Id'] = authUser.id;
 
       const pageId = options.pageId || null;
-      const limit = Math.min(options.limit || 50, 100);
+      const limit = options.limit || 5000;
       const offset = options.offset !== undefined ? options.offset : (options.append ? (this._convsOffset || 0) : 0);
       const q = options.q ? encodeURIComponent(options.q.trim()) : '';
       const append = Boolean(options.append);
 
-      let url = `/api/messages?limit=${limit}&offset=${offset}`;
+      let url = `/api/messages?limit=${limit}&offset=${offset}&all=true`;
       if (pageId && pageId !== 'all') url += `&page_id=${encodeURIComponent(pageId)}`;
       if (q) url += `&q=${q}`;
 
@@ -919,7 +919,11 @@ class CRMService {
 
   saveConversations() {
     try {
-      localStorage.setItem(this.conversationsKey, JSON.stringify(this.conversations));
+      const lightweight = (this.conversations || []).map(c => {
+        const { messages, ...summary } = c;
+        return summary;
+      });
+      localStorage.setItem(this.conversationsKey, JSON.stringify(lightweight));
     } catch (e) {
       console.warn("Conversations storage save error:", e);
     }
@@ -4029,7 +4033,11 @@ class CRMService {
 
   saveConversations() {
     try {
-      localStorage.setItem(this.conversationsKey, JSON.stringify(this.conversations));
+      const lightweight = (this.conversations || []).map(c => {
+        const { messages, ...summary } = c;
+        return summary;
+      });
+      localStorage.setItem(this.conversationsKey, JSON.stringify(lightweight));
     } catch(e) {}
   }
 

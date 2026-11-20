@@ -163,7 +163,7 @@
   proto.openPageInInbox = function (pageId) {
     this.selectedInboxPage = String(pageId || 'all');
     try { localStorage.setItem('metacrm_inbox_page_filter', this.selectedInboxPage); } catch (e) {}
-    this.inboxTab = 'needs_reply';
+    this.inboxTab = 'all';
     this.mobileInboxView = 'list';
     this.navigate('inbox');
   };
@@ -618,7 +618,7 @@
       : accessibleConvs.filter(c => this._dsConvMatchesPage(c, this.selectedInboxPage));
 
     const sortMode = this.inboxSortMode || 'latest';
-    const activeTab = this.inboxTab || 'needs_reply';
+    const activeTab = this.inboxTab || 'all';
     const activeNonArchived = pageScopedConvs.filter(c => !c.is_archived);
 
     const needsReplyCount = activeNonArchived.filter(c => this._dsConvNeedsReply(c)).length;
