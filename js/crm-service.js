@@ -695,7 +695,23 @@ class CRMService {
     return this.staff;
   }
 
-  async fetchRemoteConversations(options = {}) {
+  fetchRemoteConversations(options = {}) {
+    const isStandard = !options.q && !options.append && (!options.pageId || options.pageId === 'all') && (!options.offset);
+    if (isStandard && this._inflightConvsFetch) {
+      return this._inflightConvsFetch;
+    }
+    const fetchPromise = this._doFetchRemoteConversations(options).finally(() => {
+      if (this._inflightConvsFetch === fetchPromise) {
+        this._inflightConvsFetch = null;
+      }
+    });
+    if (isStandard) {
+      this._inflightConvsFetch = fetchPromise;
+    }
+    return fetchPromise;
+  }
+
+  async _doFetchRemoteConversations(options = {}) {
     try {
       const authUser = this.getCurrentUser();
       const token = this.getSessionToken();

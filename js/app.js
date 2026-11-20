@@ -1487,52 +1487,48 @@ class MetaCRMApp {
       clearTimeout(this._pageRenderTimer);
       this._pageRenderTimer = null;
     }
-    this.el.content.innerHTML = `<div class="page-skeleton"></div>`;
     if (this.currentRoute === 'inbox' || this.currentRoute === 'email') {
       this.el.content.classList.add('inbox-view-container');
     } else {
       this.el.content.classList.remove('inbox-view-container');
     }
-    this._pageRenderTimer = setTimeout(() => {
-      this._pageRenderTimer = null;
-      switch (this.currentRoute) {
-        case 'dashboard':
-          if (!this._lastAutoRefresh || (Date.now() - this._lastAutoRefresh > 20000)) {
-            this._lastAutoRefresh = Date.now();
-            if (this.svc && this.svc.fetchRemoteData) {
-              this.svc.fetchRemoteData().then(() => {
-                if (this.currentRoute === 'dashboard') this.renderDashboard();
-              }).catch(() => {});
-            }
+    switch (this.currentRoute) {
+      case 'dashboard':
+        if (!this._lastAutoRefresh || (Date.now() - this._lastAutoRefresh > 20000)) {
+          this._lastAutoRefresh = Date.now();
+          if (this.svc && this.svc.fetchRemoteData) {
+            this.svc.fetchRemoteData().then(() => {
+              if (this.currentRoute === 'dashboard') this.renderDashboard();
+            }).catch(() => {});
           }
-          this.renderDashboard();
-          break;
-        case 'leads':        this.renderLeads(); break;
-        case 'inbox':
-        case 'messages':
-        case 'conversations': this.renderInbox(); break;
-        case 'email':        this.renderEmailInbox(); break;
-        case 'meta-ads':     this.renderMetaAds(); break;
-        case 'pipeline':     this.renderPipeline(); break;
-        case 'tasks':        this.renderTasks(); break;
-        case 'reports':      this.renderReports(); break;
-        case 'integrations':
-        case 'connections':
-          this.settingsTab = 'accounts';
-          this.renderSettings();
-          break;
-        case 'developer-diagnostics':
-        case 'diagnostics':
-          if (typeof this.renderDeveloperDiagnostics === 'function') this.renderDeveloperDiagnostics();
-          else this.renderAccessDeniedScreen('developer-diagnostics');
-          break;
-        case 'staff':        this.renderStaff(); break;
-        case 'settings':     this.renderSettings(); break;
-        case 'download':
-        case 'desktop':      this.renderDownloadPage(); break;
-        default:             this.renderDashboard(); break;
-      }
-    }, 80);
+        }
+        this.renderDashboard();
+        break;
+      case 'leads':        this.renderLeads(); break;
+      case 'inbox':
+      case 'messages':
+      case 'conversations': this.renderInbox(); break;
+      case 'email':        this.renderEmailInbox(); break;
+      case 'meta-ads':     this.renderMetaAds(); break;
+      case 'pipeline':     this.renderPipeline(); break;
+      case 'tasks':        this.renderTasks(); break;
+      case 'reports':      this.renderReports(); break;
+      case 'integrations':
+      case 'connections':
+        this.settingsTab = 'accounts';
+        this.renderSettings();
+        break;
+      case 'developer-diagnostics':
+      case 'diagnostics':
+        if (typeof this.renderDeveloperDiagnostics === 'function') this.renderDeveloperDiagnostics();
+        else this.renderAccessDeniedScreen('developer-diagnostics');
+        break;
+      case 'staff':        this.renderStaff(); break;
+      case 'settings':     this.renderSettings(); break;
+      case 'download':
+      case 'desktop':      this.renderDownloadPage(); break;
+      default:             this.renderDashboard(); break;
+    }
   }
 
   renderDownloadPage() {
@@ -4351,16 +4347,19 @@ class MetaCRMApp {
 
   setInboxTab(tab) {
     this.inboxTab = tab;
+    this._inboxDisplayLimit = 60;
     this.renderInbox();
   }
 
   setInboxSort(sort) {
     this.inboxSortMode = sort;
+    this._inboxDisplayLimit = 60;
     this.renderInbox();
   }
 
   setInboxPageFilter(pageId) {
     this.selectedInboxPage = pageId || 'all';
+    this._inboxDisplayLimit = 60;
     try {
       localStorage.setItem('metacrm_inbox_page_filter', this.selectedInboxPage);
     } catch (e) {}
@@ -5239,9 +5238,9 @@ class MetaCRMApp {
     if (inp) inp.value = '';
     const clearBtn = document.querySelector('.inbox-search-clear');
     if (clearBtn) clearBtn.style.display = 'none';
-    if (this.svc) {
-      const pageId = (this.selectedInboxPage && this.selectedInboxPage !== 'all') ? this.selectedInboxPage : null;
-      this.svc.fetchRemoteConversations({ pageId, all: true }).then(() => this.renderInbox());
+    this._inboxDisplayLimit = 60;
+    if (typeof this.renderInboxConvListOnly === 'function') {
+      this.renderInboxConvListOnly();
     } else {
       this.renderInbox();
     }
@@ -6889,12 +6888,12 @@ class MetaCRMApp {
       const res = await fetch('/api/zernio/accounts');
       if (!res.ok) return;
       const data = await res.json();
-      const accounts = data.accounts || [];
+      const allAccounts = data.accounts || [];
       if (!this.svc) return;
       if (!this.svc.pages) this.svc.pages = [];
 
       let addedAny = false;
-      accounts = accounts.filter(acc => {
+      const accounts = allAccounts.filter(acc => {
         const n = (acc.displayName || acc.username || acc.metadata?.selectedPageName || '').toLowerCase();
         const id = String(acc.platformUserId || acc._id || '');
         return !n.includes('jiban') && !n.includes('prakash') && !n.includes('omm') && id !== '29279331294986321';
@@ -6985,21 +6984,16 @@ class MetaCRMApp {
     if (clearBtn) {
       clearBtn.style.display = this.inboxSearchQuery ? 'flex' : 'none';
     }
-    const items = document.querySelectorAll('.inbox-conv-item');
-    let matched = 0;
-    items.forEach(el => {
-      const text = el.getAttribute('data-search-text') || el.textContent.toLowerCase();
-      const isMatch = !this.inboxSearchQuery || text.includes(this.inboxSearchQuery);
-      el.style.display = isMatch ? 'flex' : 'none';
-      if (isMatch) matched++;
-    });
-    const emptyEl = document.getElementById('inbox-search-empty');
-    if (emptyEl) {
-      emptyEl.style.display = (this.inboxSearchQuery && matched === 0) ? 'block' : 'none';
-      if (this.inboxSearchQuery && matched === 0) {
-        emptyEl.textContent = `No conversations matching "${query}"`;
+
+    if (this._inboxSearchDebounce) clearTimeout(this._inboxSearchDebounce);
+    this._inboxSearchDebounce = setTimeout(() => {
+      this._inboxDisplayLimit = 60;
+      if (typeof this.renderInboxConvListOnly === 'function') {
+        this.renderInboxConvListOnly();
+      } else {
+        this.renderInbox();
       }
-    }
+    }, 90);
 
     if (this._inboxSearchTimer) clearTimeout(this._inboxSearchTimer);
     if (this.inboxSearchQuery && this.inboxSearchQuery.length >= 2 && this.svc) {
@@ -7010,11 +7004,15 @@ class MetaCRMApp {
             pageId,
             q: this.inboxSearchQuery
           });
-          this.renderInbox();
+          if (typeof this.renderInboxConvListOnly === 'function') {
+            this.renderInboxConvListOnly();
+          } else {
+            this.renderInbox();
+          }
         } catch (e) {
           console.warn('[Server search error]:', e);
         }
-      }, 350);
+      }, 500);
     }
   }
 

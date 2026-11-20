@@ -143,6 +143,150 @@
     return String(id).trim();
   };
 
+  proto._renderConvRow = function (c, activeConv) {
+    const isIg = Boolean(c.channel && c.channel.toLowerCase().includes('insta'));
+    const isUnread = (c.unread || c.unread_count || 0) > 0;
+    const isActive = activeConv && String(c.id) === String(activeConv.id);
+    const needsRep = this._dsConvNeedsReply(c);
+    const hasDraft = Boolean(this._getConvDraft(c.id));
+    const pName = this._pageName(c.page_id || c.accountId || c.pageId);
+    const initials = this._getContactInitials(c.name);
+    const color = this._getAvatarColor(c.name);
+    const ownerId = c.assigned_staff_id || c.assignedStaffId || c.assigned_to;
+    return `
+      <div class="inbox-conv-item ${isActive ? 'active' : ''} ${isUnread ? 'is-unread-row' : ''}" data-conv-id="${esc(c.id)}" onclick="window.app.selectInboxConv('${esc(c.id)}')">
+        <div class="conv-avatar" style="background:${color.bg};color:${color.text};width:36px;height:36px;font-size:12px;">
+          ${esc(initials)}
+        </div>
+        <div class="conv-info" style="min-width:0;flex:1;">
+          <div class="conv-name-row">
+            <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1;">
+              ${isUnread ? `<span class="conv-unread-dot" title="Unread"></span>` : ''}
+              <span class="conv-name text-truncate">${esc(c.name || 'Customer')}</span>
+            </div>
+            <span class="conv-time">${esc(this._formatMessageTime(c.last_message_at || c.time))}</span>
+          </div>
+          <div class="conv-preview">${esc(c.preview || c.last_message || 'No messages yet')}</div>
+          <div class="conv-row-footer">
+            <span class="conv-page-tag">
+              ${this._dsPageAvatar(pName, isIg ? 'instagram' : 'facebook', 'sm')}
+              <span class="conv-page-tag-name">${esc(pName)}</span>
+            </span>
+            ${hasDraft ? `<span class="conv-state-text draft">Draft</span>`
+              : ownerId ? `<span style="font-size:11px;color:var(--ds-ink-muted);white-space:nowrap;">${esc(this._staffName(ownerId).split(' ')[0])}</span>`
+              : needsRep ? `<span class="conv-state-text">Needs reply</span>` : ''}
+          </div>
+        </div>
+      </div>`;
+  };
+
+  proto.loadMoreVisibleConvs = function () {
+    if (this._isLoadingMoreVisible) return;
+    this._isLoadingMoreVisible = true;
+    try {
+      const container = document.getElementById('inbox-conv-items-container');
+      const countEl = document.getElementById('inbox-visible-count');
+      const moreBtn = document.getElementById('btn-load-more-visible');
+
+      const list = this._lastFilteredConvs || [];
+      const curLimit = this._inboxDisplayLimit || 60;
+      const batchSize = 60;
+      const nextBatch = list.slice(curLimit, curLimit + batchSize);
+
+      if (nextBatch.length > 0 && container) {
+        const activeConv = list.find(c => String(c.id) === String(this.activeConvId)) || null;
+        const html = nextBatch.map(c => this._renderConvRow(c, activeConv)).join('');
+        container.insertAdjacentHTML('beforeend', html);
+        this._inboxDisplayLimit = curLimit + nextBatch.length;
+        if (countEl) countEl.textContent = this._inboxDisplayLimit;
+        const remaining = list.length - this._inboxDisplayLimit;
+        if (moreBtn) {
+          if (remaining > 0) {
+            moreBtn.textContent = `Show more (${Math.min(batchSize, remaining)})…`;
+          } else {
+            moreBtn.outerHTML = `<span style="font-size:11px;color:var(--ds-ink-muted);">✓ All ${list.length} chats visible</span>`;
+          }
+        }
+      }
+    } finally {
+      this._isLoadingMoreVisible = false;
+    }
+  };
+
+  proto._getFilteredInboxConvs = function (accessibleConvs) {
+    const list = accessibleConvs || this._accessibleConvs || [];
+    let pageScopedConvs = this.selectedInboxPage === 'all'
+      ? list
+      : list.filter(c => this._dsConvMatchesPage(c, this.selectedInboxPage));
+
+    const sortMode = this.inboxSortMode || 'latest';
+    const activeTab = this.inboxTab || 'all';
+    const activeNonArchived = pageScopedConvs.filter(c => !c.is_archived);
+
+    let filteredConvs = activeTab === 'archived' ? pageScopedConvs.filter(c => c.is_archived === true) : [...activeNonArchived];
+    if (activeTab === 'needs_reply') filteredConvs = filteredConvs.filter(c => this._dsConvNeedsReply(c));
+    else if (activeTab === 'mine') filteredConvs = filteredConvs.filter(c => String(c.assigned_staff_id || c.assignedStaffId || c.assigned_to || '') === String(this.user?.id));
+    else if (activeTab === 'unassigned') filteredConvs = filteredConvs.filter(c => !(c.assigned_staff_id || c.assignedStaffId || c.assigned_to));
+    else if (activeTab === 'unread') filteredConvs = filteredConvs.filter(c => (c.unread || c.unread_count || 0) > 0);
+    else if (activeTab === 'starred') filteredConvs = filteredConvs.filter(c => c.starred === true);
+    else if (activeTab === 'facebook' || activeTab === 'messenger') filteredConvs = filteredConvs.filter(c => !c.channel || !c.channel.toLowerCase().includes('insta'));
+    else if (activeTab === 'instagram') filteredConvs = filteredConvs.filter(c => c.channel && c.channel.toLowerCase().includes('insta'));
+
+    if (this.inboxSearchQuery) {
+      const q = this.inboxSearchQuery.toLowerCase();
+      filteredConvs = filteredConvs.filter(c => `${c.name || ''} ${c.preview || ''} ${c.participantUsername || ''}`.toLowerCase().includes(q));
+    }
+
+    filteredConvs.sort((a, b) => {
+      const tA = this.svc ? this.svc._resolveConvTimestamp(a) : new Date(a.last_message_at || 0).getTime();
+      const tB = this.svc ? this.svc._resolveConvTimestamp(b) : new Date(b.last_message_at || 0).getTime();
+      if (sortMode === 'unread') {
+        const uDiff = ((b.unread || 0) > 0 ? 1 : 0) - ((a.unread || 0) > 0 ? 1 : 0);
+        if (uDiff !== 0) return uDiff;
+      }
+      if (sortMode === 'oldest') return tA - tB;
+      return tB - tA;
+    });
+
+    return filteredConvs;
+  };
+
+  proto.renderInboxConvListOnly = function () {
+    const container = document.getElementById('inbox-conv-items-container');
+    const footer = document.getElementById('inbox-conv-footer');
+    if (!container || !footer) {
+      this.renderInbox();
+      return;
+    }
+
+    const filteredConvs = this._getFilteredInboxConvs();
+    this._lastFilteredConvs = filteredConvs;
+    const displayBatchSize = 60;
+    this._inboxDisplayLimit = Math.max(displayBatchSize, this._inboxDisplayLimit || displayBatchSize);
+    const visibleConvs = filteredConvs.slice(0, this._inboxDisplayLimit);
+    const hasMoreVisible = filteredConvs.length > visibleConvs.length;
+    const activeConv = (this._accessibleConvs || []).find(c => String(c.id) === String(this.activeConvId)) || null;
+
+    if (visibleConvs.length === 0) {
+      container.innerHTML = `
+        <div style="padding:36px 20px;text-align:center;">
+          <div style="font-size:13.5px;font-weight:600;color:var(--ds-ink);margin-bottom:4px;">No conversations matching "${esc(this.inboxSearchQuery || '')}"</div>
+          <div style="font-size:12px;color:var(--ds-ink-muted);margin-bottom:14px;">Try searching for another customer name or clear the search.</div>
+          <button type="button" class="btn btn-secondary btn-xs" onclick="window.app.clearInboxSearch();">Clear Search</button>
+        </div>`;
+    } else {
+      container.innerHTML = visibleConvs.map(c => this._renderConvRow(c, activeConv)).join('');
+    }
+
+    footer.innerHTML = `
+      <span style="font-size:11.5px;color:var(--ds-ink-muted);">Showing <strong id="inbox-visible-count">${visibleConvs.length}</strong> of ${filteredConvs.length} chat${filteredConvs.length === 1 ? '' : 's'}</span>
+      ${hasMoreVisible ? `
+        <button type="button" class="btn btn-secondary btn-xs" id="btn-load-more-visible" onclick="window.app.loadMoreVisibleConvs()" style="font-size:11px;padding:3px 8px;">Show more (${Math.min(displayBatchSize, filteredConvs.length - visibleConvs.length)})…</button>
+      ` : `
+        <span style="font-size:11px;color:var(--ds-ink-muted);">✓ All chats visible</span>
+      `}`;
+  };
+
   proto._dsConvMatchesPage = function (c, pageId) {
     if (!pageId || pageId === 'all') return true;
     const t = this._dsNormPage(pageId);
@@ -627,30 +771,8 @@
     const unreadCount = activeNonArchived.filter(c => (c.unread || c.unread_count || 0) > 0).length;
     const archivedCount = pageScopedConvs.filter(c => c.is_archived === true).length;
 
-    let filteredConvs = activeTab === 'archived' ? pageScopedConvs.filter(c => c.is_archived === true) : [...activeNonArchived];
-    if (activeTab === 'needs_reply') filteredConvs = filteredConvs.filter(c => this._dsConvNeedsReply(c));
-    else if (activeTab === 'mine') filteredConvs = filteredConvs.filter(c => String(c.assigned_staff_id || c.assignedStaffId || c.assigned_to || '') === String(this.user.id));
-    else if (activeTab === 'unassigned') filteredConvs = filteredConvs.filter(c => !(c.assigned_staff_id || c.assignedStaffId || c.assigned_to));
-    else if (activeTab === 'unread') filteredConvs = filteredConvs.filter(c => (c.unread || c.unread_count || 0) > 0);
-    else if (activeTab === 'starred') filteredConvs = filteredConvs.filter(c => c.starred === true);
-    else if (activeTab === 'facebook' || activeTab === 'messenger') filteredConvs = filteredConvs.filter(c => !c.channel || !c.channel.toLowerCase().includes('insta'));
-    else if (activeTab === 'instagram') filteredConvs = filteredConvs.filter(c => c.channel && c.channel.toLowerCase().includes('insta'));
-
-    if (this.inboxSearchQuery) {
-      const q = this.inboxSearchQuery.toLowerCase();
-      filteredConvs = filteredConvs.filter(c => `${c.name || ''} ${c.preview || ''} ${c.participantUsername || ''}`.toLowerCase().includes(q));
-    }
-
-    filteredConvs.sort((a, b) => {
-      const tA = this.svc ? this.svc._resolveConvTimestamp(a) : new Date(a.last_message_at || 0).getTime();
-      const tB = this.svc ? this.svc._resolveConvTimestamp(b) : new Date(b.last_message_at || 0).getTime();
-      if (sortMode === 'unread') {
-        const uDiff = ((b.unread || 0) > 0 ? 1 : 0) - ((a.unread || 0) > 0 ? 1 : 0);
-        if (uDiff !== 0) return uDiff;
-      }
-      if (sortMode === 'oldest') return tA - tB;
-      return tB - tA;
-    });
+    this._accessibleConvs = accessibleConvs;
+    let filteredConvs = this._getFilteredInboxConvs(accessibleConvs);
 
     // Preserve currently open conversation across page filter switches (never silently change sender!)
     let activeConv = accessibleConvs.find(c => String(c.id) === String(this.activeConvId)) || null;
@@ -658,6 +780,12 @@
       activeConv = filteredConvs[0];
       this.activeConvId = activeConv.id;
     }
+
+    this._lastFilteredConvs = filteredConvs;
+    const displayBatchSize = 60;
+    this._inboxDisplayLimit = Math.max(displayBatchSize, this._inboxDisplayLimit || displayBatchSize);
+    const visibleConvs = filteredConvs.slice(0, this._inboxDisplayLimit);
+    const hasMoreVisible = filteredConvs.length > visibleConvs.length;
     const activeConvOutsideFilter = Boolean(activeConv && this.selectedInboxPage !== 'all' && !this._dsConvMatchesPage(activeConv, this.selectedInboxPage));
     if (activeConv && (!activeConv.messages || activeConv.messages.length === 0) && !activeConv._fetchingMsgs) {
       activeConv._fetchingMsgs = true;
@@ -797,52 +925,23 @@
           </div>
 
           <div class="inbox-conv-list" id="inbox-conv-list">
-            ${filteredConvs.length === 0 ? `
-              <div style="padding:36px 20px;text-align:center;">
-                <div style="font-size:13.5px;font-weight:600;color:var(--ds-ink);margin-bottom:4px;">No conversations in this view</div>
-                <div style="font-size:12px;color:var(--ds-ink-muted);margin-bottom:14px;">Try switching to All Threads or another dealership page.</div>
-                <button type="button" class="btn btn-secondary btn-xs" onclick="window.app.setInboxTab('all');window.app.setInboxPageFilter('all');">Show All Threads</button>
-              </div>
-            ` : filteredConvs.map(c => {
-              const isIg = Boolean(c.channel && c.channel.toLowerCase().includes('insta'));
-              const isUnread = (c.unread || c.unread_count || 0) > 0;
-              const isActive = activeConv && String(c.id) === String(activeConv.id);
-              const needsRep = this._dsConvNeedsReply(c);
-              const hasDraft = Boolean(this._getConvDraft(c.id));
-              const pName = this._pageName(c.page_id || c.accountId || c.pageId);
-              const initials = this._getContactInitials(c.name);
-              const color = this._getAvatarColor(c.name);
-              const ownerId = c.assigned_staff_id || c.assignedStaffId || c.assigned_to;
-              return `
-                <div class="inbox-conv-item ${isActive ? 'active' : ''} ${isUnread ? 'is-unread-row' : ''}" data-conv-id="${esc(c.id)}" onclick="window.app.selectInboxConv('${esc(c.id)}')">
-                  <div class="conv-avatar" style="background:${color.bg};color:${color.text};width:36px;height:36px;font-size:12px;">
-                    ${esc(initials)}
-                  </div>
-                  <div class="conv-info" style="min-width:0;flex:1;">
-                    <div class="conv-name-row">
-                      <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1;">
-                        ${isUnread ? `<span class="conv-unread-dot" title="Unread"></span>` : ''}
-                        <span class="conv-name text-truncate">${esc(c.name || 'Customer')}</span>
-                      </div>
-                      <span class="conv-time">${esc(this._formatMessageTime(c.last_message_at || c.time))}</span>
-                    </div>
-                    <div class="conv-preview">${esc(c.preview || c.last_message || 'No messages yet')}</div>
-                    <div class="conv-row-footer">
-                      <span class="conv-page-tag">
-                        ${this._dsPageAvatar(pName, isIg ? 'instagram' : 'facebook', 'sm')}
-                        <span class="conv-page-tag-name">${esc(pName)}</span>
-                      </span>
-                      ${hasDraft ? `<span class="conv-state-text draft">Draft</span>`
-                        : ownerId ? `<span style="font-size:11px;color:var(--ds-ink-muted);white-space:nowrap;">${esc(this._staffName(ownerId).split(' ')[0])}</span>`
-                        : needsRep ? `<span class="conv-state-text">Needs reply</span>` : ''}
-                    </div>
-                  </div>
-                </div>`;
-            }).join('')}
+            <div id="inbox-conv-items-container">
+              ${visibleConvs.length === 0 ? `
+                <div style="padding:36px 20px;text-align:center;">
+                  <div style="font-size:13.5px;font-weight:600;color:var(--ds-ink);margin-bottom:4px;">No conversations in this view</div>
+                  <div style="font-size:12px;color:var(--ds-ink-muted);margin-bottom:14px;">Try switching to All Threads or another dealership page.</div>
+                  <button type="button" class="btn btn-secondary btn-xs" onclick="window.app.setInboxTab('all');window.app.setInboxPageFilter('all');">Show All Threads</button>
+                </div>
+              ` : visibleConvs.map(c => this._renderConvRow(c, activeConv)).join('')}
+            </div>
             ${filteredConvs.length > 0 ? `
-              <div style="padding:10px 14px;border-top:1px solid var(--ds-border);display:flex;align-items:center;justify-content:space-between;background:var(--ds-surface);margin-top:auto;">
-                <span style="font-size:11.5px;color:var(--ds-ink-muted);">Showing ${filteredConvs.length} chat${filteredConvs.length === 1 ? '' : 's'}</span>
-                <button type="button" class="btn btn-secondary btn-xs" id="btn-load-more-convs" onclick="window.app.loadMoreConversations()" style="font-size:11px;padding:3px 8px;">Load earlier chats…</button>
+              <div id="inbox-conv-footer" style="padding:10px 14px;border-top:1px solid var(--ds-border);display:flex;align-items:center;justify-content:space-between;background:var(--ds-surface);margin-top:auto;">
+                <span style="font-size:11.5px;color:var(--ds-ink-muted);">Showing <strong id="inbox-visible-count">${visibleConvs.length}</strong> of ${filteredConvs.length} chat${filteredConvs.length === 1 ? '' : 's'}</span>
+                ${hasMoreVisible ? `
+                  <button type="button" class="btn btn-secondary btn-xs" id="btn-load-more-visible" onclick="window.app.loadMoreVisibleConvs()" style="font-size:11px;padding:3px 8px;">Show more (${Math.min(displayBatchSize, filteredConvs.length - visibleConvs.length)})…</button>
+                ` : `
+                  <span style="font-size:11px;color:var(--ds-ink-muted);">✓ All chats visible</span>
+                `}
               </div>
             ` : ''}
           </div>
@@ -1159,6 +1258,19 @@
       } else {
         nextThreadEl.scrollTop = prevScrollTop;
       }
+    }
+
+    // Progressive scroll loading for conversations list (smooth 60fps)
+    const convListEl = document.getElementById('inbox-conv-list');
+    if (convListEl) {
+      convListEl.onscroll = () => {
+        if (this._isLoadingMoreVisible) return;
+        if (convListEl.scrollHeight - convListEl.scrollTop - convListEl.clientHeight < 350) {
+          if ((this._inboxDisplayLimit || 60) < (this._lastFilteredConvs?.length || 0)) {
+            this.loadMoreVisibleConvs();
+          }
+        }
+      };
     }
   };
 
