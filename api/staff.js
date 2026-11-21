@@ -1,4 +1,7 @@
 const {
+  CANONICAL_DEALERSHIP_PAGE_IDS,
+  getExplicitPageAssignments,
+  setExplicitPageAssignment,
   getUserByEmail,
   getUserById,
   getUserBySetupToken,
@@ -625,6 +628,10 @@ async function staffHandler(req, res) {
       updates.displayName = newName;
     }
     if (newPages !== null && Array.isArray(newPages)) {
+      setExplicitPageAssignment(email, newPages);
+      if (targetUser && targetUser.id) {
+        setExplicitPageAssignment(targetUser.id, newPages);
+      }
       if (email === 'admina@novaautos.co.nz') {
         updates.assignedPages = ['*'];
       } else {
@@ -742,11 +749,17 @@ async function staffHandler(req, res) {
         .select('id, email, name, full_name, role, status, assigned_pages, last_login_at');
 
       if (Array.isArray(dbUsers) && dbUsers.length > 0) {
+        const explicitStore = getExplicitPageAssignments();
         for (const dbu of dbUsers) {
           const u = getUserByEmail(dbu.email);
           if (u) {
-            if (dbu.assigned_pages && Array.isArray(dbu.assigned_pages)) {
+            const explicit = explicitStore.get(dbu.email.toLowerCase()) || (dbu.id && explicitStore.get(dbu.id.toLowerCase()));
+            if (explicit !== undefined) {
+              u.assignedPages = explicit;
+            } else if (dbu.assigned_pages && Array.isArray(dbu.assigned_pages) && dbu.assigned_pages.length > 0) {
               u.assignedPages = dbu.assigned_pages;
+            } else if (!u.assignedPages || u.assignedPages.length === 0) {
+              u.assignedPages = (u.role === 'admin') ? ['*'] : [...CANONICAL_DEALERSHIP_PAGE_IDS];
             }
             if (dbu.status) u.status = dbu.status;
             if (dbu.last_login_at) u.lastLoginAt = dbu.last_login_at;
@@ -759,9 +772,15 @@ async function staffHandler(req, res) {
     }
   }
 
+  const explicitStore = getExplicitPageAssignments();
   const allUsers = getAllUsers(false); // sanitized
   const staffList = allUsers.map(u => {
-    const pages = u.assignedPages || [];
+    const explicit = explicitStore.get(u.email.toLowerCase()) || (u.id && explicitStore.get(u.id.toLowerCase()));
+    const pages = (u.role === 'admin') ? ['*'] : (
+      explicit !== undefined ? explicit : (
+        (Array.isArray(u.assignedPages) && u.assignedPages.length > 0) ? u.assignedPages : [...CANONICAL_DEALERSHIP_PAGE_IDS]
+      )
+    );
     const item = {
       id: u.id,
       name: u.name,

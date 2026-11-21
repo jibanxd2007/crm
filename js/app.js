@@ -7188,9 +7188,18 @@ class MetaCRMApp {
       try {
         const checkedStaffIds = Array.from(document.querySelectorAll('.page-assign-staff-cb:checked')).map(cb => cb.value);
         for (const s of staffList) {
-          const sPages = new Set((s.assignedPageIds || s.assignedPages || []).map(String));
+          let currentAssigned = (s.assignedPageIds || s.assignedPages || []).map(String);
+          if (currentAssigned.includes('*') || currentAssigned.length === 0) {
+            currentAssigned = (this.svc.pages || []).flatMap(p => [
+              String(p.id || ''),
+              String(p.page_id || ''),
+              String(p.accountId || ''),
+              String(p.account_id || '')
+            ]).filter(Boolean);
+          }
+          const sPages = new Set(currentAssigned);
           const shouldHave = checkedStaffIds.includes(s.id);
-          const had = sPages.has('*') || Array.from(pageAliases).some(alias => sPages.has(alias));
+          const had = Array.from(pageAliases).some(alias => sPages.has(alias));
 
           if (shouldHave && !had) {
             pageAliases.forEach(alias => sPages.add(alias));
@@ -7382,21 +7391,40 @@ class MetaCRMApp {
         if (res.ok) {
           const data = await res.json();
           if (data && Array.isArray(data.staff) && data.staff.length > 0) {
+            let explicitMap = {};
+            try {
+              explicitMap = JSON.parse(localStorage.getItem('metacrm_explicit_page_assignments') || '{}');
+            } catch (e) {}
+
+            const canonicalPages = (this.svc && this.svc.pages && this.svc.pages.length > 0)
+              ? this.svc.pages.map(p => p.id || p.page_id).filter(Boolean)
+              : ['1330954980099743', '1342542735606057', '1357368447449594', '380918975300755', '284138661621993', '1271057346092106'];
+
             data.staff.forEach(remoteS => {
-              const localS = this.svc.staff.find(s => s.id === remoteS.id || s.email === remoteS.email);
-              const remoteAssigned = remoteS.assignedPageIds || remoteS.assignedPages || remoteS.assigned_pages || [];
+              const localS = this.svc.staff.find(s => s.id === remoteS.id || (s.email && remoteS.email && s.email.toLowerCase() === remoteS.email.toLowerCase()));
+              const explicit = explicitMap[remoteS.id] || (remoteS.email && explicitMap[remoteS.email.toLowerCase()]);
+              const remoteAssigned = explicit || remoteS.assignedPageIds || remoteS.assignedPages || remoteS.assigned_pages || [];
               if (localS) {
                 localS.setup_token = remoteS.setup_token || localS.setup_token;
                 localS.status = remoteS.status || localS.status;
                 localS.name = remoteS.name || localS.name;
                 localS.displayName = remoteS.displayName || remoteS.name || localS.displayName;
-                localS.assignedPageIds = remoteAssigned;
-                localS.assignedPages = remoteAssigned;
+                if (Array.isArray(remoteAssigned) && remoteAssigned.length > 0) {
+                  localS.assignedPageIds = remoteAssigned;
+                  localS.assignedPages = remoteAssigned;
+                } else if (!localS.assignedPageIds || localS.assignedPageIds.length === 0) {
+                  const defaults = localS.role === 'admin' ? ['*'] : canonicalPages;
+                  localS.assignedPageIds = defaults;
+                  localS.assignedPages = defaults;
+                }
               } else {
+                const assigned = (Array.isArray(remoteAssigned) && remoteAssigned.length > 0) ? remoteAssigned : (
+                  remoteS.role === 'admin' ? ['*'] : canonicalPages
+                );
                 this.svc.staff.push({
                   ...remoteS,
-                  assignedPageIds: remoteAssigned,
-                  assignedPages: remoteAssigned
+                  assignedPageIds: assigned,
+                  assignedPages: assigned
                 });
               }
             });
@@ -7641,7 +7669,10 @@ class MetaCRMApp {
     const staff = this.svc ? this.svc.staff.find(s => s.id === staffId) : null;
     if (!staff) return;
     const pages = this.svc ? (this.svc.pages || []) : [];
-    const staffAssigned = staff.assignedPageIds || staff.assignedPages || [];
+    let staffAssigned = staff.assignedPageIds || staff.assignedPages || [];
+    if (!Array.isArray(staffAssigned) || staffAssigned.length === 0) {
+      staffAssigned = ['*'];
+    }
 
     const staffHasPage = (p) => {
       if (!Array.isArray(staffAssigned) || staffAssigned.length === 0) return false;

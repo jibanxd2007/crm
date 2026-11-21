@@ -220,6 +220,11 @@ class CRMService {
   }
   loadStaff() {
     try {
+      let explicitMap = {};
+      try {
+        explicitMap = JSON.parse(localStorage.getItem('metacrm_explicit_page_assignments') || '{}');
+      } catch (e) {}
+
       const saved = localStorage.getItem(this.staffKey);
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -234,13 +239,25 @@ class CRMService {
             const email = (s.email || '').toLowerCase().trim();
             if (authorizedMap.has(email)) {
               const base = authorizedMap.get(email);
+              const explicit = explicitMap[s.id] || (s.email && explicitMap[s.email.toLowerCase()]);
+              let resolvedAssigned = explicit;
+              if (!resolvedAssigned && Array.isArray(s.assignedPageIds) && s.assignedPageIds.length > 0) {
+                resolvedAssigned = s.assignedPageIds;
+              } else if (!resolvedAssigned && Array.isArray(s.assignedPages) && s.assignedPages.length > 0) {
+                resolvedAssigned = s.assignedPages;
+              }
+              if (!resolvedAssigned) {
+                resolvedAssigned = base.assignedPageIds;
+              }
               authorizedMap.set(email, {
                 ...base,
                 ...s,
                 email: base.email, // preserve normalized email
                 role: email === 'admina@novaautos.co.nz' ? 'admin' : (s.role || base.role),
                 name: s.name || base.name,
-                displayName: s.displayName || s.name || base.displayName
+                displayName: s.displayName || s.name || base.displayName,
+                assignedPageIds: resolvedAssigned,
+                assignedPages: resolvedAssigned
               });
             }
           }
@@ -252,6 +269,16 @@ class CRMService {
   }
 
   getDefaultStaff() {
+    const canonicalPages = (this.pages && this.pages.length > 0)
+      ? this.pages.map(p => p.id || p.page_id).filter(Boolean)
+      : [
+        "1330954980099743",
+        "1342542735606057",
+        "1357368447449594",
+        "380918975300755",
+        "284138661621993",
+        "1271057346092106"
+      ];
     return [
       {
         id: "00000000-0000-4001-a001-000000000001",
@@ -261,7 +288,8 @@ class CRMService {
         role: "admin",
         status: "setup_pending",
         lastLogin: "Never",
-        assignedPageIds: ["*"]
+        assignedPageIds: ["*"],
+        assignedPages: ["*"]
       },
       {
         id: "00000000-0000-4001-a002-000000000002",
@@ -271,7 +299,8 @@ class CRMService {
         role: "staff",
         status: "setup_pending",
         lastLogin: "Never",
-        assignedPageIds: []
+        assignedPageIds: [...canonicalPages],
+        assignedPages: [...canonicalPages]
       },
       {
         id: "00000000-0000-4001-a003-000000000003",
@@ -281,7 +310,8 @@ class CRMService {
         role: "staff",
         status: "setup_pending",
         lastLogin: "Never",
-        assignedPageIds: []
+        assignedPageIds: [...canonicalPages],
+        assignedPages: [...canonicalPages]
       },
       {
         id: "00000000-0000-4001-a004-000000000004",
@@ -291,7 +321,8 @@ class CRMService {
         role: "staff",
         status: "setup_pending",
         lastLogin: "Never",
-        assignedPageIds: []
+        assignedPageIds: [...canonicalPages],
+        assignedPages: [...canonicalPages]
       },
       {
         id: "00000000-0000-4001-a005-000000000005",
@@ -301,7 +332,8 @@ class CRMService {
         role: "staff",
         status: "setup_pending",
         lastLogin: "Never",
-        assignedPageIds: []
+        assignedPageIds: [...canonicalPages],
+        assignedPages: [...canonicalPages]
       },
       {
         id: "00000000-0000-4001-a006-000000000006",
@@ -311,7 +343,8 @@ class CRMService {
         role: "staff",
         status: "setup_pending",
         lastLogin: "Never",
-        assignedPageIds: []
+        assignedPageIds: [...canonicalPages],
+        assignedPages: [...canonicalPages]
       },
       {
         id: "00000000-0000-4001-a007-000000000007",
@@ -321,7 +354,8 @@ class CRMService {
         role: "staff",
         status: "setup_pending",
         lastLogin: "Never",
-        assignedPageIds: []
+        assignedPageIds: [...canonicalPages],
+        assignedPages: [...canonicalPages]
       }
     ];
   }
@@ -672,19 +706,48 @@ class CRMService {
       if (res && res.ok) {
         const data = await res.json();
         if (data && Array.isArray(data.staff)) {
-          this.staff = data.staff.map(s => ({
-            id: s.id,
-            name: s.full_name || s.name || s.email,
-            displayName: s.full_name || s.name || s.email,
-            email: s.email,
-            role: s.role || 'staff',
-            status: s.status || 'active',
-            lastLogin: s.lastLogin || 'Never',
-            setupLink: s.setupLink || null,
-            setupExpiresAt: s.setupExpiresAt || null,
-            assignedPageIds: s.assignedPages || s.assigned_pages || [],
-            assignedPages: s.assignedPages || s.assigned_pages || []
-          }));
+          let explicitMap = {};
+          try {
+            explicitMap = JSON.parse(localStorage.getItem('metacrm_explicit_page_assignments') || '{}');
+          } catch (e) {}
+
+          const canonicalPages = (this.pages && this.pages.length > 0)
+            ? this.pages.map(p => p.id || p.page_id).filter(Boolean)
+            : ['1330954980099743', '1342542735606057', '1357368447449594', '380918975300755', '284138661621993', '1271057346092106'];
+
+          this.staff = data.staff.map(s => {
+            const emailKey = (s.email || '').toLowerCase();
+            const existing = (this.staff || []).find(st => st.id === s.id || (st.email && st.email.toLowerCase() === emailKey));
+
+            let assigned = null;
+            if (explicitMap[s.id] && Array.isArray(explicitMap[s.id])) {
+              assigned = explicitMap[s.id];
+            } else if (explicitMap[emailKey] && Array.isArray(explicitMap[emailKey])) {
+              assigned = explicitMap[emailKey];
+            } else if (s.assignedPages && Array.isArray(s.assignedPages) && s.assignedPages.length > 0) {
+              assigned = s.assignedPages;
+            } else if (s.assigned_pages && Array.isArray(s.assigned_pages) && s.assigned_pages.length > 0) {
+              assigned = s.assigned_pages;
+            } else if (existing && Array.isArray(existing.assignedPageIds) && existing.assignedPageIds.length > 0) {
+              assigned = existing.assignedPageIds;
+            } else {
+              assigned = s.role === 'admin' ? ['*'] : [...canonicalPages];
+            }
+
+            return {
+              id: s.id,
+              name: s.full_name || s.name || s.email,
+              displayName: s.full_name || s.name || s.email,
+              email: s.email,
+              role: s.role || 'staff',
+              status: s.status || 'active',
+              lastLogin: s.lastLogin || 'Never',
+              setupLink: s.setupLink || null,
+              setupExpiresAt: s.setupExpiresAt || null,
+              assignedPageIds: assigned,
+              assignedPages: assigned
+            };
+          });
           this.saveStaff();
           this.notifyChange('staff_updated');
           return this.staff;
@@ -3476,6 +3539,12 @@ class CRMService {
     const previousPages = [...(staffMember.assignedPageIds || [])];
     staffMember.assignedPageIds = [...newPageIds];
     staffMember.assignedPages = [...newPageIds];
+    try {
+      const explicitMap = JSON.parse(localStorage.getItem('metacrm_explicit_page_assignments') || '{}');
+      explicitMap[staffMember.id] = newPageIds;
+      if (staffMember.email) explicitMap[staffMember.email.toLowerCase()] = newPageIds;
+      localStorage.setItem('metacrm_explicit_page_assignments', JSON.stringify(explicitMap));
+    } catch (e) {}
     this.saveAll();
 
     try {

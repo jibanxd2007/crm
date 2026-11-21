@@ -1,5 +1,8 @@
 const https = require('https');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 // Server Session Signing Secret
 const JWT_SECRET = process.env.SESSION_SECRET || process.env.META_APP_SECRET || 'crm_auth_secret_session_2026_fixed';
@@ -11,6 +14,37 @@ const ACTIVE_SESSIONS = global.CRM_ACTIVE_SESSIONS;
 // Rate Limiting Registry (Key -> { attempts, resetAt })
 global.CRM_RATE_LIMITS = global.CRM_RATE_LIMITS || new Map();
 const RATE_LIMITS = global.CRM_RATE_LIMITS;
+
+const TMP_ASSIGNMENTS_FILE = path.join(os.tmpdir(), 'crm_staff_page_assignments.json');
+
+function getExplicitPageAssignments() {
+  if (!global.CRM_EXPLICIT_PAGE_ASSIGNMENTS) {
+    global.CRM_EXPLICIT_PAGE_ASSIGNMENTS = new Map();
+    try {
+      if (fs.existsSync(TMP_ASSIGNMENTS_FILE)) {
+        const raw = fs.readFileSync(TMP_ASSIGNMENTS_FILE, 'utf8');
+        const parsed = JSON.parse(raw);
+        for (const [k, v] of Object.entries(parsed)) {
+          if (Array.isArray(v)) global.CRM_EXPLICIT_PAGE_ASSIGNMENTS.set(k.toLowerCase(), v);
+        }
+      }
+    } catch (e) {}
+  }
+  return global.CRM_EXPLICIT_PAGE_ASSIGNMENTS;
+}
+
+function setExplicitPageAssignment(identifier, pageIds) {
+  if (!identifier || !Array.isArray(pageIds)) return;
+  const store = getExplicitPageAssignments();
+  store.set(String(identifier).toLowerCase().trim(), pageIds);
+  try {
+    const obj = {};
+    for (const [k, v] of store.entries()) {
+      obj[k] = v;
+    }
+    fs.writeFileSync(TMP_ASSIGNMENTS_FILE, JSON.stringify(obj), 'utf8');
+  } catch (e) {}
+}
 
 // ------------------------------------------------------------------------------
 // CANONICAL SEVEN UNIQUE USER ACCOUNTS (Section 2)
@@ -25,7 +59,10 @@ const CANONICAL_DEALERSHIP_PAGE_IDS = [
   '6aea5280a5c031c687ccba17', // Zodiac Motor Company
   '6aea5281a5c031c687ccba18', // Car4u Mo Samoa NZ
   '1330954980099743',
-  '107386827827827',
+  '1342542735606057',
+  '1357368447449594',
+  '380918975300755',
+  '284138661621993',
   '1271057346092106'
 ];
 
@@ -194,6 +231,7 @@ function generateSecureToken(bytes = 32) {
 function createSessionToken(user) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const exp = Math.floor(Date.now() / 1000) + (24 * 3600); // 24 hours
+  const userPages = user.pages || user.assignedPages || (user.role === 'admin' ? ['*'] : CANONICAL_DEALERSHIP_PAGE_IDS);
   const payload = Buffer.from(JSON.stringify({
     id: user.id,
     uid: user.id,
@@ -201,6 +239,7 @@ function createSessionToken(user) {
     email: user.email.toLowerCase(),
     role: user.role,
     name: user.name,
+    pages: userPages,
     iat: Math.floor(Date.now() / 1000),
     exp
   })).toString('base64url');
@@ -210,6 +249,7 @@ function createSessionToken(user) {
     userId: user.id,
     email: user.email.toLowerCase(),
     role: user.role,
+    pages: userPages,
     expiresAt: Date.now() + (24 * 3600 * 1000)
   });
   return token;
@@ -379,6 +419,13 @@ function resolveUser(headers = {}) {
       if (decoded && decoded.email) {
         const u = getUserByEmail(decoded.email);
         if (u && u.status !== 'deactivated') {
+          const explicit = global.CRM_EXPLICIT_PAGE_ASSIGNMENTS && global.CRM_EXPLICIT_PAGE_ASSIGNMENTS.get(decoded.email.toLowerCase());
+          const resolvedPages = u.role === 'admin' ? ['*'] : (
+            explicit !== undefined ? explicit : (
+              (decoded.pages && Array.isArray(decoded.pages) && decoded.pages.length > 0) ? decoded.pages :
+              (Array.isArray(u.assignedPages) && u.assignedPages.length > 0 ? u.assignedPages : CANONICAL_DEALERSHIP_PAGE_IDS)
+            )
+          );
           return {
             id: u.id,
             email: u.email,
@@ -386,7 +433,7 @@ function resolveUser(headers = {}) {
             displayName: u.name,
             role: u.role,
             status: u.status,
-            pages: u.role === 'admin' ? ['*'] : (Array.isArray(u.assignedPages) ? u.assignedPages : CANONICAL_DEALERSHIP_PAGE_IDS),
+            pages: resolvedPages,
             convs: u.role === 'admin' ? ['*'] : []
           };
         }
@@ -415,6 +462,13 @@ function resolveUser(headers = {}) {
     // Direct token check (for testing / admin scripts)
     const candidate = getUserByEmail(rawToken) || getUserById(rawToken);
     if (candidate && candidate.status !== 'deactivated') {
+      const assignments = getExplicitPageAssignments();
+      const explicit = assignments.get(candidate.email.toLowerCase()) || (candidate.id && assignments.get(candidate.id.toLowerCase()));
+      const resolvedPages = candidate.role === 'admin' ? ['*'] : (
+        explicit !== undefined ? explicit : (
+          (Array.isArray(candidate.assignedPages) && candidate.assignedPages.length > 0) ? candidate.assignedPages : CANONICAL_DEALERSHIP_PAGE_IDS
+        )
+      );
       return {
         id: candidate.id,
         email: candidate.email,
@@ -422,7 +476,7 @@ function resolveUser(headers = {}) {
         displayName: candidate.name,
         role: candidate.role,
         status: candidate.status,
-        pages: candidate.role === 'admin' ? ['*'] : (Array.isArray(candidate.assignedPages) ? candidate.assignedPages : CANONICAL_DEALERSHIP_PAGE_IDS),
+        pages: resolvedPages,
         convs: candidate.role === 'admin' ? ['*'] : []
       };
     }
@@ -449,6 +503,13 @@ function resolveUser(headers = {}) {
     }
     const candidate = getUserByEmail(normalized) || getUserById(normalized);
     if (candidate && candidate.status !== 'deactivated') {
+      const assignments = getExplicitPageAssignments();
+      const explicit = assignments.get(candidate.email.toLowerCase()) || (candidate.id && assignments.get(candidate.id.toLowerCase()));
+      const resolvedPages = candidate.role === 'admin' ? ['*'] : (
+        explicit !== undefined ? explicit : (
+          (Array.isArray(candidate.assignedPages) && candidate.assignedPages.length > 0) ? candidate.assignedPages : CANONICAL_DEALERSHIP_PAGE_IDS
+        )
+      );
       return {
         id: candidate.id,
         email: candidate.email,
@@ -456,7 +517,7 @@ function resolveUser(headers = {}) {
         displayName: candidate.name,
         role: candidate.role,
         status: candidate.status,
-        pages: candidate.role === 'admin' ? ['*'] : (Array.isArray(candidate.assignedPages) ? candidate.assignedPages : CANONICAL_DEALERSHIP_PAGE_IDS),
+        pages: resolvedPages,
         convs: candidate.role === 'admin' ? ['*'] : []
       };
     }
@@ -740,6 +801,9 @@ function isDeveloperRequest(headers = {}, resolvedUser = null) {
 }
 
 module.exports = {
+  CANONICAL_DEALERSHIP_PAGE_IDS,
+  getExplicitPageAssignments,
+  setExplicitPageAssignment,
   INITIAL_CANONICAL_USERS,
   getUserByEmail,
   getUserById,
