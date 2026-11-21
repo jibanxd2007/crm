@@ -682,7 +682,8 @@ class CRMService {
             lastLogin: s.lastLogin || 'Never',
             setupLink: s.setupLink || null,
             setupExpiresAt: s.setupExpiresAt || null,
-            assignedPageIds: s.assignedPages || s.assigned_pages || []
+            assignedPageIds: s.assignedPages || s.assigned_pages || [],
+            assignedPages: s.assignedPages || s.assigned_pages || []
           }));
           this.saveStaff();
           this.notifyChange('staff_updated');
@@ -1068,54 +1069,58 @@ class CRMService {
   canUserAccessPage(pageId, user = null) {
     const targetUser = user || this.currentUser;
     if (!targetUser) return false;
-    if (targetUser.role === "admin") return true;
-    const allowedPages = targetUser.assignedPageIds || [];
-    return allowedPages.includes(pageId);
+    if (targetUser.role === "admin" || targetUser.role === "super_admin") return true;
+    const allowed = targetUser.assignedPageIds || targetUser.assignedPages || [];
+    if (!Array.isArray(allowed) || allowed.length === 0) return false;
+    if (allowed.includes('*')) return true;
+    const pid = String(pageId);
+    if (allowed.some(a => String(a) === pid)) return true;
+    const rec = typeof this.resolvePageRecord === 'function' ? this.resolvePageRecord(pid) : null;
+    if (rec) {
+      const aliases = [rec.id, rec.page_id, rec.accountId, rec.account_id].filter(Boolean).map(String);
+      return allowed.some(a => aliases.includes(String(a)));
+    }
+    return false;
   }
 
   canUserAccessLead(lead, user = null) {
     const targetUser = user || this.currentUser;
     if (!targetUser || !lead) return false;
-    if (targetUser.role === "admin") return true;
-    if (lead.assigned_staff_id === targetUser.id) return true;
-    const allowedPages = targetUser.assignedPageIds || [];
-    return allowedPages.includes(lead.page_id);
+    if (targetUser.role === "admin" || targetUser.role === "super_admin") return true;
+    if (lead.assigned_staff_id === targetUser.id || lead.assignedStaffId === targetUser.id) return true;
+    return this.canUserAccessPage(lead.page_id || lead.pageId, targetUser);
   }
 
   canUserAccessContact(contact, user = null) {
     const targetUser = user || this.currentUser;
     if (!targetUser || !contact) return false;
-    if (targetUser.role === "admin") return true;
+    if (targetUser.role === "admin" || targetUser.role === "super_admin") return true;
     if (contact.assigned_to === targetUser.id) return true;
-    const allowedPages = targetUser.assignedPageIds || [];
-    return allowedPages.includes(contact.page_id);
+    return this.canUserAccessPage(contact.page_id, targetUser);
   }
 
   canUserAccessDeal(deal, user = null) {
     const targetUser = user || this.currentUser;
     if (!targetUser || !deal) return false;
-    if (targetUser.role === "admin") return true;
+    if (targetUser.role === "admin" || targetUser.role === "super_admin") return true;
     if (deal.assigned_to === targetUser.id) return true;
-    const allowedPages = targetUser.assignedPageIds || [];
-    return allowedPages.includes(deal.page_id);
+    return this.canUserAccessPage(deal.page_id, targetUser);
   }
 
   canUserAccessTask(task, user = null) {
     const targetUser = user || this.currentUser;
     if (!targetUser || !task) return false;
-    if (targetUser.role === "admin") return true;
+    if (targetUser.role === "admin" || targetUser.role === "super_admin") return true;
     if (task.assignedTo === targetUser.id) return true;
-    const allowedPages = targetUser.assignedPageIds || [];
-    return !task.relatedPageId || allowedPages.includes(task.relatedPageId);
+    return !task.relatedPageId || this.canUserAccessPage(task.relatedPageId, targetUser);
   }
 
   canUserAccessConversation(conv, user = null) {
     const targetUser = user || this.currentUser;
     if (!targetUser || !conv) return false;
-    if (targetUser.role === "admin") return true;
-    if (conv.assigned_to === targetUser.id) return true;
-    const allowedPages = targetUser.assignedPageIds || [];
-    return allowedPages.includes(conv.page_id);
+    if (targetUser.role === "admin" || targetUser.role === "super_admin") return true;
+    if (conv.assigned_to === targetUser.id || conv.assignedStaffId === targetUser.id) return true;
+    return this.canUserAccessPage(conv.page_id || conv.accountId || conv.account_id, targetUser);
   }
 
   getSessionToken() {
@@ -1293,11 +1298,10 @@ class CRMService {
   getAccessiblePages(user = null) {
     const targetUser = user || this.currentUser;
     if (!targetUser) return [];
-    if (targetUser.role === "admin") {
+    if (targetUser.role === "admin" || targetUser.role === "super_admin") {
       return [...this.pages];
     }
-    const allowed = targetUser.assignedPageIds || [];
-    return this.pages.filter(p => allowed.includes(p.id));
+    return this.pages.filter(p => this.canUserAccessPage(p.id, targetUser));
   }
 
   getPageById(pageId, user = null) {
@@ -1324,7 +1328,7 @@ class CRMService {
     const cpl = totalLeads > 0 ? (totalSpend / totalLeads) : 0;
 
     // Staff assigned
-    const assignedStaff = this.staff.filter(s => s.role === "staff" && (s.assignedPageIds || []).includes(pageId));
+    const assignedStaff = this.staff.filter(s => s.role === "staff" && this.canUserAccessPage(pageId, s));
 
     return {
       page,

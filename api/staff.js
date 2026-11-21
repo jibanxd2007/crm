@@ -624,7 +624,7 @@ async function staffHandler(req, res) {
       updates.name = newName;
       updates.displayName = newName;
     }
-    if (newPages) {
+    if (newPages !== null && Array.isArray(newPages)) {
       if (email === 'admina@novaautos.co.nz') {
         updates.assignedPages = ['*'];
       } else {
@@ -632,7 +632,7 @@ async function staffHandler(req, res) {
       }
     }
 
-    updateUser(email, updates);
+    const updated = updateUser(email, updates);
 
     // Persist to Supabase if configured
     if (supabase) {
@@ -642,7 +642,7 @@ async function staffHandler(req, res) {
           dbUpdates.name = newName;
           dbUpdates.full_name = newName;
         }
-        if (newPages) {
+        if (newPages !== null && Array.isArray(newPages)) {
           dbUpdates.assigned_pages = (email === 'admina@novaautos.co.nz') ? ['*'] : newPages;
         }
         dbUpdates.updated_at = new Date().toISOString();
@@ -690,16 +690,18 @@ async function staffHandler(req, res) {
       }
     }
 
+    const currentAssignedPages = (updated && Array.isArray(updated.assignedPages)) ? updated.assignedPages : (Array.isArray(updates.assignedPages) ? updates.assignedPages : targetUser.assignedPages);
     return res.status(200).json({
       success: true,
       status: "success",
       message: "Profile and page assignments updated successfully.",
+      assignedPages: currentAssignedPages,
       user: {
         id: targetUser.id,
         email,
         name: updates.name || targetUser.name,
-        assignedPages: targetUser.assignedPages,
-        assignedPageIds: targetUser.assignedPages
+        assignedPages: currentAssignedPages,
+        assignedPageIds: currentAssignedPages
       }
     });
   }
@@ -744,9 +746,7 @@ async function staffHandler(req, res) {
           const u = getUserByEmail(dbu.email);
           if (u) {
             if (dbu.assigned_pages && Array.isArray(dbu.assigned_pages)) {
-              if (dbu.assigned_pages.length > 0 || !u.assignedPages || u.assignedPages.length === 0) {
-                u.assignedPages = dbu.assigned_pages;
-              }
+              u.assignedPages = dbu.assigned_pages;
             }
             if (dbu.status) u.status = dbu.status;
             if (dbu.last_login_at) u.lastLoginAt = dbu.last_login_at;

@@ -386,7 +386,7 @@ function resolveUser(headers = {}) {
             displayName: u.name,
             role: u.role,
             status: u.status,
-            pages: u.role === 'admin' ? ['*'] : ((u.assignedPages && u.assignedPages.length > 0) ? u.assignedPages : CANONICAL_DEALERSHIP_PAGE_IDS),
+            pages: u.role === 'admin' ? ['*'] : (Array.isArray(u.assignedPages) ? u.assignedPages : CANONICAL_DEALERSHIP_PAGE_IDS),
             convs: u.role === 'admin' ? ['*'] : []
           };
         }
@@ -422,7 +422,7 @@ function resolveUser(headers = {}) {
         displayName: candidate.name,
         role: candidate.role,
         status: candidate.status,
-        pages: candidate.role === 'admin' ? ['*'] : ((candidate.assignedPages && candidate.assignedPages.length > 0) ? candidate.assignedPages : CANONICAL_DEALERSHIP_PAGE_IDS),
+        pages: candidate.role === 'admin' ? ['*'] : (Array.isArray(candidate.assignedPages) ? candidate.assignedPages : CANONICAL_DEALERSHIP_PAGE_IDS),
         convs: candidate.role === 'admin' ? ['*'] : []
       };
     }
@@ -456,7 +456,7 @@ function resolveUser(headers = {}) {
         displayName: candidate.name,
         role: candidate.role,
         status: candidate.status,
-        pages: candidate.role === 'admin' ? ['*'] : ((candidate.assignedPages && candidate.assignedPages.length > 0) ? candidate.assignedPages : CANONICAL_DEALERSHIP_PAGE_IDS),
+        pages: candidate.role === 'admin' ? ['*'] : (Array.isArray(candidate.assignedPages) ? candidate.assignedPages : CANONICAL_DEALERSHIP_PAGE_IDS),
         convs: candidate.role === 'admin' ? ['*'] : []
       };
     }

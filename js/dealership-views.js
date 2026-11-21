@@ -2480,7 +2480,10 @@
                             ${needsRe ? `
                               <button type="button" class="btn btn-primary btn-xs" onclick="${isIg ? 'window.app.connectInstagramOAuth()' : 'window.app.connectFacebookOAuth()'}">${isIg ? 'Reconnect Instagram' : 'Reconnect Facebook'}</button>
                             ` : `
-                              <button type="button" class="btn btn-ghost btn-xs" onclick="window.app.openPageInInbox('${esc(p.pageId)}')">Open Inbox</button>
+                              <div style="display:inline-flex;gap:6px;align-items:center;justify-content:flex-end;">
+                                <button type="button" class="btn btn-ghost btn-xs" onclick="window.app.openPageInInbox('${esc(p.pageId)}')">Open Inbox</button>
+                                <button type="button" class="btn btn-secondary btn-xs" onclick="window.app.openAssignStaffToPageModal('${esc(p.pageId)}')">Assign Staff</button>
+                              </div>
                             `}
                           </td>
                         </tr>`;

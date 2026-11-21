@@ -4666,11 +4666,24 @@ class MetaCRMApp {
     const staff = (this.svc && this.svc.staff) ? this.svc.staff : [];
     if (!pageId) return staff;
     const pid = String(pageId);
+    const page = (this.svc && this.svc.pages) ? this.svc.pages.find(p =>
+      String(p.id) === pid || String(p.page_id) === pid || String(p.accountId) === pid || String(p.account_id) === pid
+    ) : null;
+    const matchIds = new Set([pid]);
+    if (page) {
+      if (page.id) matchIds.add(String(page.id));
+      if (page.page_id) matchIds.add(String(page.page_id));
+      if (page.accountId) matchIds.add(String(page.accountId));
+      if (page.account_id) matchIds.add(String(page.account_id));
+    }
+
     return staff.filter(s => {
-      if (s.status === 'deactivated' || s.status === 'suspended') return false;
+      if (s.status === 'deactivated' || s.status === 'suspended' || s.status === 'inactive') return false;
       if (s.role === 'admin' || s.role === 'super_admin') return true;
       const assigned = s.assignedPageIds || s.assignedPages || [];
-      return assigned.includes('*') || assigned.includes(pid);
+      if (!Array.isArray(assigned)) return false;
+      if (assigned.includes('*')) return true;
+      return assigned.some(aid => matchIds.has(String(aid)));
     });
   }
 
@@ -7123,9 +7136,22 @@ class MetaCRMApp {
 
   openAssignStaffToPageModal(pageId) {
     if (!this.svc) return;
-    const page = (this.svc.pages || []).find(p => p.id === pageId || p.page_id === pageId);
-    const pageName = page ? page.name : pageId;
+    const page = (this.svc.pages || []).find(p =>
+      String(p.id) === String(pageId) ||
+      String(p.page_id) === String(pageId) ||
+      String(p.accountId) === String(pageId) ||
+      String(p.account_id) === String(pageId)
+    );
+    const pageName = page ? page.name : this._pageName(pageId);
     const staffList = (this.svc.staff || []).filter(s => s.role !== 'admin' && s.role !== 'super_admin');
+
+    const pageAliases = new Set([String(pageId)]);
+    if (page) {
+      if (page.id) pageAliases.add(String(page.id));
+      if (page.page_id) pageAliases.add(String(page.page_id));
+      if (page.accountId) pageAliases.add(String(page.accountId));
+      if (page.account_id) pageAliases.add(String(page.account_id));
+    }
 
     this.el.mTitle.textContent = `Assign Staff: ${pageName}`;
     this.el.mBody.innerHTML = `
@@ -7135,7 +7161,10 @@ class MetaCRMApp {
       <div style="display:flex;flex-direction:column;gap:8px;max-height:280px;overflow-y:auto;padding:4px 0;">
         ${staffList.length > 0 ? staffList.map(s => {
           const sPages = s.assignedPageIds || s.assignedPages || [];
-          const isAssigned = sPages.includes(pageId) || (page && (sPages.includes(page.id) || sPages.includes(page.page_id)));
+          const isAssigned = Array.isArray(sPages) && (
+            sPages.includes('*') ||
+            sPages.some(aid => pageAliases.has(String(aid)))
+          );
           return `
           <label style="display:flex;align-items:center;gap:12px;font-size:13px;cursor:pointer;padding:8px 12px;border-radius:6px;border:1px solid var(--border-subtle);background:var(--bg-surface);">
             <input type="checkbox" class="page-assign-staff-cb" value="${s.id}" ${isAssigned ? 'checked' : ''}>
@@ -7159,25 +7188,23 @@ class MetaCRMApp {
       try {
         const checkedStaffIds = Array.from(document.querySelectorAll('.page-assign-staff-cb:checked')).map(cb => cb.value);
         for (const s of staffList) {
-          const sPages = new Set(s.assignedPageIds || s.assignedPages || []);
+          const sPages = new Set((s.assignedPageIds || s.assignedPages || []).map(String));
           const shouldHave = checkedStaffIds.includes(s.id);
-          const had = sPages.has(pageId) || (page && (sPages.has(page.id) || sPages.has(page.page_id)));
+          const had = sPages.has('*') || Array.from(pageAliases).some(alias => sPages.has(alias));
 
           if (shouldHave && !had) {
-            sPages.add(pageId);
-            if (page && page.page_id) sPages.add(page.page_id);
-            if (page && page.id) sPages.add(page.id);
+            pageAliases.forEach(alias => sPages.add(alias));
             await this.svc.updateStaffAssignedPages(s.id, Array.from(sPages));
           } else if (!shouldHave && had) {
-            sPages.delete(pageId);
-            if (page && page.page_id) sPages.delete(page.page_id);
-            if (page && page.id) sPages.delete(page.id);
+            pageAliases.forEach(alias => sPages.delete(alias));
+            sPages.delete('*');
             await this.svc.updateStaffAssignedPages(s.id, Array.from(sPages));
           }
         }
         this.closeModal();
         this.toast(`Staff assignments updated for "${pageName}" ✓`, 'success');
-        this.renderConnections();
+        if (typeof this.renderSettings === 'function') this.renderSettings();
+        if (typeof this.renderStaff === 'function') this.renderStaff();
         this.renderSidebar();
       } catch (err) {
         confirmBtn.disabled = false;
@@ -7409,7 +7436,22 @@ class MetaCRMApp {
               const isAdminAccount = s.role === 'admin' || s.role === 'super_admin';
               const isJoy = s.email === 'admina@novaautos.co.nz';
               const assignedIds = s.assignedPageIds || s.assignedPages || [];
-              const pageNames = assignedIds.map(pid => this._pageName(pid)).filter(Boolean).join(', ');
+              const isAllAssigned = Array.isArray(assignedIds) && (
+                assignedIds.includes('*') ||
+                (pages.length > 0 && pages.every(p => {
+                  const ids = [p.id, p.page_id, p.accountId, p.account_id].filter(Boolean).map(String);
+                  return assignedIds.some(aid => ids.includes(String(aid)));
+                }))
+              );
+              let pageNames = '';
+              if (isAdminAccount || isAllAssigned) {
+                pageNames = isAdminAccount ? 'All Pages (Full Administrator Access)' : 'All Pages (Full Access)';
+              } else if (!Array.isArray(assignedIds) || assignedIds.length === 0) {
+                pageNames = '<span class="text-gray">None Assigned</span>';
+              } else {
+                const uniqueNames = Array.from(new Set(assignedIds.map(pid => this._pageName(pid)).filter(Boolean)));
+                pageNames = uniqueNames.join(', ') || '<span class="text-gray">None Assigned</span>';
+              }
               const status = s.status || 'active';
               return `
                 <tr>
@@ -7430,7 +7472,7 @@ class MetaCRMApp {
                       status === 'inactive' ? '<span class="badge badge-gray">Inactive</span>' :
                       '<span class="badge badge-green">Active</span>'}
                   </td>
-                  <td class="text-xs">${isAdminAccount ? 'All Pages (Full Administrator Access)' : (pageNames || '<span class="text-gray">None Assigned</span>')}</td>
+                  <td class="text-xs">${pageNames}</td>
                   <td>
                     <div class="row-actions">
                       ${s.setup_token ? `
@@ -7601,28 +7643,47 @@ class MetaCRMApp {
     const pages = this.svc ? (this.svc.pages || []) : [];
     const staffAssigned = staff.assignedPageIds || staff.assignedPages || [];
 
-    this.el.mTitle.textContent = `Assign Facebook Pages: ${staff.name}`;
+    const staffHasPage = (p) => {
+      if (!Array.isArray(staffAssigned) || staffAssigned.length === 0) return false;
+      if (staffAssigned.includes('*')) return true;
+      const ids = [
+        String(p.id || ''),
+        String(p.page_id || ''),
+        String(p.accountId || ''),
+        String(p.account_id || '')
+      ].filter(Boolean);
+      return staffAssigned.some(aid => ids.includes(String(aid)));
+    };
+
+    const isAllChecked = Array.isArray(staffAssigned) && (
+      staffAssigned.includes('*') || (pages.length > 0 && pages.every(p => staffHasPage(p)))
+    );
+
+    this.el.mTitle.textContent = `Assign Dealership Pages: ${staff.name}`;
     this.el.mBody.innerHTML = `
       <p style="font-size:13px;color:var(--text-secondary);margin-bottom:14px;line-height:1.4;">
-        Select which Facebook Pages <strong>${escapeHtml(staff.name)}</strong> is allowed to access. They will only see leads and messages for checked pages.
+        Select which dealership Facebook &amp; Instagram Pages <strong>${escapeHtml(staff.name)}</strong> is allowed to access. They will only see leads, messages, and reports for checked pages.
       </p>
-      <div style="display:flex;flex-direction:column;gap:10px;max-height:260px;overflow-y:auto;padding:4px 0;">
-        <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;padding:6px 8px;border-radius:4px;background:#F8FAFC;">
-          <input type="checkbox" id="ap-all" ${(!staffAssigned || staffAssigned.length === 0 || staffAssigned.length >= pages.length) ? 'checked' : ''} 
+      <div style="display:flex;flex-direction:column;gap:10px;max-height:280px;overflow-y:auto;padding:4px 0;">
+        <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;padding:8px 10px;border-radius:6px;background:#F8FAFC;border:1px solid var(--border);">
+          <input type="checkbox" id="ap-all" ${isAllChecked ? 'checked' : ''} 
                  onchange="document.querySelectorAll('.ap-page-cb').forEach(cb => cb.checked = this.checked)">
           <strong>All Pages (Full Access)</strong>
         </label>
         <hr style="border:none;border-top:1px solid var(--border);margin:4px 0;">
         ${pages.length > 0 ? pages.map(p => {
-          const isChecked = staffAssigned && (staffAssigned.includes(p.id) || staffAssigned.includes(p.page_id));
+          const isChecked = isAllChecked || staffHasPage(p);
+          const pVal = p.id || p.page_id;
+          const pPageId = p.page_id || p.id || '';
+          const pAccountId = p.accountId || p.account_id || '';
           return `
-          <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;padding:4px 8px;">
-            <input type="checkbox" class="ap-page-cb" value="${p.id || p.page_id}" ${isChecked ? 'checked' : ''}
-                   onchange="if(!this.checked) document.getElementById('ap-all').checked = false;">
+          <label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;padding:6px 8px;border-radius:4px;">
+            <input type="checkbox" class="ap-page-cb" value="${pVal}" data-page-id="${pPageId}" data-account-id="${pAccountId}" ${isChecked ? 'checked' : ''}
+                   onchange="const allCbs = Array.from(document.querySelectorAll('.ap-page-cb')); document.getElementById('ap-all').checked = allCbs.length > 0 && allCbs.every(c => c.checked);">
             <span>${escapeHtml(p.name)}</span>
-            <span class="badge badge-gray text-xs" style="font-family:monospace;margin-left:auto;">ID: ${p.page_id || p.id}</span>
+            <span class="badge badge-gray text-xs" style="font-family:monospace;margin-left:auto;">${p.platform === 'instagram' ? 'IG' : 'FB'} · ${p.page_id || p.id}</span>
           </label>`;
-        }).join('') : '<div class="text-xs text-gray">No connected Facebook Pages yet. Connect a Page first.</div>'}
+        }).join('') : '<div class="text-xs text-gray">No connected dealership pages found.</div>'}
       </div>
     `;
 
@@ -7636,16 +7697,31 @@ class MetaCRMApp {
       const isAll = document.getElementById('ap-all')?.checked;
       let selectedIds = [];
       if (isAll) {
-        selectedIds = pages.map(p => p.id || p.page_id);
+        selectedIds = ['*'];
+        pages.forEach(p => {
+          if (p.id && !selectedIds.includes(String(p.id))) selectedIds.push(String(p.id));
+          if (p.page_id && !selectedIds.includes(String(p.page_id))) selectedIds.push(String(p.page_id));
+          if (p.accountId && !selectedIds.includes(String(p.accountId))) selectedIds.push(String(p.accountId));
+          if (p.account_id && !selectedIds.includes(String(p.account_id))) selectedIds.push(String(p.account_id));
+        });
       } else {
-        document.querySelectorAll('.ap-page-cb:checked').forEach(cb => {
-          if (cb.value && !selectedIds.includes(cb.value)) selectedIds.push(cb.value);
+        const checkedBoxes = Array.from(document.querySelectorAll('.ap-page-cb:checked'));
+        checkedBoxes.forEach(cb => {
+          const val = cb.value;
+          const pid = cb.getAttribute('data-page-id');
+          const aid = cb.getAttribute('data-account-id');
+          if (val && !selectedIds.includes(val)) selectedIds.push(val);
+          if (pid && !selectedIds.includes(pid)) selectedIds.push(pid);
+          if (aid && !selectedIds.includes(aid)) selectedIds.push(aid);
         });
       }
 
       try {
         if (this.svc && typeof this.svc.updateStaffAssignedPages === 'function') {
-          await this.svc.updateStaffAssignedPages(staff.id, selectedIds);
+          const res = await this.svc.updateStaffAssignedPages(staff.id, selectedIds);
+          if (res && res.success === false) {
+            throw new Error(res.error || 'Server rejected page assignment update');
+          }
         } else {
           staff.assignedPageIds = selectedIds;
           staff.assignedPages = selectedIds;
@@ -8060,7 +8136,16 @@ class MetaCRMApp {
     }
     const assignedIds = this.user.assignedPageIds || this.user.assignedPages || [];
     if (!Array.isArray(assignedIds) || assignedIds.length === 0) return [];
-    return pages.filter(p => assignedIds.includes(p.id) || assignedIds.includes(p.page_id));
+    if (assignedIds.includes('*')) return pages;
+    return pages.filter(p => {
+      const pId = String(p.id || '');
+      const pPageId = String(p.page_id || '');
+      const pAccountId = String(p.accountId || p.account_id || '');
+      return assignedIds.some(aid => {
+        const aStr = String(aid);
+        return aStr === pId || aStr === pPageId || (pAccountId && aStr === pAccountId);
+      });
+    });
   }
 
   _getNZDate(dateInput = null) {
@@ -8136,7 +8221,11 @@ class MetaCRMApp {
 
   _filterUserLeads(leads) {
     if (!this.user || this.user.role === 'admin' || this.user.role === 'super_admin') return leads;
-    const allowedPages = this.user.assignedPageIds || [];
+    if (this.svc && typeof this.svc.canUserAccessLead === 'function') {
+      return leads.filter(l => this.svc.canUserAccessLead(l, this.user));
+    }
+    const allowedPages = this.user.assignedPageIds || this.user.assignedPages || [];
+    if (allowedPages.includes('*')) return leads;
     return leads.filter(l =>
       (l.assigned_staff_id && l.assigned_staff_id === this.user.id) ||
       (l.assignedStaffId && l.assignedStaffId === this.user.id) ||
@@ -8169,7 +8258,7 @@ class MetaCRMApp {
       const rec = this.svc.resolvePageRecord(cleanId);
       if (rec && rec.name) return rec.name.trim();
     }
-    const pages = (this._getAccessiblePages ? this._getAccessiblePages() : (this.svc ? this.svc.pages : [])) || [];
+    const pages = (this.svc && this.svc.pages) ? this.svc.pages : ((this._getAccessiblePages ? this._getAccessiblePages() : []));
     const p = pages.find(pg =>
       String(pg.id) === cleanId ||
       String(pg.page_id) === cleanId ||
