@@ -406,22 +406,29 @@ async function staffHandler(req, res) {
     const hash = hashPassword(password, salt);
 
     updateUser(user.email, {
+      status: 'active',
       passwordHash: hash,
       password_hash: hash,
       passwordSalt: salt,
       password_salt: salt,
       resetToken: null,
       reset_token: null,
-      resetExpiresAt: null
+      resetExpiresAt: null,
+      setupToken: null,
+      setup_token: null,
+      setupExpiresAt: null
     });
 
     if (supabase) {
       try {
         await supabase.from('users').update({
+          status: 'active',
           password_hash: hash,
           password_salt: salt,
           reset_token: null,
           reset_expires_at: null,
+          setup_token: null,
+          setup_expires_at: null,
           updated_at: new Date().toISOString()
         }).eq('email', user.email.toLowerCase());
       } catch (e) {
@@ -720,21 +727,75 @@ async function staffHandler(req, res) {
     }
 
     const email = String(body.email || '').trim().toLowerCase();
-    const targetUser = getUserByEmail(email);
+    const userId = String(body.userId || body.id || '').trim();
+
+    let targetUser = email ? getUserByEmail(email) : (userId ? getUserById(userId) : null);
+
+    // If not found in memory, query Supabase
+    const supabase = getSupabaseAdmin();
+    if (!targetUser && supabase) {
+      try {
+        let query = supabase.from('users').select('*');
+        if (email) query = query.eq('email', email);
+        else if (userId) query = query.eq('id', userId);
+        const { data: dbUser } = await query.maybeSingle();
+        if (dbUser) {
+          targetUser = {
+            id: dbUser.id,
+            email: dbUser.email.toLowerCase(),
+            name: dbUser.full_name || dbUser.name || dbUser.email,
+            displayName: dbUser.full_name || dbUser.name || dbUser.email,
+            role: dbUser.role || 'staff',
+            status: dbUser.status || 'pending_setup',
+            assignedPages: dbUser.assigned_pages || []
+          };
+          updateUser(dbUser.email.toLowerCase(), targetUser);
+        }
+      } catch (e) {}
+    }
+
     if (!targetUser) {
       return res.status(404).json({ error: "User not found." });
     }
 
+    const targetEmail = targetUser.email.toLowerCase();
     const resetToken = generateSecureToken(32);
     const resetExpiresAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
-    updateUser(email, { resetToken, resetExpiresAt });
 
-    const resetLink = `${appUrl}/#reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
+    updateUser(targetEmail, {
+      resetToken,
+      reset_token: resetToken,
+      resetExpiresAt,
+      reset_expires_at: resetExpiresAt,
+      setupToken: resetToken,
+      setup_token: resetToken,
+      setupExpiresAt: resetExpiresAt,
+      status: 'pending_setup'
+    });
+
+    if (supabase) {
+      try {
+        await supabase.from('users').update({
+          reset_token: resetToken,
+          reset_expires_at: resetExpiresAt,
+          setup_token: resetToken,
+          setup_expires_at: resetExpiresAt,
+          status: 'pending_setup',
+          updated_at: new Date().toISOString()
+        }).eq('email', targetEmail);
+      } catch (e) {}
+    }
+
+    const resetLink = `${appUrl}/#reset-password?token=${resetToken}&email=${encodeURIComponent(targetEmail)}`;
 
     return res.status(200).json({
+      success: true,
       status: "success",
-      message: `Single-use password reset link created for ${targetUser.name}`,
+      message: `Single-use password reset link created for ${targetUser.name || targetEmail}`,
       resetLink,
+      setupLink: resetLink,
+      resetToken,
+      setup_token: resetToken,
       expiresAt: resetExpiresAt
     });
   }

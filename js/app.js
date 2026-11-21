@@ -7654,6 +7654,20 @@ class MetaCRMApp {
     this.el.mOverlay.classList.add('open');
   }
 
+  copyResetLink(token, email) {
+    const emailParam = email ? `&email=${encodeURIComponent(email)}` : '';
+    const url = `${window.location.origin}${window.location.pathname}#reset-password?token=${token}${emailParam}`;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(() => {
+        this.toast('✓ Single-use password reset link copied to clipboard!', 'success');
+      }).catch(() => {
+        prompt('Copy reset link:', url);
+      });
+    } else {
+      prompt('Copy reset link:', url);
+    }
+  }
+
   async initiatePasswordReset(staffId) {
     const staff = this.svc ? this.svc.staff.find(s => s.id === staffId) : null;
     if (!staff) return;
@@ -7666,22 +7680,24 @@ class MetaCRMApp {
       const res = await fetch('/api/staff', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ action: 'admin-reset-password', userId: staffId })
+        body: JSON.stringify({ action: 'admin-reset-password', userId: staffId, email: staff.email })
       });
       const data = await res.json();
-      if (res.ok && data.success && data.setupLink) {
-        staff.setup_token = data.setup_token;
+      if (res.ok && (data.success || data.status === 'success') && (data.resetLink || data.setupLink)) {
+        const link = data.resetLink || data.setupLink;
+        const token = data.resetToken || data.setup_token;
+        staff.setup_token = token;
         staff.status = 'pending_setup';
         if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
         this.renderStaff();
         this.el.mTitle.textContent = 'Password Reset Link Generated';
         this.el.mBody.innerHTML = `
-          <p class="text-xs text-gray mb-3">A secure, single-use password setup link was generated for <strong>${escapeHtml(staff.email)}</strong>:</p>
-          <div class="setup-token-box">
-            <span style="font-size:11px;">${escapeHtml(data.setupLink)}</span>
-            <button class="btn btn-primary btn-sm" onclick="window.app.copySetupLink('${data.setup_token}')">Copy</button>
+          <p class="text-xs text-gray mb-3">A secure, single-use password reset link was generated for <strong>${escapeHtml(staff.displayName || staff.name || staff.email)}</strong> (${escapeHtml(staff.email)}):</p>
+          <div class="setup-token-box" style="display:flex;gap:8px;align-items:center;background:#F8FAFC;border:1px solid var(--border-subtle);border-radius:6px;padding:10px 12px;margin-bottom:12px;">
+            <span style="font-size:11px;font-family:monospace;flex:1;word-break:break-all;color:var(--text-primary);">${escapeHtml(link)}</span>
+            <button class="btn btn-primary btn-sm" onclick="window.app.copyResetLink('${token}', '${escapeHtml(staff.email)}')">Copy</button>
           </div>
-          <p class="text-xs text-gray mt-2">Send this link to the staff member so they can set their new password. The link expires in 48 hours.</p>
+          <p class="text-xs text-gray">Send this link to the staff member so they can set their new password. The link expires in 24 hours.</p>
         `;
         this.el.mConfirm.textContent = 'Done';
         this.el.mConfirm.className = 'btn btn-primary';
@@ -7739,9 +7755,9 @@ class MetaCRMApp {
     this._activeAssignModalStaffId = staffId;
     this._activeAssignModalNavId = modalNavId;
     const pages = this.svc ? (this.svc.pages || []) : [];
-    let staffAssigned = staff.assignedPageIds || staff.assignedPages || [];
-    if (!Array.isArray(staffAssigned) || staffAssigned.length === 0) {
-      staffAssigned = ['*'];
+    let staffAssigned = staff.assignedPageIds ?? staff.assignedPages;
+    if (staffAssigned === undefined || staffAssigned === null) {
+      staffAssigned = (staff.role === 'admin' || staff.role === 'super_admin') ? ['*'] : [];
     }
 
     const staffHasPage = (p) => {
