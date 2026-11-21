@@ -325,8 +325,9 @@
   // ==========================================================================
   // 1. OVERVIEW — "MY DAY" (STAFF) / "DEALERSHIP PULSE" (MANAGER)
   // ==========================================================================
-  proto.renderDashboard = function () {
+  proto.renderDashboard = function (navId = this._currentNavId) {
     if (!this.user) return;
+    if (typeof this.isNavCurrent === 'function' && !this.isNavCurrent('dashboard', navId)) return;
     if (this.el.content) this.el.content.classList.remove('inbox-view-container');
 
     const isAdmin = this.user.role === 'admin' || this.user.role === 'super_admin';
@@ -334,13 +335,13 @@
       this._loadedBizStatus = true;
       this.svc.fetchBusinessStatus().then(s => {
         this.businessStatusCache = s;
-        if (this.currentRoute === 'dashboard') this.renderDashboard();
+        if (typeof this.isNavCurrent !== 'function' || this.isNavCurrent('dashboard', navId)) this.renderDashboard(navId);
       }).catch(() => {});
     }
     if (!this._fetchedServerConvs && this.svc && this.svc.fetchRemoteConversations) {
       this._fetchedServerConvs = true;
       this.svc.fetchRemoteConversations().then(() => {
-        if (this.currentRoute === 'dashboard') this.renderDashboard();
+        if (typeof this.isNavCurrent !== 'function' || this.isNavCurrent('dashboard', navId)) this.renderDashboard(navId);
       }).catch(() => {});
     }
 
@@ -1707,8 +1708,9 @@
   // ==========================================================================
   // 6. MARKETING / META — CLIENT-FACING 2-TAB VIEW (AD LEADS & CAMPAIGN RESULTS)
   // ==========================================================================
-  proto.renderMetaAds = async function () {
+  proto.renderMetaAds = async function (navId = this._currentNavId) {
     if (!this.user) return;
+    if (typeof this.isNavCurrent === 'function' && !this.isNavCurrent('meta-ads', navId)) return;
     if (this.el.content) this.el.content.classList.remove('inbox-view-container');
     const isAdmin = this.user.role === 'admin' || this.user.role === 'super_admin';
     this.el.title.innerHTML = `<h1 class="topbar-title">Marketing &amp; Meta</h1>`;
@@ -1743,7 +1745,7 @@
         this.svc.fetchZernioLeadForms ? this.svc.fetchZernioLeadForms().then(r => { this.zernioLeadForms = r?.forms || []; }).catch(() => null) : null,
         this.svc.fetchBusinessStatus ? this.svc.fetchBusinessStatus().then(s => { this.businessStatusCache = s; }).catch(() => null) : null
       ]).then(() => {
-        if (this.currentRoute === 'meta-ads') this.renderMetaAds();
+        if (typeof this.isNavCurrent !== 'function' || this.isNavCurrent('meta-ads', navId)) this.renderMetaAds(navId);
       });
     }
 
@@ -2065,8 +2067,9 @@
   // ==========================================================================
   // 7. REPORTS — ORGANISED AROUND THE 5 DEALERSHIP BUSINESS QUESTIONS + CHARTS
   // ==========================================================================
-  proto.renderReports = function () {
+  proto.renderReports = function (navId = this._currentNavId) {
     if (!this.user) return;
+    if (typeof this.isNavCurrent === 'function' && !this.isNavCurrent('reports', navId)) return;
     if (this.el.content) this.el.content.classList.remove('inbox-view-container');
     const isAdmin = this.user.role === 'admin' || this.user.role === 'super_admin';
     this.reportsDateRange = this.reportsDateRange || 'last_7d';
@@ -2079,7 +2082,11 @@
 
     if (!this.reportsData && !this.reportsLoading) {
       this.reportsLoading = true;
-      setTimeout(() => this.generateReport(), 40);
+      setTimeout(() => {
+        if (typeof this.isNavCurrent !== 'function' || this.isNavCurrent('reports', navId)) {
+          this.generateReport(navId);
+        }
+      }, 40);
     }
 
     const pages = this._getAccessiblePages ? this._getAccessiblePages() : [];
@@ -2315,8 +2322,9 @@
     this.renderSettings();
   };
 
-  proto.renderSettings = function () {
+  proto.renderSettings = function (navId = this._currentNavId) {
     if (!this.user) return;
+    if (typeof this.isNavCurrent === 'function' && !this.isNavCurrent(this.currentRoute, navId)) return;
     if (this.el.content) this.el.content.classList.remove('inbox-view-container');
     const isAdmin = this.user.role === 'admin' || this.user.role === 'super_admin';
     this.el.title.innerHTML = `<h1 class="topbar-title">Settings</h1>`;
@@ -2340,8 +2348,9 @@
       this._loadedBizStatusSettings = true;
       this.svc.fetchBusinessStatus().then(s => {
         this.businessStatusCache = s;
+        if (typeof this.isNavCurrent === 'function' && !this.isNavCurrent(this.currentRoute, navId)) return;
         if (this.currentRoute === 'settings' || this.currentRoute === 'connections' || this.currentRoute === 'integrations') {
-          this.renderSettings();
+          this.renderSettings(navId);
         }
       }).catch(() => {});
     }

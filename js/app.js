@@ -33,6 +33,13 @@ class MetaCRMApp {
     this.activeConvId = null;
     this.mobileInboxView = 'list';
 
+    // Lifecycle & Navigation Generation Tracker
+    this._navSeq = 0;
+    this._currentNavId = 0;
+    this._activeAbortController = null;
+    this._activeAssignModalStaffId = null;
+    this._activeAssignModalNavId = null;
+
     // DOM References
     this.el = {
       nav: document.getElementById('sidebar-nav'),
@@ -122,6 +129,22 @@ class MetaCRMApp {
     } else {
       this.el.sidebar.classList.remove('open');
       if (this.el.sidebarOverlay) this.el.sidebarOverlay.classList.remove('open');
+    }
+  }
+
+  isNavCurrent(expectedRoute, expectedNavId) {
+    if (expectedNavId !== undefined && this._currentNavId !== expectedNavId) return false;
+    if (expectedRoute && this.currentRoute !== expectedRoute) return false;
+    return true;
+  }
+
+  _logNav(event, details = {}) {
+    if (window._CRM_DEBUG_NAV || (typeof localStorage !== 'undefined' && localStorage.getItem('crm_debug_nav') === 'true')) {
+      const ts = new Date().toISOString().substring(11, 23);
+      console.log(`%c[CRM NAV #${this._currentNavId || 0}][${ts}] ${event}`, 'color:#2563EB;font-weight:bold;', {
+        activeRoute: this.currentRoute,
+        ...details
+      });
     }
   }
 
@@ -705,6 +728,20 @@ class MetaCRMApp {
     const [rawHash, queryStr] = fullHash.split('?');
     const hash = rawHash.replace(/^(admin|staff)\//, '');
 
+    const navId = ++this._navSeq;
+    this._currentNavId = navId;
+    this._logNav('ROUTE_REQUESTED', { from: this.currentRoute, to: hash, queryStr, navId });
+
+    // Abort in-flight network requests from superseded route
+    if (this._activeAbortController) {
+      try { this._activeAbortController.abort(); } catch (e) {}
+    }
+    this._activeAbortController = new AbortController();
+
+    // Close any active modal or drawer so dialogs do not persist across route changes
+    if (typeof this.closeModal === 'function') this.closeModal();
+    if (typeof this.closeDrawer === 'function') this.closeDrawer();
+
     // 1. Password Setup flow (#setup-password?token=...)
     if (hash === 'setup-password') {
       this.currentRoute = 'setup-password';
@@ -751,10 +788,11 @@ class MetaCRMApp {
     }
     this.toggleMobileSidebar(false);
     this.renderSidebar();
-    this._renderPage();
+    this._renderPage(navId);
   }
 
   navigate(path) {
+    this._logNav('NAVIGATE_CALLED', { target: path, current: this.currentRoute });
     const targetHash = '#' + path;
     if (window.location.hash === targetHash) {
       this._route();
@@ -1482,7 +1520,9 @@ class MetaCRMApp {
   // Page Router Dispatcher
   // ──────────────────────────────────────────────────────────
 
-  _renderPage() {
+  _renderPage(navId = this._currentNavId) {
+    if (!this.isNavCurrent(this.currentRoute, navId)) return;
+    this._logNav('RENDER_PAGE_START', { route: this.currentRoute, navId });
     if (this._pageRenderTimer) {
       clearTimeout(this._pageRenderTimer);
       this._pageRenderTimer = null;
@@ -1492,13 +1532,16 @@ class MetaCRMApp {
     } else {
       this.el.content.classList.remove('inbox-view-container');
     }
+    if (this.el.content) {
+      this.el.content.scrollTop = 0;
+    }
     switch (this.currentRoute) {
       case 'dashboard':
         if (!this._lastAutoRefresh || (Date.now() - this._lastAutoRefresh > 20000)) {
           this._lastAutoRefresh = Date.now();
           if (this.svc && this.svc.fetchRemoteData) {
             this.svc.fetchRemoteData().then(() => {
-              if (this.currentRoute === 'dashboard') this.renderDashboard();
+              if (this.isNavCurrent('dashboard', navId)) this.renderDashboard();
             }).catch(() => {});
           }
         }
@@ -1508,27 +1551,28 @@ class MetaCRMApp {
       case 'inbox':
       case 'messages':
       case 'conversations': this.renderInbox(); break;
-      case 'email':        this.renderEmailInbox(); break;
-      case 'meta-ads':     this.renderMetaAds(); break;
+      case 'email':        this.renderEmailInbox(navId); break;
+      case 'meta-ads':     this.renderMetaAds(navId); break;
       case 'pipeline':     this.renderPipeline(); break;
       case 'tasks':        this.renderTasks(); break;
-      case 'reports':      this.renderReports(); break;
+      case 'reports':      this.renderReports(navId); break;
       case 'integrations':
       case 'connections':
         this.settingsTab = 'accounts';
-        this.renderSettings();
+        this.renderSettings(navId);
         break;
       case 'developer-diagnostics':
       case 'diagnostics':
         if (typeof this.renderDeveloperDiagnostics === 'function') this.renderDeveloperDiagnostics();
         else this.renderAccessDeniedScreen('developer-diagnostics');
         break;
-      case 'staff':        this.renderStaff(); break;
-      case 'settings':     this.renderSettings(); break;
+      case 'staff':        this.renderStaff(navId); break;
+      case 'settings':     this.renderSettings(navId); break;
       case 'download':
       case 'desktop':      this.renderDownloadPage(); break;
       default:             this.renderDashboard(); break;
     }
+    this._logNav('RENDER_PAGE_COMMITTED', { route: this.currentRoute, navId });
   }
 
   renderDownloadPage() {
@@ -7136,6 +7180,7 @@ class MetaCRMApp {
 
   openAssignStaffToPageModal(pageId) {
     if (!this.svc) return;
+    const modalNavId = this._currentNavId;
     const page = (this.svc.pages || []).find(p =>
       String(p.id) === String(pageId) ||
       String(p.page_id) === String(pageId) ||
@@ -7212,8 +7257,11 @@ class MetaCRMApp {
         }
         this.closeModal();
         this.toast(`Staff assignments updated for "${pageName}" ✓`, 'success');
-        if (typeof this.renderSettings === 'function') this.renderSettings();
-        if (typeof this.renderStaff === 'function') this.renderStaff();
+        if (this.isNavCurrent('settings', modalNavId) && typeof this.renderSettings === 'function') {
+          this.renderSettings(modalNavId);
+        } else if (this.isNavCurrent('staff', modalNavId) && typeof this.renderStaff === 'function') {
+          this.renderStaff(modalNavId);
+        }
         this.renderSidebar();
       } catch (err) {
         confirmBtn.disabled = false;
@@ -7376,18 +7424,27 @@ class MetaCRMApp {
   // STAFF & RBAC MANAGEMENT (Section 16)
   // ──────────────────────────────────────────────────────────
 
-  async renderStaff() {
+  async renderStaff(navId = this._currentNavId) {
+    if (!this.isNavCurrent('staff', navId)) return;
     this.el.title.textContent = 'User Accounts & Access Management';
     this.el.actions.innerHTML = `<button class="btn btn-primary" onclick="window.app.openAddStaffModal()">+ Invite User</button>`;
 
-    // Fetch authoritative staff accounts from server
+    // 1. Immediately render cached staff table at 0ms so previous route screen is cleared instantly
+    this._renderStaffTable();
+
+    // 2. Fetch authoritative staff accounts from server in the background
     if (this.svc) {
       try {
         const sessionToken = this.svc.getSessionToken();
         const headers = {};
         if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
         else headers['x-user-id'] = (this.user && this.user.id) || 'admin';
-        const res = await fetch('/api/staff', { headers });
+        const signal = this._activeAbortController?.signal;
+        const res = await fetch('/api/staff', { headers, signal });
+        if (!this.isNavCurrent('staff', navId)) {
+          this._logNav('DROPPED_STALE_STAFF_RESPONSE', { navId, currentRoute: this.currentRoute });
+          return;
+        }
         if (res.ok) {
           const data = await res.json();
           if (data && Array.isArray(data.staff) && data.staff.length > 0) {
@@ -7429,13 +7486,19 @@ class MetaCRMApp {
               }
             });
             if (this.svc._saveToStorage) this.svc._saveToStorage(); else this.svc.saveAll();
+            if (this.isNavCurrent('staff', navId)) {
+              this._renderStaffTable();
+            }
           }
         }
       } catch (e) {
-        console.warn('Could not refresh remote staff list:', e);
+        if (e.name !== 'AbortError') console.warn('Could not refresh remote staff list:', e);
       }
     }
+  }
 
+  _renderStaffTable() {
+    if (!this.isNavCurrent('staff')) return;
     const staff = this.svc ? (this.svc.staff || []) : [];
     const pages = this.svc ? this.svc.pages : [];
 
@@ -7666,8 +7729,15 @@ class MetaCRMApp {
   }
 
   openAssignPagesModal(staffId) {
+    if (this.currentRoute !== 'staff') {
+      this._logNav('REJECTED_MODAL_WRONG_ROUTE', { attemptedRoute: this.currentRoute, modal: 'assign-pages' });
+      return;
+    }
     const staff = this.svc ? this.svc.staff.find(s => s.id === staffId) : null;
     if (!staff) return;
+    const modalNavId = this._currentNavId;
+    this._activeAssignModalStaffId = staffId;
+    this._activeAssignModalNavId = modalNavId;
     const pages = this.svc ? (this.svc.pages || []) : [];
     let staffAssigned = staff.assignedPageIds || staff.assignedPages || [];
     if (!Array.isArray(staffAssigned) || staffAssigned.length === 0) {
@@ -7760,7 +7830,9 @@ class MetaCRMApp {
         }
         this.closeModal();
         this.toast(`Page assignments saved for "${staff.name}" ✓`, 'success');
-        this.renderStaff();
+        if (this.isNavCurrent('staff', modalNavId)) {
+          this.renderStaff(modalNavId);
+        }
         this.renderSidebar();
       } catch (err) {
         confirmBtn.disabled = false;
@@ -7990,8 +8062,12 @@ class MetaCRMApp {
   }
 
   closeModal() {
-    this.el.mOverlay.classList.remove('open');
-    document.body.classList.remove('modal-open');
+    this._activeAssignModalStaffId = null;
+    this._activeAssignModalNavId = null;
+    if (this.el.mOverlay) this.el.mOverlay.classList.remove('open');
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.remove('modal-open');
+    }
   }
 
   confirmDialog({ title = 'Confirm Action', message, confirmText = 'Confirm', isDanger = false, onConfirm }) {
@@ -8425,7 +8501,8 @@ class MetaCRMApp {
   // META ADS DASHBOARD & MARKETING API
   // ──────────────────────────────────────────────────────────
 
-  async renderMetaAds() {
+  async renderMetaAds(navId = this._currentNavId) {
+    if (!this.isNavCurrent('meta-ads', navId)) return;
     this.el.title.textContent = 'Marketing / Meta';
     this.adsActiveTab = this.adsActiveTab || 'campaigns';
     this.adsDateRange = this.adsDateRange || 'last_30d';
@@ -8462,7 +8539,7 @@ class MetaCRMApp {
         this.svc.fetchZernioLeadForms ? this.svc.fetchZernioLeadForms().then(r => { this.zernioLeadForms = r?.forms || []; }).catch(() => null) : null,
         this.svc.fetchZernioHealth ? this.svc.fetchZernioHealth().then(h => { this.zernioHealthCache = h; }).catch(() => null) : null
       ]).then(() => {
-        if (this.currentRoute === 'meta-ads') this.renderMetaAds();
+        if (this.isNavCurrent('meta-ads', navId)) this.renderMetaAds(navId);
       });
     }
 
@@ -8964,7 +9041,8 @@ class MetaCRMApp {
   // MULTI-CLIENT EMAIL INBOX & MESSAGES
   // ──────────────────────────────────────────────────────────
 
-  async renderEmailInbox() {
+  async renderEmailInbox(navId = this._currentNavId) {
+    if (!this.isNavCurrent('email', navId)) return;
     this._setBreadcrumbs('Email Inbox');
     this.emailCurrentFolder = this.emailCurrentFolder || 'inbox';
     this.emailCurrentAccount = this.emailCurrentAccount || 'all';
@@ -8989,12 +9067,31 @@ class MetaCRMApp {
       return;
     }
 
-    const messages = await (this.svc ? this.svc.fetchRemoteEmailMessages({
-      folder: this.emailCurrentFolder,
-      accountId: this.emailCurrentAccount,
-      search: this.emailSearchQuery
-    }) : []);
+    // 1. Immediately render cached messages at 0ms
+    const cachedMessages = (this.svc && Array.isArray(this.svc.emailMessages)) ? this.svc.emailMessages : [];
+    this._renderEmailInboxShell(accounts, cachedMessages);
 
+    // 2. Fetch authoritative remote messages in the background
+    if (this.svc && typeof this.svc.fetchRemoteEmailMessages === 'function') {
+      try {
+        const messages = await this.svc.fetchRemoteEmailMessages({
+          folder: this.emailCurrentFolder,
+          accountId: this.emailCurrentAccount,
+          search: this.emailSearchQuery
+        });
+        if (!this.isNavCurrent('email', navId)) {
+          this._logNav('DROPPED_STALE_EMAIL_FETCH', { navId, currentRoute: this.currentRoute });
+          return;
+        }
+        this._renderEmailInboxShell(accounts, messages);
+      } catch (e) {
+        if (e.name !== 'AbortError') console.warn('Could not refresh remote emails:', e);
+      }
+    }
+  }
+
+  _renderEmailInboxShell(accounts, messages) {
+    if (!this.isNavCurrent('email')) return;
     const activeMsg = messages.find(m => m.id === this.activeEmailId) || messages[0] || null;
     if (activeMsg && !this.activeEmailId) this.activeEmailId = activeMsg.id;
 
@@ -9860,7 +9957,8 @@ class MetaCRMApp {
     }
   }
 
-  async generateReport() {
+  async generateReport(navId = this._currentNavId) {
+    if (!this.isNavCurrent('reports', navId)) return;
     this.reportsLoading = true;
     const btn = document.getElementById('btn-generate-report');
     if (btn) {
@@ -9890,15 +9988,25 @@ class MetaCRMApp {
       const headers = (this.svc && this.svc.getAuthHeaders)
         ? this.svc.getAuthHeaders(false)
         : { 'X-User-Id': (this.user && this.user.id) || 'admin' };
-      const res = await fetch(url, { headers });
+      const signal = this._activeAbortController?.signal;
+      const res = await fetch(url, { headers, signal });
       if (res.ok) {
-        this.reportsData = await res.json();
+        const json = await res.json();
+        if (this.isNavCurrent('reports', navId)) {
+          this.reportsData = json;
+        }
       }
     } catch (e) {
-      console.warn('Reports API fetch failed, using local authorised reconciliation:', e);
+      if (e.name !== 'AbortError') {
+        console.warn('Reports API fetch failed, using local authorised reconciliation:', e);
+      }
     } finally {
       this.reportsLoading = false;
-      this.renderReports();
+      if (this.isNavCurrent('reports', navId)) {
+        this.renderReports(navId);
+      } else {
+        this._logNav('DROPPED_STALE_REPORT_RENDER', { navId, currentRoute: this.currentRoute });
+      }
     }
   }
 
@@ -10018,7 +10126,8 @@ class MetaCRMApp {
     };
   }
 
-  renderReports() {
+  renderReports(navId = this._currentNavId) {
+    if (!this.isNavCurrent('reports', navId)) return;
     this.el.title.textContent = (this.user && this.user.role === 'staff') ? 'My Performance' : 'Reports';
     this.el.actions.innerHTML = `
       <button class="btn btn-secondary btn-sm" id="btn-generate-report" onclick="window.app.generateReport()">↻ Refresh</button>
@@ -10028,7 +10137,9 @@ class MetaCRMApp {
 
     if (!this.reportsData && !this.reportsLoading) {
       this.reportsLoading = true;
-      setTimeout(() => this.generateReport(), 40);
+      setTimeout(() => {
+        if (this.isNavCurrent('reports', navId)) this.generateReport(navId);
+      }, 40);
     }
 
     const isAdmin = this.user && (this.user.role === 'admin' || this.user.role === 'super_admin');
