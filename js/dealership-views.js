@@ -789,7 +789,7 @@
     const hasMoreVisible = filteredConvs.length > visibleConvs.length;
     const activeConvOutsideFilter = Boolean(activeConv && this.selectedInboxPage !== 'all' && !this._dsConvMatchesPage(activeConv, this.selectedInboxPage));
     const convHasReal = this.hasRealMessages ? this.hasRealMessages(activeConv) : (Array.isArray(activeConv?.messages) && activeConv.messages.some(m => m && m.id && !String(m.id).startsWith('msg_prev')));
-    if (activeConv && (!convHasReal || !activeConv._fetchedRealMessages) && !activeConv._fetchingMsgs) {
+    if (activeConv && (!convHasReal || !activeConv._fetchedRealMessages || (activeConv.messages && activeConv.messages.length <= 1)) && !activeConv._fetchingMsgs) {
       activeConv._fetchingMsgs = true;
       setTimeout(() => this.fetchRealConversationMessages(activeConv), 30);
     }

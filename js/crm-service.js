@@ -648,11 +648,27 @@ class CRMService {
   }
 
   resolveZernioAccountId(rawId) {
-    const rec = this.resolvePageRecord(rawId);
-    if (rec && (rec.zernioAccountId || rec.accountId)) return String(rec.zernioAccountId || rec.accountId);
-    if (rawId) return String(rawId).trim();
-    const first = (this.pages || []).find(p => p.zernioAccountId || p.accountId);
-    return first ? String(first.zernioAccountId || first.accountId) : null;
+    if (!rawId) return null;
+    const str = String(rawId).trim();
+    if (/^[0-9a-f]{24}$/i.test(str)) return str;
+    const CANONICAL_MAP = {
+      '1330954980099743': '6accd8b0d52dc43d8bf6034c', // Nova cars Samoa nz
+      '1342542735606057': '6acd4daed19284a3227d7870', // Nova auto nz
+      '1357368447449594': '6aea527fa5c031c687ccba15', // Car4u Ma’a Tonga NZ
+      '380918975300755':  '6aea5280a5c031c687ccba16', // Car4u
+      '284138661621993':  '6aea5280a5c031c687ccba17', // Zodiac Motor Company
+      '1271057346092106': '6aea5281a5c031c687ccba18'  // Car4u Mo Samoa NZ
+    };
+    if (CANONICAL_MAP[str]) return CANONICAL_MAP[str];
+    const rec = this.resolvePageRecord(str);
+    if (rec) {
+      if (rec.zernioAccountId && /^[0-9a-f]{24}$/i.test(rec.zernioAccountId)) return rec.zernioAccountId;
+      if (rec.accountId && /^[0-9a-f]{24}$/i.test(rec.accountId)) return rec.accountId;
+      if (rec.page_id && CANONICAL_MAP[rec.page_id]) return CANONICAL_MAP[rec.page_id];
+      if (rec.id && CANONICAL_MAP[rec.id]) return CANONICAL_MAP[rec.id];
+    }
+    const first = (this.pages || []).find(p => (p.zernioAccountId && /^[0-9a-f]{24}$/i.test(p.zernioAccountId)) || (p.accountId && /^[0-9a-f]{24}$/i.test(p.accountId)));
+    return first ? String(first.zernioAccountId || first.accountId) : str;
   }
 
   _authHeaders() {

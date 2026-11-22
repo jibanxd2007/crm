@@ -444,6 +444,14 @@ async function messagesHandler(req, res) {
           return res.status(400).json({ error: 'Cannot send message: no connected Zernio account associated with this conversation.' });
         }
 
+        try {
+          const zernioModule = require('./zernio.js');
+          const resolveToZernioObjectId = zernioModule.resolveToZernioObjectId;
+          if (typeof resolveToZernioObjectId === 'function') {
+            accountId = resolveToZernioObjectId(accountId);
+          }
+        } catch (e) {}
+
         const postBodyPayload = {
           accountId: accountId,
           message: text || (attachment ? `📎 ${attachment.name || 'Attachment'}` : '')

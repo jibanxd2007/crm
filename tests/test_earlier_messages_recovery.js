@@ -200,6 +200,29 @@ async function runEarlierMessagesSuite() {
   console.log(`  [PASS] Date grouping generated distinct day dividers: ${dateHeaders.join(', ')}`);
   passed++;
 
+  // 6. Facebook Page ID to Zernio ObjectId resolution test
+  console.log('\n[TEST 6] Automatic translation of Facebook Page ID (1330954980099743) to Zernio ObjectId...');
+  const { req: r6, res: res6, getStatusCode: getCode6, getData: getData6 } = mockReqRes({
+    query: {
+      path: 'inbox-messages',
+      conversationId: pelenateteConvId,
+      accountId: '1330954980099743',
+      limit: '100'
+    }
+  });
+
+  const zernioFn6 = zernioHandler.zernioUnifiedHandler || zernioHandler;
+  await zernioFn6(r6, res6);
+  const data6 = getData6();
+
+  if (getCode6() === 200 && Array.isArray(data6?.messages) && data6.messages.length >= 6) {
+    console.log(`  [PASS] /api/zernio resolved Facebook page ID to Zernio ObjectId and returned ${data6.messages.length} messages.`);
+    passed++;
+  } else {
+    console.error(`  [FAIL] Failed to resolve Facebook page ID to Zernio ObjectId:`, getCode6(), data6);
+    failed++;
+  }
+
   console.log('\n================================================================');
   console.log(` SUITE RESULTS: ${passed} PASSED, ${failed} FAILED`);
   console.log('================================================================\n');

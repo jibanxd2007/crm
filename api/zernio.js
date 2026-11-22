@@ -16,6 +16,31 @@ const {
   registerConversationIdMapping, 
   safeDbUpsert 
 } = require('./_utils/index.js');
+const {
+  CANONICAL_DEALERSHIP_ACCOUNTS,
+  PAGE_ALIAS_MAP
+} = require('./_utils/page-assignments.js');
+
+function resolveToZernioObjectId(rawId) {
+  if (!rawId) return null;
+  const str = String(rawId).trim();
+  if (/^[0-9a-f]{24}$/i.test(str)) return str;
+  const match = (CANONICAL_DEALERSHIP_ACCOUNTS || []).find(a =>
+    String(a.pageId) === str ||
+    String(a.facebookPageId) === str ||
+    String(a.zernioAccountId) === str ||
+    String(a.id) === str
+  );
+  if (match && match.zernioAccountId) return match.zernioAccountId;
+  if (PAGE_ALIAS_MAP && typeof PAGE_ALIAS_MAP.get === 'function') {
+    const aliases = PAGE_ALIAS_MAP.get(str.toLowerCase());
+    if (Array.isArray(aliases)) {
+      const aliasMatch = aliases.find(a => /^[0-9a-f]{24}$/i.test(a));
+      if (aliasMatch) return aliasMatch;
+    }
+  }
+  return str;
+}
 const { ingestLeadAdEvent, logWebhookEvent } = require('./_utils/lead-ingestion.js');
 const {
   mapWithBoundedConcurrency,
@@ -718,14 +743,18 @@ async function zernioUnifiedHandler(req, res) {
       }
     }
 
-    // Resolve accountId dynamically from active Zernio accounts (never hardcoded)
+    // Resolve accountId to canonical 24-character Zernio ObjectId
+    accountId = resolveToZernioObjectId(accountId);
+
+    // Resolve accountId dynamically from active Zernio accounts if missing or not 24-char hex
     global.CONVERSATION_ACCOUNT_MAP = global.CONVERSATION_ACCOUNT_MAP || new Map();
-    if (!accountId && targetZernioConvId) {
-      accountId = global.CONVERSATION_ACCOUNT_MAP.get(String(targetZernioConvId)) || null;
+    if ((!accountId || !/^[0-9a-f]{24}$/i.test(accountId)) && targetZernioConvId) {
+      const cached = global.CONVERSATION_ACCOUNT_MAP.get(String(targetZernioConvId));
+      if (cached) accountId = resolveToZernioObjectId(cached);
     }
-    if (!accountId) {
+    if (!accountId || !/^[0-9a-f]{24}$/i.test(accountId)) {
       const dynamicAcc = await resolveDynamicAccount(apiKey, targetZernioConvId || null);
-      if (dynamicAcc) accountId = dynamicAcc.accountId;
+      if (dynamicAcc && dynamicAcc.accountId) accountId = resolveToZernioObjectId(dynamicAcc.accountId);
     }
     if (!accountId) {
       return res.status(400).json({ error: "No connected Zernio account found for this conversation." });
@@ -1706,6 +1735,7 @@ async function zernioUnifiedHandler(req, res) {
 
 const handler = createVercelHandler(zernioUnifiedHandler);
 handler.zernioUnifiedHandler = zernioUnifiedHandler;
+handler.resolveToZernioObjectId = resolveToZernioObjectId;
 handler.config = { api: { bodyParser: false } };
 module.exports = handler;
 

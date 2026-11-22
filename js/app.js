@@ -4620,7 +4620,7 @@ class MetaCRMApp {
 
     this.renderInbox();
 
-    if (conv && (!this.hasRealMessages(conv) || !conv._fetchedRealMessages)) {
+    if (conv && (!this.hasRealMessages(conv) || !conv._fetchedRealMessages || (conv.messages && conv.messages.length <= 1))) {
       await this.fetchRealConversationMessages(conv);
     }
 
@@ -5490,10 +5490,17 @@ class MetaCRMApp {
     const targetId = convId || this.activeConvId;
     if (!targetId || !this.svc) return;
     const conv = (this.svc.conversations || []).find(c => String(c.id) === String(targetId));
-    if (!conv || conv._loadingOlderMsgs || conv._allHistoryLoaded) return;
+    if (!conv || conv._loadingOlderMsgs) return;
+
+    // If conversation only has 0 or 1 message, history was not fully fetched yet
+    if (conv.messages && conv.messages.length <= 1) {
+      conv._allHistoryLoaded = false;
+      conv._fetchedRealMessages = false;
+    }
+    if (conv._allHistoryLoaded) return;
 
     // If conversation does not have real messages yet, fetch full conversation messages directly
-    if (!this.hasRealMessages(conv)) {
+    if (!this.hasRealMessages(conv) || (conv.messages || []).length <= 1) {
       return this.fetchRealConversationMessages(conv);
     }
 
