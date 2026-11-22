@@ -662,7 +662,8 @@ async function zernioUnifiedHandler(req, res) {
       const rawMid = m.id || m.messageId || m.message_id || m.mid;
       if (!rawMid) continue;
       try {
-        const isFromCust = m.fromCustomer !== undefined ? m.fromCustomer : (m.direction === 'inbound' || m.sender_type === 'customer');
+        const isOutgoing = m.direction === 'outgoing' || m.direction === 'outbound' || m.senderName === 'You' || m.from === 'You' || m.sender_type === 'staff';
+        const isFromCust = !isOutgoing && (m.fromCustomer === true || m.direction === 'incoming' || m.direction === 'inbound' || m.sender_type === 'customer');
         const text = m.text || m.message || (m.attachment ? '📎 Attachment' : '');
         const time = m.sentAt || m.createdAt || m.created_at || new Date().toISOString();
 
@@ -849,9 +850,23 @@ async function zernioUnifiedHandler(req, res) {
       });
     }
 
-    // GET Messages with fast timeout and structured response
+    // GET Messages with fast cache and structured response
     const msgCursor = query.cursor || null;
     const fetchLimit = 100; // Always retrieve full thread up to 100 messages from provider
+
+    // Instant SWR Cache Check: return cached thread in < 1ms if available
+    global.CRM_THREAD_MESSAGES_CACHE = global.CRM_THREAD_MESSAGES_CACHE || new Map();
+    const cachedThread = global.CRM_THREAD_MESSAGES_CACHE.get(String(targetZernioConvId));
+    if (!query.before && !msgCursor && !query.refresh && cachedThread && (Date.now() - cachedThread.ts < 120000)) {
+      return res.status(200).json({
+        status: "success",
+        cached: true,
+        conversationId: conversationId,
+        messages: cachedThread.messages,
+        pagination: { limit: msgLimit, count: cachedThread.messages.length, hasMore: cachedThread.messages.length >= msgLimit }
+      });
+    }
+
     let msgPath = `/api/v1/inbox/conversations/${encodeURIComponent(targetZernioConvId)}/messages?accountId=${encodeURIComponent(accountId)}&limit=${fetchLimit}`;
     // Only forward cursor if it is a valid Zernio pagination cursor token (or starts with db:); skip pure ISO timestamps
     if (msgCursor && (msgCursor.startsWith('db:') || !/^\d{4}-\d{2}-\d{2}/.test(msgCursor))) {
@@ -878,6 +893,16 @@ async function zernioUnifiedHandler(req, res) {
             const parsed = JSON.parse(data);
             let msgList = parsed.messages || parsed.data || (Array.isArray(parsed) ? parsed : []);
             if (Array.isArray(msgList)) {
+              msgList = msgList.map(m => {
+                const isOut = m.direction === 'outgoing' || m.direction === 'outbound' || m.senderName === 'You' || m.from === 'You' || m.sender_type === 'staff';
+                return {
+                  ...m,
+                  direction: isOut ? 'outbound' : 'inbound',
+                  sender_type: isOut ? 'staff' : 'customer',
+                  incoming: !isOut
+                };
+              });
+
               msgList.sort((a, b) => {
                 const timeA = new Date(a.sentAt || a.createdAt || a.created_at || 0).getTime();
                 const timeB = new Date(b.sentAt || b.createdAt || b.created_at || 0).getTime();
@@ -896,6 +921,12 @@ async function zernioUnifiedHandler(req, res) {
                 }
               }
 
+              // Update in-memory thread cache for instant conversation opening
+              global.CRM_THREAD_MESSAGES_CACHE.set(String(targetZernioConvId), {
+                ts: Date.now(),
+                messages: msgList
+              });
+
               // Asynchronously reconcile fetched messages with Supabase
               syncMessagesToSupabase(conversationId, msgList, accountId).catch(() => {});
             }
@@ -903,16 +934,16 @@ async function zernioUnifiedHandler(req, res) {
               status: "success",
               conversationId: conversationId,
               messages: msgList,
-              data: msgList,
-              pagination: parsed.pagination || { limit: msgLimit, hasMore: msgList.length >= msgLimit }
+              pagination: parsed.pagination || { limit: msgLimit, count: msgList.length, hasMore: msgList.length >= msgLimit }
             });
             resolve();
           } catch (e) {
-            res.status(200).json({ status: "success", messages: [], data: [], conversationId: conversationId });
+            res.status(200).json({ status: "success", messages: [], conversationId: conversationId });
             resolve();
           }
         });
       });
+
       request.setTimeout(6000, () => {
         request.destroy(new Error('Zernio API message retrieval timeout'));
       });
@@ -1057,7 +1088,7 @@ async function zernioUnifiedHandler(req, res) {
       if (!forceRefresh && isCacheFresh && global.ZERNIO_HISTORICAL_CACHE.byAccount.has(resolvedAccId)) {
         convList = global.ZERNIO_HISTORICAL_CACHE.byAccount.get(resolvedAccId) || [];
       } else {
-        const defaultDepth = (query.all === 'true' || query.deep === 'true' || reqLimit > 50 || rawTarget) ? 10 : 5;
+        const defaultDepth = (query.deep === 'true') ? 10 : ((query.fast === 'true') ? 1 : (query.all === 'true' ? 2 : 1));
         const fetchDepth = query.max_pages ? parseInt(query.max_pages, 10) : defaultDepth;
         convList = await fetchAllAccountConvs(resolvedAccId, targetPageName, fetchDepth);
         global.ZERNIO_HISTORICAL_CACHE.byAccount.set(resolvedAccId, convList);
@@ -1078,7 +1109,6 @@ async function zernioUnifiedHandler(req, res) {
       return res.status(200).json({
         status: "success",
         conversations: returned,
-        data: returned,
         pagination: {
           total: filtered.length,
           count: returned.length,
@@ -1103,7 +1133,7 @@ async function zernioUnifiedHandler(req, res) {
             return [];
           }
 
-          const defaultDepth = (query.all === 'true' || query.deep === 'true' || reqLimit > 50 || rawTarget) ? 10 : 5;
+          const defaultDepth = (query.deep === 'true') ? 10 : ((query.fast === 'true') ? 1 : (query.all === 'true' ? 2 : 1));
           const fetchDepth = query.max_pages ? parseInt(query.max_pages, 10) : defaultDepth;
           const results = await mapWithBoundedConcurrency(validAccounts, 6, async (acc) => {
             const accId = acc._id || acc.id || acc.accountId;
@@ -1157,7 +1187,6 @@ async function zernioUnifiedHandler(req, res) {
     return res.status(200).json({
       status: "success",
       conversations: returned,
-      data: returned,
       pagination: {
         total: filtered.length,
         count: returned.length,

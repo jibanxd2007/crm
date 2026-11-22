@@ -817,12 +817,16 @@ class CRMService {
       if (authUser && authUser.id) headers['X-User-Id'] = authUser.id;
 
       const pageId = options.pageId || null;
-      const limit = options.limit || 5000;
+      const isDeep = Boolean(options.deep);
+      const isFast = Boolean(options.fast);
+      const limit = options.limit || (isDeep ? 5000 : 100);
       const offset = options.offset !== undefined ? options.offset : (options.append ? (this._convsOffset || 0) : 0);
       const q = options.q ? encodeURIComponent(options.q.trim()) : '';
       const append = Boolean(options.append);
 
       let url = `/api/messages?limit=${limit}&offset=${offset}&all=true`;
+      if (isDeep) url += '&deep=true';
+      if (isFast) url += '&fast=true';
       if (pageId && pageId !== 'all') url += `&page_id=${encodeURIComponent(pageId)}`;
       if (q) url += `&q=${q}`;
 
@@ -878,6 +882,15 @@ class CRMService {
           this.conversations.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
           this.saveConversations();
           this.notifyChange('conversations_updated');
+
+          if (!isDeep && !q && !append && !this._backgroundDeepSyncScheduled) {
+            this._backgroundDeepSyncScheduled = true;
+            setTimeout(() => {
+              this._backgroundDeepSyncScheduled = false;
+              this.fetchRemoteConversations({ deep: true, limit: 5000 }).catch(() => {});
+            }, 2500);
+          }
+
           return this.conversations;
         }
       }
@@ -928,6 +941,15 @@ class CRMService {
           this.conversations.sort((a, b) => new Date(b.last_message_at || 0) - new Date(a.last_message_at || 0));
           this.saveConversations();
           this.notifyChange('conversations_updated');
+
+          if (!isDeep && !q && !append && !this._backgroundDeepSyncScheduled) {
+            this._backgroundDeepSyncScheduled = true;
+            setTimeout(() => {
+              this._backgroundDeepSyncScheduled = false;
+              this.fetchRemoteConversations({ deep: true, limit: 5000 }).catch(() => {});
+            }, 2500);
+          }
+
           return this.conversations;
         }
       }
@@ -1034,7 +1056,8 @@ class CRMService {
 
   saveConversations() {
     try {
-      const lightweight = (this.conversations || []).map(c => {
+      // Store top 150 most recent conversation summaries in localStorage to prevent main thread freeze
+      const lightweight = (this.conversations || []).slice(0, 150).map(c => {
         const { messages, ...summary } = c;
         return summary;
       });

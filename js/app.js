@@ -5428,7 +5428,7 @@ class MetaCRMApp {
     this._msgAbortControllers.set(conv.id, ac);
     const timeoutId = setTimeout(() => {
       try { ac.abort(); } catch (e) {}
-    }, 7500);
+    }, 25000);
 
     const thread = document.getElementById('inbox-thread');
     const hasMessages = this.hasRealMessages(conv);
@@ -5505,7 +5505,8 @@ class MetaCRMApp {
             else if (att) text = (att.type && att.type.startsWith('image')) ? 'Sent a photo 📷' : '📎 Attachment';
             else text = 'Direct message';
           }
-          const incoming = m.direction ? (m.direction === 'incoming' || m.direction === 'inbound') : (m.sender_type === 'customer' || m.incoming === true);
+          const isOut = m.direction === 'outgoing' || m.direction === 'outbound' || m.senderName === 'You' || m.from === 'You' || m.sender_type === 'staff';
+          const incoming = !isOut && (m.incoming === true || m.sender_type === 'customer' || m.direction === 'incoming' || m.direction === 'inbound');
           return {
             id: m.id || m.meta_mid || ('msg_' + Date.now()),
             meta_mid: m.meta_mid || m.id,
@@ -5536,6 +5537,7 @@ class MetaCRMApp {
         const newest = conv.messages[conv.messages.length - 1];
         if (newest) {
           conv.preview = newest.incoming ? newest.text : ('You: ' + newest.text);
+          conv.last_message_direction = newest.incoming ? 'inbound' : 'outbound';
           conv.last_message_at = newest.created_at || conv.last_message_at;
           conv.time = newest.time || conv.time;
         }
@@ -5669,7 +5671,8 @@ class MetaCRMApp {
               else if (att) text = (att.type && att.type.startsWith('image')) ? 'Sent a photo 📷' : '📎 Attachment';
               else text = 'Direct message';
             }
-            const incoming = m.direction ? (m.direction === 'incoming' || m.direction === 'inbound') : (m.sender_type === 'customer' || m.incoming === true);
+            const isOut = m.direction === 'outgoing' || m.direction === 'outbound' || m.senderName === 'You' || m.from === 'You' || m.sender_type === 'staff';
+            const incoming = !isOut && (m.incoming === true || m.sender_type === 'customer' || m.direction === 'incoming' || m.direction === 'inbound');
             newOlder.push({
               id: mid,
               meta_mid: m.meta_mid || m.id,
@@ -5715,8 +5718,9 @@ class MetaCRMApp {
     } catch (e) {
       console.warn('[Load older messages warning]:', e);
       if (olderInd) olderInd.remove();
+      if (conv) conv._loadOlderFailed = true;
     } finally {
-      conv._loadingOlderMsgs = false;
+      if (conv) conv._loadingOlderMsgs = false;
     }
   }
 
@@ -5725,13 +5729,13 @@ class MetaCRMApp {
     const targetId = convId || this.activeConvId;
     if (!targetId) return;
 
-    if (threadEl.scrollTop < 60) {
+    if (threadEl.scrollTop < 120) {
       const conv = (this.svc && this.svc.conversations) ? this.svc.conversations.find(c => String(c.id) === String(targetId)) : null;
       if (!conv || conv._loadingOlderMsgs || conv._allHistoryLoaded) return;
 
       if (this._threadScrollThrottle) return;
       this._threadScrollThrottle = true;
-      setTimeout(() => { this._threadScrollThrottle = false; }, 400);
+      setTimeout(() => { this._threadScrollThrottle = false; }, 350);
 
       this.loadOlderMessages(targetId);
     }

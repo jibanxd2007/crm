@@ -917,7 +917,6 @@ async function messagesHandler(req, res) {
             authorized: true,
             userRole: user.role,
             conversations: convData,
-            data: convData,
             pagination: {
               limit,
               offset,

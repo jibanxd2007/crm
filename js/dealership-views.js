@@ -155,7 +155,7 @@
       const real = c.messages.filter(m => m && m.id && !String(m.id).startsWith('msg_prev'));
       if (real.length > 0) {
         const last = real[real.length - 1];
-        const isOutgoing = last.incoming === false || last.sender_type === 'staff' || last.direction === 'outbound' || last.senderName === 'You';
+        const isOutgoing = last.incoming === false || last.sender_type === 'staff' || last.direction === 'outbound' || last.senderName === 'You' || last.from === 'You';
         if (isOutgoing) return false;
         const isIncoming = last.incoming === true || last.sender_type === 'customer' || last.direction === 'inbound' || last.direction === 'incoming';
         if (isIncoming) return true;
@@ -166,8 +166,19 @@
     const prev = String(c.preview || c.last_message || '').trim();
     if (prev.startsWith('You:') || prev.startsWith('Staff:')) return false;
 
+    // Common outbound greeting and follow-up templates sent by business
+    const lowerPrev = prev.toLowerCase();
+    if (
+      lowerPrev.includes('we wanted to follow up') ||
+      lowerPrev.includes('sorry no branch') ||
+      lowerPrev.includes('thanks for reaching out') ||
+      lowerPrev.includes('let us know if you have any questions') ||
+      lowerPrev.includes('do you have any questions')
+    ) {
+      return false;
+    }
+
     if (c.last_message_direction === 'inbound' || c.direction === 'inbound' || c.direction === 'incoming') return true;
-    if ((c.unread && c.unread > 0) || (c.unread_count && c.unread_count > 0)) return true;
     if (c.status === 'needs_reply') return true;
 
     return false;
@@ -842,10 +853,20 @@
       ? (this.svc.leads || []).find(l => String(l.id) === String(activeConv.lead_id) || (l.name && l.name === activeConv.name) || (activeConv.phone && l.phone === activeConv.phone))
       : null;
 
+    const isOutboundPreview = (activeConv && (activeConv.preview || activeConv.last_message)) ? (
+      String(activeConv.preview || activeConv.last_message).startsWith('You:') ||
+      String(activeConv.preview || activeConv.last_message).startsWith('Staff:') ||
+      activeConv.last_message_direction === 'outbound' ||
+      activeConv.direction === 'outbound' ||
+      String(activeConv.preview || activeConv.last_message).toLowerCase().includes('we wanted to follow up') ||
+      String(activeConv.preview || activeConv.last_message).toLowerCase().includes('do you have any questions') ||
+      String(activeConv.preview || activeConv.last_message).toLowerCase().includes('sorry no branch')
+    ) : false;
+
     const messages = activeConv
       ? (convHasReal
         ? (activeConv.messages || []).filter(m => m && m.id && !String(m.id).startsWith('msg_prev'))
-        : (activeConv.preview ? [{ id: 'msg_prev_' + activeConv.id, text: activeConv.preview, incoming: !String(activeConv.preview).startsWith('You:'), time: activeConv.time || 'Recent' }] : []))
+        : (activeConv.preview ? [{ id: 'msg_prev_' + activeConv.id, text: activeConv.preview, incoming: !isOutboundPreview, time: activeConv.time || 'Recent' }] : []))
       : [];
 
     const allPagesLabel = isAdmin ? 'All Pages' : 'All Assigned Pages';
@@ -1042,14 +1063,19 @@
               <!-- Messages Thread -->
               <div class="inbox-thread" id="inbox-thread" onscroll="window.app.handleThreadScroll(this, '${esc(activeConv.id)}')">
                 ${activeConv._loadingOlderMsgs ? `
+                  <div class="inbox-history-loader" style="text-align:center;padding:10px 0 6px;font-size:11.5px;color:var(--ds-ink-muted);">
+                    <span class="spinner-inline" style="display:inline-block;width:12px;height:12px;border:1.5px solid var(--ds-border);border-top-color:var(--ds-ink);border-radius:50%;animation:spin 0.8s linear infinite;margin-right:6px;vertical-align:middle;"></span>
+                    Loading earlier messages…
+                  </div>
+                ` : (activeConv._allHistoryLoaded ? `
+                  <div class="inbox-history-start" style="padding:14px 0 8px;text-align:center;font-size:11.5px;color:var(--ds-ink-muted);border-bottom:1px dashed var(--ds-border);margin:0 24px 12px;">
+                    <span style="display:inline-block;padding:3px 12px;background:var(--ds-surface-secondary);border-radius:12px;">Beginning of conversation with ${esc(activeConv.name || 'customer')}</span>
+                  </div>
+                ` : (activeConv._loadOlderFailed ? `
                   <div style="text-align:center;padding:8px 0 4px;font-size:11px;color:var(--ds-ink-muted);">
-                    ⟳ Loading earlier messages…
+                    <span>Could not load earlier messages. <button type="button" class="btn btn-ghost btn-xs" onclick="window.app.loadOlderMessages('${esc(activeConv.id)}')" style="font-size:11px;text-decoration:underline;">Retry</button></span>
                   </div>
-                ` : (!activeConv._allHistoryLoaded ? `
-                  <div style="text-align:center;padding:8px 0 4px;">
-                    <button type="button" class="btn btn-ghost btn-xs" onclick="window.app.loadOlderMessages('${esc(activeConv.id)}')" style="font-size:11px;color:var(--ds-ink-muted);background:var(--ds-canvas);border:1px solid var(--ds-border);border-radius:12px;padding:2px 10px;">⟳ Load earlier messages</button>
-                  </div>
-                ` : '')}
+                ` : ''))}
                 ${(() => {
                   let lastDateHeader = null;
                   return messages.map(m => {
