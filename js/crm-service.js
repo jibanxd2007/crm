@@ -100,8 +100,12 @@ class CRMService {
     // Realtime event listeners
     if (typeof window !== "undefined") {
       window.addEventListener("crm:remote_lead_received", (e) => this.handleInboundMetaLead(e.detail));
-      // Auto fetch real data on startup
-      setTimeout(() => this.fetchRemoteData(), 50);
+      // Auto fetch real data on startup only if authenticated session exists
+      setTimeout(() => {
+        if (this.getSessionToken() || this.getCurrentUser()) {
+          this.fetchRemoteData();
+        }
+      }, 50);
     }
   }
 
@@ -503,6 +507,7 @@ class CRMService {
     try {
       const authUser = this.getCurrentUser();
       const token = this.getSessionToken();
+      if (!token && (!authUser || !authUser.id)) return this.leads;
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
       if (authUser && authUser.id) headers['X-User-Id'] = authUser.id;
@@ -578,6 +583,7 @@ class CRMService {
     try {
       const authUser = this.getCurrentUser();
       const token = this.getSessionToken();
+      if (!token && (!authUser || !authUser.id)) return this.pages;
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
       if (authUser && authUser.id) headers['X-User-Id'] = authUser.id;
@@ -681,6 +687,9 @@ class CRMService {
   }
 
   async fetchBusinessStatus() {
+    const token = this.getSessionToken();
+    const authUser = this.getCurrentUser();
+    if (!token && (!authUser || !authUser.id)) return null;
     const res = await fetch('/api/zernio?path=business-status', { headers: this._authHeaders() });
     if (!res.ok) return null;
     return res.json();
@@ -711,6 +720,9 @@ class CRMService {
   }
 
   async fetchZernioLeadForms(pageId = null) {
+    const token = this.getSessionToken();
+    const authUser = this.getCurrentUser();
+    if (!token && (!authUser || !authUser.id)) return [];
     const params = new URLSearchParams({ path: 'lead-forms' });
     if (pageId && pageId !== 'all') params.set('pageId', pageId);
     const res = await fetch(`/api/zernio?${params.toString()}`, { headers: this._authHeaders() });
@@ -730,6 +742,7 @@ class CRMService {
     try {
       const authUser = this.getCurrentUser();
       const token = this.getSessionToken();
+      if (!token && (!authUser || !authUser.id)) return this.staff;
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
       if (authUser && authUser.id) headers['X-User-Id'] = authUser.id;
@@ -812,6 +825,7 @@ class CRMService {
     try {
       const authUser = this.getCurrentUser();
       const token = this.getSessionToken();
+      if (!token && (!authUser || !authUser.id)) return this.conversations;
       const headers = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
       if (authUser && authUser.id) headers['X-User-Id'] = authUser.id;
@@ -960,6 +974,11 @@ class CRMService {
   }
 
   async fetchRemoteData() {
+    const token = this.getSessionToken();
+    const authUser = this.getCurrentUser();
+    if (!token && (!authUser || !authUser.id)) {
+      return [];
+    }
     return Promise.allSettled([
       this.fetchRemotePages(),
       this.fetchRemoteStaff(),
@@ -1346,6 +1365,7 @@ class CRMService {
 
       this.logAudit("USER_LOGIN", this.currentUser.email, "SUCCESS", `Logged in successfully as ${this.currentUser.role}.`);
       this.notifyChange("auth_login", { user: this.currentUser });
+      this.fetchRemoteData().catch(() => {});
       return {
         success: true,
         user: this.currentUser,

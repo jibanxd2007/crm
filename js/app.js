@@ -7957,6 +7957,10 @@ class MetaCRMApp {
     }
   }
 
+  openPasswordResetModal(staffId) {
+    return this.initiatePasswordReset(staffId);
+  }
+
   async toggleStaffStatus(staffId) {
     const staff = this.svc ? this.svc.staff.find(s => s.id === staffId) : null;
     if (!staff) return;
@@ -8488,7 +8492,8 @@ class MetaCRMApp {
 
   _getAccessiblePages() {
     let pages = (this.svc && Array.isArray(this.svc.pages) && this.svc.pages.length > 0) ? this.svc.pages : [];
-    if (pages.length === 0 && this.svc && this.svc.fetchRemotePages && !this._fetchingDynamicPages) {
+    const hasAuth = this.svc && (this.svc.getSessionToken() || this.svc.getCurrentUser());
+    if (pages.length === 0 && hasAuth && this.svc && this.svc.fetchRemotePages && !this._fetchingDynamicPages) {
       this._fetchingDynamicPages = true;
       this.svc.fetchRemotePages().then(() => {
         this._fetchingDynamicPages = false;
