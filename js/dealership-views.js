@@ -149,47 +149,28 @@
 
   proto._dsConvNeedsReply = function (c) {
     if (!c || c.is_archived || c.status === 'resolved' || c.status === 'archived') return false;
-    if ((c.unread && c.unread > 0) || (c.unread_count && c.unread_count > 0)) return true;
-    if (c.status === 'needs_reply') return true;
 
+    // Check last real message direction first
     if (Array.isArray(c.messages) && c.messages.length > 0) {
       const real = c.messages.filter(m => m && m.id && !String(m.id).startsWith('msg_prev'));
       if (real.length > 0) {
         const last = real[real.length - 1];
-        const isIncoming = last.incoming === true || last.sender_type === 'customer' || last.direction === 'inbound' || last.direction === 'incoming';
         const isOutgoing = last.incoming === false || last.sender_type === 'staff' || last.direction === 'outbound' || last.senderName === 'You';
         if (isOutgoing) return false;
+        const isIncoming = last.incoming === true || last.sender_type === 'customer' || last.direction === 'inbound' || last.direction === 'incoming';
         if (isIncoming) return true;
       }
     }
 
     if (c.last_message_direction === 'outbound' || c.direction === 'outbound') return false;
-    if (c.last_message_direction === 'inbound' || c.direction === 'inbound' || c.direction === 'incoming') return true;
-
     const prev = String(c.preview || c.last_message || '').trim();
     if (prev.startsWith('You:') || prev.startsWith('Staff:')) return false;
 
+    if (c.last_message_direction === 'inbound' || c.direction === 'inbound' || c.direction === 'incoming') return true;
+    if ((c.unread && c.unread > 0) || (c.unread_count && c.unread_count > 0)) return true;
+    if (c.status === 'needs_reply') return true;
+
     return false;
-  };
-
-  proto.fetchRealConversationMessages = function (conv) {
-    if (window.app && typeof window.app.fetchRealConversationMessages === 'function') {
-      return window.app.fetchRealConversationMessages(conv);
-    }
-  };
-
-  proto.hasRealMessages = function (conv) {
-    if (window.app && typeof window.app.hasRealMessages === 'function') {
-      return window.app.hasRealMessages(conv);
-    }
-    return Array.isArray(conv?.messages) && conv.messages.some(m => m && m.id && !String(m.id).startsWith('msg_prev'));
-  };
-
-  proto._renderAttachmentInBubble = function (m, isOutgoing = false) {
-    if (window.app && typeof window.app._renderAttachmentInBubble === 'function') {
-      return window.app._renderAttachmentInBubble(m, isOutgoing);
-    }
-    return '';
   };
 
   proto._dsNormPage = function (id) {
@@ -385,6 +366,7 @@
   proto.renderDashboard = function (navId = this._currentNavId) {
     if (!this.user) return;
     if (typeof this.isNavCurrent === 'function' && !this.isNavCurrent('dashboard', navId)) return;
+    const runNavId = navId;
     if (this.el.content) this.el.content.classList.remove('inbox-view-container');
 
     const isAdmin = this.user.role === 'admin' || this.user.role === 'super_admin';
@@ -392,13 +374,13 @@
       this._loadedBizStatus = true;
       this.svc.fetchBusinessStatus().then(s => {
         this.businessStatusCache = s;
-        if (typeof this.isNavCurrent !== 'function' || this.isNavCurrent('dashboard', navId)) this.renderDashboard(navId);
+        if (typeof this.isNavCurrent !== 'function' || this.isNavCurrent('dashboard', runNavId)) this.renderDashboard(runNavId);
       }).catch(() => {});
     }
     if (!this._fetchedServerConvs && this.svc && this.svc.fetchRemoteConversations) {
       this._fetchedServerConvs = true;
       this.svc.fetchRemoteConversations().then(() => {
-        if (typeof this.isNavCurrent !== 'function' || this.isNavCurrent('dashboard', navId)) this.renderDashboard(navId);
+        if (typeof this.isNavCurrent !== 'function' || this.isNavCurrent('dashboard', runNavId)) this.renderDashboard(runNavId);
       }).catch(() => {});
     }
 
@@ -1417,8 +1399,9 @@
   // ==========================================================================
   // 3. LEADS — CLEAN WORKING TABLE + SAVED VIEWS
   // ==========================================================================
-  proto.renderLeads = function (tab) {
+  proto.renderLeads = function (tab, navId = this._currentNavId) {
     if (!this.user) return;
+    if (typeof this.isNavCurrent === 'function' && !this.isNavCurrent('leads', navId)) return;
     if (this.el.content) this.el.content.classList.remove('inbox-view-container');
     if (tab) this.leadSavedView = tab;
     const view = this.leadSavedView || 'all';
@@ -1601,8 +1584,9 @@
   // ==========================================================================
   // 4. PIPELINE — ACTIONABLE CARDS + SEPARATE FINANCE STATUS
   // ==========================================================================
-  proto.renderPipeline = function () {
+  proto.renderPipeline = function (navId = this._currentNavId) {
     if (!this.user) return;
+    if (typeof this.isNavCurrent === 'function' && !this.isNavCurrent('pipeline', navId)) return;
     if (this.el.content) this.el.content.classList.remove('inbox-view-container');
     const mode = this.pipelineView || 'kanban';
     this.el.title.innerHTML = `<h1 class="topbar-title">${this.user.role === 'staff' ? 'My Pipeline' : 'Sales Pipeline'}</h1>`;
@@ -1696,8 +1680,9 @@
   // ==========================================================================
   // 5. TASKS & APPOINTMENTS — PRACTICAL DEALERSHIP AGENDA
   // ==========================================================================
-  proto.renderTasks = function (tab) {
+  proto.renderTasks = function (tab, navId = this._currentNavId) {
     if (!this.user) return;
+    if (typeof this.isNavCurrent === 'function' && !this.isNavCurrent('tasks', navId)) return;
     if (this.el.content) this.el.content.classList.remove('inbox-view-container');
     if (tab) this.currentTaskTab = tab;
     const active = this.currentTaskTab || 'today';
@@ -2413,7 +2398,7 @@
 
   proto.renderSettings = function (navId = this._currentNavId) {
     if (!this.user) return;
-    if (typeof this.isNavCurrent === 'function' && !this.isNavCurrent(this.currentRoute, navId)) return;
+    if (typeof this.isNavCurrent === 'function' && !this.isNavCurrent(['settings', 'connections'], navId)) return;
     if (this.el.content) this.el.content.classList.remove('inbox-view-container');
     const isAdmin = this.user.role === 'admin' || this.user.role === 'super_admin';
     this.el.title.innerHTML = `<h1 class="topbar-title">Settings</h1>`;

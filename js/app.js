@@ -359,11 +359,30 @@ class MetaCRMApp {
     });
 
     // Listen to real-time CRM updates
-    window.addEventListener('crm:state_changed', () => {
-      this.user = this.svc.getCurrentUser();
+    window.addEventListener('crm:state_changed', (e) => {
+      this.user = this.svc ? this.svc.getCurrentUser() : null;
       this.renderSidebar();
       this.renderNotifications();
-      this._renderPage();
+
+      // Never stomp over open modals or slide-over drawers
+      if (this.el.mOverlay && this.el.mOverlay.classList.contains('open')) return;
+      if (this.el.dOverlay && this.el.dOverlay.classList.contains('open')) return;
+
+      const type = e?.detail?.type;
+      // Scoped reactive updates: only re-render the active screen if the event pertains to it
+      if (this.currentRoute === 'inbox' && (type === 'conversations_updated' || type?.startsWith('message_') || type === 'conversation_read')) {
+        this.renderInbox();
+      } else if (this.currentRoute === 'leads' && (type === 'leads_updated' || type === 'lead_created' || type === 'lead_updated')) {
+        this.renderLeads();
+      } else if (this.currentRoute === 'pipeline' && (type === 'deal_updated' || type === 'deal_added' || type === 'deals_updated')) {
+        this.renderPipeline();
+      } else if (this.currentRoute === 'tasks' && (type === 'task_updated' || type === 'task_added' || type === 'tasks_updated')) {
+        this.renderTasks();
+      } else if (this.currentRoute === 'staff' && (type === 'staff_updated' || type === 'staff_added')) {
+        this.renderStaff();
+      } else if (this.currentRoute === 'dashboard' && (type === 'sync_completed' || type === 'ad_spend_synced')) {
+        this.renderDashboard();
+      }
     });
   }
 
@@ -5415,7 +5434,7 @@ class MetaCRMApp {
     const hasMessages = this.hasRealMessages(conv);
     const hasPreview = !!(conv.preview && conv.preview.trim());
 
-    if (thread && this.activeConvId === conv.id) {
+    if (thread && (String(this.activeConvId) === String(conv.id) || String(this.activeConvId) === String(conv.external_id))) {
       if (!hasMessages) {
         thread.innerHTML = `
           <div class="inbox-thread-loading" id="inbox-thread-loading" style="padding:60px 20px;text-align:center;color:var(--text-secondary);">
@@ -5521,6 +5540,10 @@ class MetaCRMApp {
           conv.time = newest.time || conv.time;
         }
 
+        if (rawMsgs.length < 50) {
+          conv._allHistoryLoaded = true;
+        }
+
         if (this.svc) {
           if (this.svc.saveConversations) this.svc.saveConversations();
           else if (this.svc._saveToStorage) this.svc._saveToStorage();
@@ -5528,10 +5551,12 @@ class MetaCRMApp {
         }
       } else {
         conv._fetchedRealMessages = true;
+        conv._allHistoryLoaded = true;
         if (!Array.isArray(conv.messages)) conv.messages = [];
       }
 
-      if (this.activeConvId === conv.id && ['inbox', 'messages', 'conversations'].includes(this.currentRoute)) {
+      const isCurrentActive = String(this.activeConvId) === String(conv.id) || String(this.activeConvId) === String(conv.external_id);
+      if (isCurrentActive && ['inbox', 'messages', 'conversations'].includes(this.currentRoute)) {
         this.renderInbox();
         const threadAfter = document.getElementById('inbox-thread');
         if (threadAfter) {
@@ -5541,7 +5566,8 @@ class MetaCRMApp {
     } catch (e) {
       if (e.name !== 'AbortError') {
         console.warn('[Fetch Messages Error]:', e);
-        if (this.activeConvId === conv.id) {
+        const isCurrentActive = String(this.activeConvId) === String(conv.id) || String(this.activeConvId) === String(conv.external_id);
+        if (isCurrentActive) {
           const errThread = document.getElementById('inbox-thread');
           if (errThread && (!conv.messages || conv.messages.length === 0) && !conv.preview) {
             errThread.innerHTML = `
@@ -5676,7 +5702,7 @@ class MetaCRMApp {
 
           if (this.svc && this.svc.saveConversations) this.svc.saveConversations();
 
-          if (this.activeConvId === conv.id) {
+          if (String(this.activeConvId) === String(conv.id) || String(this.activeConvId) === String(conv.external_id)) {
             this.renderInbox();
             const threadAfter = document.getElementById('inbox-thread');
             if (threadAfter) {
