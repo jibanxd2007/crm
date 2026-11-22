@@ -125,14 +125,71 @@
     return '';
   };
 
-  proto._dsConvNeedsReply = function (c) {
-    if (!c || c.is_archived) return false;
-    if (Array.isArray(c.messages) && c.messages.length > 0) {
-      const last = c.messages[c.messages.length - 1];
-      return last.incoming === true || last.sender_type === 'customer' || last.direction === 'inbound';
+  proto._parseSafeMessageDate = function (rawDate, fallbackDate) {
+    if (!rawDate) return fallbackDate ? new Date(fallbackDate) : new Date();
+    if (rawDate instanceof Date && !isNaN(rawDate.getTime())) return rawDate;
+    const str = String(rawDate).trim();
+    if (/^(today|yesterday|recent|just now)/i.test(str) || /^\d{1,2}:\d{2}(\s*(am|pm))?$/i.test(str)) {
+      return fallbackDate ? new Date(fallbackDate) : new Date();
     }
-    const prev = String(c.preview || c.last_message || '');
-    return !prev.startsWith('You:');
+    if (/^[A-Za-z]{3,9}\s+\d{1,2}$/i.test(str)) {
+      const currentYear = new Date().getFullYear();
+      const parsed = new Date(`${str}, ${currentYear}`);
+      if (!isNaN(parsed.getTime())) return parsed;
+    }
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      if (d.getFullYear() < 2010) {
+        d.setFullYear(new Date().getFullYear());
+      }
+      return d;
+    }
+    return fallbackDate ? new Date(fallbackDate) : new Date();
+  };
+
+  proto._dsConvNeedsReply = function (c) {
+    if (!c || c.is_archived || c.status === 'resolved' || c.status === 'archived') return false;
+    if ((c.unread && c.unread > 0) || (c.unread_count && c.unread_count > 0)) return true;
+    if (c.status === 'needs_reply') return true;
+
+    if (Array.isArray(c.messages) && c.messages.length > 0) {
+      const real = c.messages.filter(m => m && m.id && !String(m.id).startsWith('msg_prev'));
+      if (real.length > 0) {
+        const last = real[real.length - 1];
+        const isIncoming = last.incoming === true || last.sender_type === 'customer' || last.direction === 'inbound' || last.direction === 'incoming';
+        const isOutgoing = last.incoming === false || last.sender_type === 'staff' || last.direction === 'outbound' || last.senderName === 'You';
+        if (isOutgoing) return false;
+        if (isIncoming) return true;
+      }
+    }
+
+    if (c.last_message_direction === 'outbound' || c.direction === 'outbound') return false;
+    if (c.last_message_direction === 'inbound' || c.direction === 'inbound' || c.direction === 'incoming') return true;
+
+    const prev = String(c.preview || c.last_message || '').trim();
+    if (prev.startsWith('You:') || prev.startsWith('Staff:')) return false;
+
+    return false;
+  };
+
+  proto.fetchRealConversationMessages = function (conv) {
+    if (window.app && typeof window.app.fetchRealConversationMessages === 'function') {
+      return window.app.fetchRealConversationMessages(conv);
+    }
+  };
+
+  proto.hasRealMessages = function (conv) {
+    if (window.app && typeof window.app.hasRealMessages === 'function') {
+      return window.app.hasRealMessages(conv);
+    }
+    return Array.isArray(conv?.messages) && conv.messages.some(m => m && m.id && !String(m.id).startsWith('msg_prev'));
+  };
+
+  proto._renderAttachmentInBubble = function (m, isOutgoing = false) {
+    if (window.app && typeof window.app._renderAttachmentInBubble === 'function') {
+      return window.app._renderAttachmentInBubble(m, isOutgoing);
+    }
+    return '';
   };
 
   proto._dsNormPage = function (id) {
@@ -788,10 +845,16 @@
     const visibleConvs = filteredConvs.slice(0, this._inboxDisplayLimit);
     const hasMoreVisible = filteredConvs.length > visibleConvs.length;
     const activeConvOutsideFilter = Boolean(activeConv && this.selectedInboxPage !== 'all' && !this._dsConvMatchesPage(activeConv, this.selectedInboxPage));
-    const convHasReal = this.hasRealMessages ? this.hasRealMessages(activeConv) : (Array.isArray(activeConv?.messages) && activeConv.messages.some(m => m && m.id && !String(m.id).startsWith('msg_prev')));
+    const convHasReal = this.hasRealMessages(activeConv);
     if (activeConv && (!convHasReal || !activeConv._fetchedRealMessages || (activeConv.messages && activeConv.messages.length <= 1)) && !activeConv._fetchingMsgs) {
       activeConv._fetchingMsgs = true;
-      setTimeout(() => this.fetchRealConversationMessages(activeConv), 30);
+      setTimeout(() => {
+        if (window.app && typeof window.app.fetchRealConversationMessages === 'function') {
+          window.app.fetchRealConversationMessages(activeConv);
+        } else {
+          activeConv._fetchingMsgs = false;
+        }
+      }, 30);
     }
 
     const matchingLead = (this.svc && activeConv)
@@ -801,7 +864,7 @@
     const messages = activeConv
       ? (convHasReal
         ? (activeConv.messages || []).filter(m => m && m.id && !String(m.id).startsWith('msg_prev'))
-        : (activeConv.preview ? [{ id: 'msg_prev_' + activeConv.id, text: activeConv.preview, incoming: true, time: activeConv.time || 'Recent' }] : []))
+        : (activeConv.preview ? [{ id: 'msg_prev_' + activeConv.id, text: activeConv.preview, incoming: !String(activeConv.preview).startsWith('You:'), time: activeConv.time || 'Recent' }] : []))
       : [];
 
     const allPagesLabel = isAdmin ? 'All Pages' : 'All Assigned Pages';
@@ -996,28 +1059,30 @@
               </header>
 
               <!-- Messages Thread -->
-              <div class="inbox-thread" id="inbox-thread" onscroll="if (this.scrollTop < 40) window.app.loadOlderMessages('${esc(activeConv.id)}')">
-                ${!activeConv._allHistoryLoaded ? `
+              <div class="inbox-thread" id="inbox-thread" onscroll="window.app.handleThreadScroll(this, '${esc(activeConv.id)}')">
+                ${activeConv._loadingOlderMsgs ? `
+                  <div style="text-align:center;padding:8px 0 4px;font-size:11px;color:var(--ds-ink-muted);">
+                    ⟳ Loading earlier messages…
+                  </div>
+                ` : (!activeConv._allHistoryLoaded ? `
                   <div style="text-align:center;padding:8px 0 4px;">
                     <button type="button" class="btn btn-ghost btn-xs" onclick="window.app.loadOlderMessages('${esc(activeConv.id)}')" style="font-size:11px;color:var(--ds-ink-muted);background:var(--ds-canvas);border:1px solid var(--ds-border);border-radius:12px;padding:2px 10px;">⟳ Load earlier messages</button>
                   </div>
-                ` : ''}
+                ` : '')}
                 ${(() => {
                   let lastDateHeader = null;
                   return messages.map(m => {
                     let dateDividerHtml = '';
                     const rawDate = m.created_at || m.sentAt || m.time;
-                    if (rawDate) {
-                      const d = new Date(rawDate);
-                      if (!isNaN(d.getTime())) {
-                        const now = new Date();
-                        const isToday = d.toDateString() === now.toDateString();
-                        const isYesterday = d.toDateString() === new Date(now.getTime() - 86400000).toDateString();
-                        const headerStr = isToday ? 'Today' : (isYesterday ? 'Yesterday' : d.toLocaleDateString([], { month: 'short', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined }));
-                        if (headerStr !== lastDateHeader) {
-                          lastDateHeader = headerStr;
-                          dateDividerHtml = `<div class="msg-date-divider"><span>${esc(headerStr)}</span></div>`;
-                        }
+                    const d = this._parseSafeMessageDate(rawDate, activeConv.last_message_at);
+                    if (d && !isNaN(d.getTime())) {
+                      const now = new Date();
+                      const isToday = d.toDateString() === now.toDateString();
+                      const isYesterday = d.toDateString() === new Date(now.getTime() - 86400000).toDateString();
+                      const headerStr = isToday ? 'Today' : (isYesterday ? 'Yesterday' : d.toLocaleDateString([], { month: 'short', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined }));
+                      if (headerStr !== lastDateHeader) {
+                        lastDateHeader = headerStr;
+                        dateDividerHtml = `<div class="msg-date-divider"><span>${esc(headerStr)}</span></div>`;
                       }
                     }
                     if (!lastDateHeader && !dateDividerHtml) {

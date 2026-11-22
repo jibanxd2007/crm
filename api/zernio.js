@@ -26,18 +26,14 @@ function resolveToZernioObjectId(rawId) {
   const str = String(rawId).trim();
   if (/^[0-9a-f]{24}$/i.test(str)) return str;
   const match = (CANONICAL_DEALERSHIP_ACCOUNTS || []).find(a =>
-    String(a.pageId) === str ||
     String(a.facebookPageId) === str ||
     String(a.zernioAccountId) === str ||
     String(a.id) === str
   );
   if (match && match.zernioAccountId) return match.zernioAccountId;
-  if (PAGE_ALIAS_MAP && typeof PAGE_ALIAS_MAP.get === 'function') {
-    const aliases = PAGE_ALIAS_MAP.get(str.toLowerCase());
-    if (Array.isArray(aliases)) {
-      const aliasMatch = aliases.find(a => /^[0-9a-f]{24}$/i.test(a));
-      if (aliasMatch) return aliasMatch;
-    }
+  if (PAGE_ALIAS_MAP && PAGE_ALIAS_MAP[str]) {
+    const aliasMatch = PAGE_ALIAS_MAP[str].find(a => /^[0-9a-f]{24}$/i.test(a));
+    if (aliasMatch) return aliasMatch;
   }
   return str;
 }
@@ -857,8 +853,8 @@ async function zernioUnifiedHandler(req, res) {
     const msgCursor = query.cursor || null;
     const fetchLimit = 100; // Always retrieve full thread up to 100 messages from provider
     let msgPath = `/api/v1/inbox/conversations/${encodeURIComponent(targetZernioConvId)}/messages?accountId=${encodeURIComponent(accountId)}&limit=${fetchLimit}`;
-    // Only forward cursor if it is a valid Zernio pagination cursor token (never an ISO date or timestamp)
-    if (msgCursor && !msgCursor.includes('T') && !msgCursor.includes('-') && !msgCursor.includes(':')) {
+    // Only forward cursor if it is a valid Zernio pagination cursor token (or starts with db:); skip pure ISO timestamps
+    if (msgCursor && (msgCursor.startsWith('db:') || !/^\d{4}-\d{2}-\d{2}/.test(msgCursor))) {
       msgPath += `&cursor=${encodeURIComponent(msgCursor)}`;
     }
 
@@ -997,8 +993,8 @@ async function zernioUnifiedHandler(req, res) {
       });
     };
 
-    // Full account conversation fetcher across all cursor pages (interactive default: 2 pages = 100 convs/acc)
-    const fetchAllAccountConvs = async (accId, pageName = '', maxPages = 2) => {
+    // Full account conversation fetcher across all cursor pages (recovers all historical conversations)
+    const fetchAllAccountConvs = async (accId, pageName = '', maxPages = 50) => {
       let allConvs = [];
       const seenIds = new Set();
       let cursor = null;
@@ -1023,6 +1019,8 @@ async function zernioUnifiedHandler(req, res) {
             c.participant_name = c.participant_name || c.participantName || c.customerName || c.name;
             c.preview = c.preview || c.lastMessage || 'Direct message';
             c.last_message = c.last_message || c.lastMessage || 'Direct message';
+            c.unread = c.unreadCount !== undefined ? c.unreadCount : (c.unread || 0);
+            c.unread_count = c.unreadCount !== undefined ? c.unreadCount : (c.unread_count || 0);
             if (pageName) {
               c.accountName = c.accountName || pageName;
               c.pageName = c.pageName || pageName;
@@ -1059,7 +1057,8 @@ async function zernioUnifiedHandler(req, res) {
       if (!forceRefresh && isCacheFresh && global.ZERNIO_HISTORICAL_CACHE.byAccount.has(resolvedAccId)) {
         convList = global.ZERNIO_HISTORICAL_CACHE.byAccount.get(resolvedAccId) || [];
       } else {
-        convList = await fetchAllAccountConvs(resolvedAccId, targetPageName, query.deep === 'true' ? 25 : (query.max_pages ? parseInt(query.max_pages, 10) : 1));
+        const fetchDepth = query.deep === 'true' ? 50 : (query.max_pages ? parseInt(query.max_pages, 10) : 50);
+        convList = await fetchAllAccountConvs(resolvedAccId, targetPageName, fetchDepth);
         global.ZERNIO_HISTORICAL_CACHE.byAccount.set(resolvedAccId, convList);
       }
 
@@ -1103,10 +1102,11 @@ async function zernioUnifiedHandler(req, res) {
             return [];
           }
 
+          const fetchDepth = query.deep === 'true' ? 50 : (query.max_pages ? parseInt(query.max_pages, 10) : 50);
           const results = await mapWithBoundedConcurrency(validAccounts, 6, async (acc) => {
             const accId = acc._id || acc.id || acc.accountId;
             const pName = acc.pageName || acc.name || '';
-            const accConvs = await fetchAllAccountConvs(accId, pName, query.deep === 'true' ? 25 : (query.max_pages ? parseInt(query.max_pages, 10) : 1));
+            const accConvs = await fetchAllAccountConvs(accId, pName, fetchDepth);
             global.ZERNIO_HISTORICAL_CACHE.byAccount.set(accId, accConvs);
             return accConvs;
           });
@@ -1261,6 +1261,58 @@ async function zernioUnifiedHandler(req, res) {
     } catch (syncErr) {
       recordDiagnosticError('sync-inbox', syncErr);
       return res.status(500).json({ error: syncErr.message });
+    }
+  }
+
+  // 1.9 SYNC MANAGER & DIAGNOSTICS DASHBOARD
+  if (path === 'sync-manager' || path === 'sync-stats' || url.includes('/sync-manager')) {
+    res.setHeader('Content-Type', 'application/json');
+    const apiKey = process.env.ZERNIO_API_KEY;
+    if (!apiKey) {
+      return res.status(200).json({ status: "error", message: "ZERNIO_API_KEY not configured" });
+    }
+
+    try {
+      global.ZERNIO_HISTORICAL_CACHE = global.ZERNIO_HISTORICAL_CACHE || {
+        timestamp: 0,
+        byAccount: new Map(),
+        all: [],
+        fetchingPromise: null
+      };
+
+      if (req.method === 'POST' || query.action === 'refresh') {
+        global.ZERNIO_HISTORICAL_CACHE.all = [];
+        global.ZERNIO_HISTORICAL_CACHE.byAccount.clear();
+        global.ZERNIO_HISTORICAL_CACHE.timestamp = 0;
+      }
+
+      const dynamicAccounts = await getDynamicZernioAccounts(apiKey);
+      const dynList = Array.isArray(dynamicAccounts) ? dynamicAccounts : (dynamicAccounts?.accounts || []);
+      const accountsSummary = (CANONICAL_DEALERSHIP_ACCOUNTS || []).map(canon => {
+        const cachedConvs = global.ZERNIO_HISTORICAL_CACHE.byAccount.get(canon.zernioAccountId) || [];
+        return {
+          id: canon.id,
+          name: canon.name,
+          facebookPageId: canon.facebookPageId,
+          zernioAccountId: canon.zernioAccountId,
+          channel: canon.channel || 'facebook',
+          cachedConversations: cachedConvs.length,
+          lastSync: global.ZERNIO_HISTORICAL_CACHE.timestamp ? new Date(global.ZERNIO_HISTORICAL_CACHE.timestamp).toISOString() : null,
+          status: 'healthy'
+        };
+      });
+
+      return res.status(200).json({
+        status: "success",
+        accounts: accountsSummary,
+        totalAccounts: accountsSummary.length,
+        totalCachedConversations: global.ZERNIO_HISTORICAL_CACHE.all.length,
+        cacheTimestamp: global.ZERNIO_HISTORICAL_CACHE.timestamp ? new Date(global.ZERNIO_HISTORICAL_CACHE.timestamp).toISOString() : null,
+        diagnostics: SYNC_DIAGNOSTICS,
+        timestamp: new Date().toISOString()
+      });
+    } catch (smErr) {
+      return res.status(500).json({ error: smErr.message });
     }
   }
 
@@ -1735,7 +1787,7 @@ async function zernioUnifiedHandler(req, res) {
 
 const handler = createVercelHandler(zernioUnifiedHandler);
 handler.zernioUnifiedHandler = zernioUnifiedHandler;
-handler.resolveToZernioObjectId = resolveToZernioObjectId;
 handler.config = { api: { bodyParser: false } };
 module.exports = handler;
 
+       
