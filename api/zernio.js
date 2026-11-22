@@ -1057,7 +1057,8 @@ async function zernioUnifiedHandler(req, res) {
       if (!forceRefresh && isCacheFresh && global.ZERNIO_HISTORICAL_CACHE.byAccount.has(resolvedAccId)) {
         convList = global.ZERNIO_HISTORICAL_CACHE.byAccount.get(resolvedAccId) || [];
       } else {
-        const fetchDepth = query.deep === 'true' ? 50 : (query.max_pages ? parseInt(query.max_pages, 10) : 50);
+        const defaultDepth = (query.all === 'true' || query.deep === 'true' || reqLimit > 50) ? 10 : 2;
+        const fetchDepth = query.max_pages ? parseInt(query.max_pages, 10) : defaultDepth;
         convList = await fetchAllAccountConvs(resolvedAccId, targetPageName, fetchDepth);
         global.ZERNIO_HISTORICAL_CACHE.byAccount.set(resolvedAccId, convList);
       }
@@ -1102,7 +1103,8 @@ async function zernioUnifiedHandler(req, res) {
             return [];
           }
 
-          const fetchDepth = query.deep === 'true' ? 50 : (query.max_pages ? parseInt(query.max_pages, 10) : 50);
+          const defaultDepth = (query.all === 'true' || query.deep === 'true' || reqLimit > 50) ? 10 : 2;
+          const fetchDepth = query.max_pages ? parseInt(query.max_pages, 10) : defaultDepth;
           const results = await mapWithBoundedConcurrency(validAccounts, 6, async (acc) => {
             const accId = acc._id || acc.id || acc.accountId;
             const pName = acc.pageName || acc.name || '';
