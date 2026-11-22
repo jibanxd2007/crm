@@ -846,15 +846,14 @@
     const hasMoreVisible = filteredConvs.length > visibleConvs.length;
     const activeConvOutsideFilter = Boolean(activeConv && this.selectedInboxPage !== 'all' && !this._dsConvMatchesPage(activeConv, this.selectedInboxPage));
     const convHasReal = this.hasRealMessages(activeConv);
-    if (activeConv && (!convHasReal || !activeConv._fetchedRealMessages || (activeConv.messages && activeConv.messages.length <= 1)) && !activeConv._fetchingMsgs) {
-      activeConv._fetchingMsgs = true;
-      setTimeout(() => {
-        if (window.app && typeof window.app.fetchRealConversationMessages === 'function') {
-          window.app.fetchRealConversationMessages(activeConv);
-        } else {
-          activeConv._fetchingMsgs = false;
-        }
-      }, 30);
+    if (activeConv && (!convHasReal || !activeConv._fetchedRealMessages || (activeConv.messages && activeConv.messages.length <= 1))) {
+      if (!activeConv._fetchingMsgs) {
+        setTimeout(() => {
+          if (window.app && typeof window.app.fetchRealConversationMessages === 'function') {
+            window.app.fetchRealConversationMessages(activeConv);
+          }
+        }, 15);
+      }
     }
 
     const matchingLead = (this.svc && activeConv)

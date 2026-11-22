@@ -134,7 +134,13 @@ class MetaCRMApp {
 
   isNavCurrent(expectedRoute, expectedNavId) {
     if (expectedNavId !== undefined && this._currentNavId !== expectedNavId) return false;
-    if (expectedRoute && this.currentRoute !== expectedRoute) return false;
+    if (expectedRoute) {
+      if (Array.isArray(expectedRoute)) {
+        if (!expectedRoute.includes(this.currentRoute)) return false;
+      } else if (this.currentRoute !== expectedRoute) {
+        return false;
+      }
+    }
     return true;
   }
 
@@ -726,11 +732,62 @@ class MetaCRMApp {
 
     const fullHash = window.location.hash.replace(/^#\/?/, '') || 'dashboard';
     const [rawHash, queryStr] = fullHash.split('?');
-    const hash = rawHash.replace(/^(admin|staff)\//, '');
+    const unnormalizedHash = (rawHash || '').replace(/^(admin|staff)\//, '').toLowerCase().trim();
+
+    // Comprehensive Canonical Route Normalization Map
+    const ROUTE_ALIASES = {
+      '': 'dashboard',
+      dashboard: 'dashboard',
+      overview: 'dashboard',
+      home: 'dashboard',
+      staff: 'staff',
+      team: 'staff',
+      users: 'staff',
+      employees: 'staff',
+      inbox: 'inbox',
+      messages: 'inbox',
+      conversations: 'inbox',
+      chat: 'inbox',
+      leads: 'leads',
+      enquiries: 'leads',
+      pipeline: 'pipeline',
+      deals: 'pipeline',
+      sales: 'pipeline',
+      tasks: 'tasks',
+      appointments: 'tasks',
+      calendar: 'tasks',
+      reports: 'reports',
+      analytics: 'reports',
+      performance: 'reports',
+      'meta-ads': 'meta-ads',
+      marketing: 'meta-ads',
+      ads: 'meta-ads',
+      meta: 'meta-ads',
+      connections: 'connections',
+      integrations: 'connections',
+      accounts: 'connections',
+      channels: 'connections',
+      settings: 'settings',
+      profile: 'settings',
+      email: 'email',
+      mail: 'email',
+      download: 'download',
+      desktop: 'download',
+      diagnostics: 'developer-diagnostics',
+      'developer-diagnostics': 'developer-diagnostics',
+      'setup-password': 'setup-password',
+      'reset-password': 'reset-password',
+      login: 'login'
+    };
+
+    const hash = ROUTE_ALIASES[unnormalizedHash] || unnormalizedHash;
+    if (unnormalizedHash && unnormalizedHash !== hash && window.history && window.history.replaceState) {
+      window.history.replaceState(null, '', '#' + hash + (queryStr ? '?' + queryStr : ''));
+    }
 
     const navId = ++this._navSeq;
     this._currentNavId = navId;
-    this._logNav('ROUTE_REQUESTED', { from: this.currentRoute, to: hash, queryStr, navId });
+    this._logNav('ROUTE_REQUESTED', { from: this.currentRoute, raw: unnormalizedHash, canonical: hash, queryStr, navId });
 
     // Abort in-flight network requests from superseded route
     if (this._activeAbortController) {
@@ -767,7 +824,7 @@ class MetaCRMApp {
     }
 
     // 4. Admin-only Route Guard
-    const adminOnlyRoutes = ['staff', 'settings', 'connections', 'integrations', 'meta-ads'];
+    const adminOnlyRoutes = ['staff', 'settings', 'connections', 'meta-ads'];
     const isAdmin = this.user && (this.user.role === 'admin' || this.user.role === 'super_admin');
     if (adminOnlyRoutes.includes(hash) && !isAdmin) {
       this.currentRoute = hash;
@@ -929,7 +986,6 @@ class MetaCRMApp {
           const target = this.redirectAfterLogin || 'dashboard';
           this.redirectAfterLogin = null;
           this.navigate(target);
-          this._route();
           return;
         } else {
           if (submitBtn) {
@@ -1325,7 +1381,6 @@ class MetaCRMApp {
         try { localStorage.removeItem('metacrm_authenticated'); } catch (e) {}
         this.toast('You have been signed out.', 'info');
         this.navigate('login');
-        this._route();
       }
     });
   }
@@ -1537,25 +1592,28 @@ class MetaCRMApp {
     }
     switch (this.currentRoute) {
       case 'dashboard':
+      case 'overview':
         if (!this._lastAutoRefresh || (Date.now() - this._lastAutoRefresh > 20000)) {
           this._lastAutoRefresh = Date.now();
           if (this.svc && this.svc.fetchRemoteData) {
             this.svc.fetchRemoteData().then(() => {
-              if (this.isNavCurrent('dashboard', navId)) this.renderDashboard();
+              if (this.isNavCurrent('dashboard', navId)) this.renderDashboard(navId);
             }).catch(() => {});
           }
         }
-        this.renderDashboard();
+        this.renderDashboard(navId);
         break;
-      case 'leads':        this.renderLeads(); break;
+      case 'leads':        this.renderLeads(undefined, navId); break;
       case 'inbox':
       case 'messages':
       case 'conversations': this.renderInbox(); break;
       case 'email':        this.renderEmailInbox(navId); break;
       case 'meta-ads':     this.renderMetaAds(navId); break;
-      case 'pipeline':     this.renderPipeline(); break;
-      case 'tasks':        this.renderTasks(); break;
-      case 'reports':      this.renderReports(navId); break;
+      case 'pipeline':     this.renderPipeline(navId); break;
+      case 'tasks':
+      case 'appointments': this.renderTasks(undefined, navId); break;
+      case 'reports':
+      case 'analytics':    this.renderReports(navId); break;
       case 'integrations':
       case 'connections':
         this.settingsTab = 'accounts';
@@ -1566,11 +1624,12 @@ class MetaCRMApp {
         if (typeof this.renderDeveloperDiagnostics === 'function') this.renderDeveloperDiagnostics();
         else this.renderAccessDeniedScreen('developer-diagnostics');
         break;
-      case 'staff':        this.renderStaff(navId); break;
+      case 'staff':
+      case 'team':         this.renderStaff(navId); break;
       case 'settings':     this.renderSettings(navId); break;
       case 'download':
       case 'desktop':      this.renderDownloadPage(); break;
-      default:             this.renderDashboard(); break;
+      default:             this.renderDashboard(navId); break;
     }
     this._logNav('RENDER_PAGE_COMMITTED', { route: this.currentRoute, navId });
   }
@@ -1703,8 +1762,9 @@ class MetaCRMApp {
   // DASHBOARD (Section 18 & 19)
   // ──────────────────────────────────────────────────────────
 
-  renderDashboard() {
+  renderDashboard(navId = this._currentNavId) {
     if (!this.user) return;
+    if (!this.isNavCurrent('dashboard', navId)) return;
     if (!this._loadedDashHealth && this.svc && this.svc.fetchZernioHealth) {
       this._loadedDashHealth = true;
       this.svc.fetchZernioHealth().then(h => {
@@ -2374,7 +2434,9 @@ class MetaCRMApp {
   // LEADS WORKSPACE (Section 10 & 11)
   // ──────────────────────────────────────────────────────────
 
-  renderLeads(tab) {
+  renderLeads(tab, navId = this._currentNavId) {
+    if (!this.user) return;
+    if (!this.isNavCurrent('leads', navId)) return;
     if (tab) this.currentLeadTab = tab;
     this.el.title.textContent = (this.user && this.user.role === 'staff') ? 'My Leads' : 'Leads';
 
@@ -3325,7 +3387,9 @@ class MetaCRMApp {
   // KANBAN CRM PIPELINE WITH DRAG & DROP (Section 13)
   // ──────────────────────────────────────────────────────────
 
-  renderPipeline() {
+  renderPipeline(navId = this._currentNavId) {
+    if (!this.user) return;
+    if (!this.isNavCurrent('pipeline', navId)) return;
     this.el.title.textContent = (this.user && this.user.role === 'staff') ? 'My Pipeline' : 'Sales Pipeline';
     this.el.actions.innerHTML = `
       <div class="btn-group">
@@ -3706,9 +3770,10 @@ class MetaCRMApp {
       this.activeConvId = activeConv.id;
     }
     const activeConvOutsideFilter = Boolean(activeConv && this.selectedInboxPage !== 'all' && !convMatchesPage(activeConv, this.selectedInboxPage));
-    if (activeConv && (!activeConv.messages || activeConv.messages.length === 0) && !activeConv._fetchingMsgs) {
-      activeConv._fetchingMsgs = true;
-      setTimeout(() => this.fetchRealConversationMessages(activeConv), 50);
+    if (activeConv && (!activeConv.messages || activeConv.messages.length === 0)) {
+      if (!activeConv._fetchingMsgs) {
+        setTimeout(() => this.fetchRealConversationMessages(activeConv), 20);
+      }
     }
     const matchingLead = (this.svc && activeConv) ? this.svc.leads.find(l => l.name === activeConv.name || (activeConv.phone && l.phone === activeConv.phone)) : null;
     const messages = activeConv
@@ -5772,7 +5837,7 @@ class MetaCRMApp {
 
   async fetchRealInstagramConversations() {
     try {
-      const res = await fetch('/api/zernio?path=inbox-conversations');
+      const res = await fetch('/api/zernio?path=inbox-conversations&all=true&limit=5000');
       if (!res.ok) return;
       const data = await res.json();
       const rawList = Array.isArray(data) ? data : (data.data || data.conversations || []);
@@ -7459,7 +7524,9 @@ class MetaCRMApp {
   // TASKS WORKSPACE
   // ──────────────────────────────────────────────────────────
 
-  renderTasks(tab) {
+  renderTasks(tab, navId = this._currentNavId) {
+    if (!this.user) return;
+    if (!this.isNavCurrent('tasks', navId)) return;
     if (tab) this.currentTaskTab = tab;
     this.el.title.textContent = (this.user && this.user.role === 'staff') ? 'My Tasks & Appointments' : 'Tasks & Appointments';
     this.el.actions.innerHTML = `
@@ -8012,7 +8079,9 @@ class MetaCRMApp {
   // SETTINGS VIEW
   // ──────────────────────────────────────────────────────────
 
-  renderSettings() {
+  renderSettings(navId = this._currentNavId) {
+    if (!this.user) return;
+    if (!this.isNavCurrent(['settings', 'connections'], navId)) return;
     this.el.title.textContent = 'Settings';
     this.el.actions.innerHTML = '';
 
