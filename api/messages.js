@@ -722,7 +722,8 @@ async function messagesHandler(req, res) {
       }
 
       if (requestedConv) {
-        const cacheKey = `thread_${requestedConv}_${offset}_${limit}_${req.query?.order || 'desc'}`;
+        const beforeKey = req.query?.before || req.query?.cursor || '';
+        const cacheKey = `thread_${requestedConv}_${offset}_${limit}_${req.query?.order || 'desc'}_${beforeKey}`;
         const cachedThread = global.CRM_THREAD_MESSAGES_CACHE && global.CRM_THREAD_MESSAGES_CACHE.get(cacheKey);
         if (cachedThread && (Date.now() - cachedThread.ts) < 15000 && req.query?.refresh !== 'true') {
           return res.status(200).json(cachedThread.data);
@@ -951,7 +952,8 @@ async function messagesHandler(req, res) {
         const origJson = res.json.bind(res);
         res.json = (data) => {
           if (data && (data.status === 'success' || Array.isArray(data.messages))) {
-            const cacheKey = `thread_${requestedConv}_${offset}_${limit}_${req.query?.order || 'desc'}`;
+            const beforeKey = req.query?.before || req.query?.cursor || '';
+            const cacheKey = `thread_${requestedConv}_${offset}_${limit}_${req.query?.order || 'desc'}_${beforeKey}`;
             global.CRM_THREAD_MESSAGES_CACHE = global.CRM_THREAD_MESSAGES_CACHE || new Map();
             global.CRM_THREAD_MESSAGES_CACHE.set(cacheKey, { ts: Date.now(), data });
           }

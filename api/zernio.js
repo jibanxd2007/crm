@@ -825,9 +825,13 @@ async function zernioUnifiedHandler(req, res) {
     }
 
     // GET Messages with fast timeout and structured response
-    const msgCursor = query.cursor || query.before || null;
-    let msgPath = `/api/v1/inbox/conversations/${encodeURIComponent(targetZernioConvId)}/messages?accountId=${encodeURIComponent(accountId)}&limit=${msgLimit}`;
-    if (msgCursor) msgPath += `&cursor=${encodeURIComponent(msgCursor)}`;
+    const msgCursor = query.cursor || null;
+    const fetchLimit = 100; // Always retrieve full thread up to 100 messages from provider
+    let msgPath = `/api/v1/inbox/conversations/${encodeURIComponent(targetZernioConvId)}/messages?accountId=${encodeURIComponent(accountId)}&limit=${fetchLimit}`;
+    // Only forward cursor if it is a valid Zernio pagination cursor token (never an ISO date or timestamp)
+    if (msgCursor && !msgCursor.includes('T') && !msgCursor.includes('-') && !msgCursor.includes(':')) {
+      msgPath += `&cursor=${encodeURIComponent(msgCursor)}`;
+    }
 
     const options = {
       hostname: 'zernio.com',
@@ -847,13 +851,26 @@ async function zernioUnifiedHandler(req, res) {
         resp.on('end', () => {
           try {
             const parsed = JSON.parse(data);
-            const msgList = parsed.messages || parsed.data || (Array.isArray(parsed) ? parsed : []);
+            let msgList = parsed.messages || parsed.data || (Array.isArray(parsed) ? parsed : []);
             if (Array.isArray(msgList)) {
               msgList.sort((a, b) => {
                 const timeA = new Date(a.sentAt || a.createdAt || a.created_at || 0).getTime();
                 const timeB = new Date(b.sentAt || b.createdAt || b.created_at || 0).getTime();
                 return timeA - timeB;
               });
+
+              // If client asked for earlier messages before a specific timestamp cursor, filter safely
+              const beforeParam = query.before || (msgCursor && (msgCursor.includes('T') || msgCursor.includes(':')) ? msgCursor : null);
+              if (beforeParam) {
+                const beforeTs = new Date(beforeParam).getTime();
+                if (!isNaN(beforeTs)) {
+                  msgList = msgList.filter(m => {
+                    const t = new Date(m.sentAt || m.createdAt || m.created_at || 0).getTime();
+                    return t < beforeTs;
+                  });
+                }
+              }
+
               // Asynchronously reconcile fetched messages with Supabase
               syncMessagesToSupabase(conversationId, msgList, accountId).catch(() => {});
             }

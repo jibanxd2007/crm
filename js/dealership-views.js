@@ -788,9 +788,10 @@
     const visibleConvs = filteredConvs.slice(0, this._inboxDisplayLimit);
     const hasMoreVisible = filteredConvs.length > visibleConvs.length;
     const activeConvOutsideFilter = Boolean(activeConv && this.selectedInboxPage !== 'all' && !this._dsConvMatchesPage(activeConv, this.selectedInboxPage));
-    if (activeConv && (!activeConv.messages || activeConv.messages.length === 0) && !activeConv._fetchingMsgs) {
+    const convHasReal = this.hasRealMessages ? this.hasRealMessages(activeConv) : (Array.isArray(activeConv?.messages) && activeConv.messages.some(m => m && m.id && !String(m.id).startsWith('msg_prev')));
+    if (activeConv && (!convHasReal || !activeConv._fetchedRealMessages) && !activeConv._fetchingMsgs) {
       activeConv._fetchingMsgs = true;
-      setTimeout(() => this.fetchRealConversationMessages(activeConv), 50);
+      setTimeout(() => this.fetchRealConversationMessages(activeConv), 30);
     }
 
     const matchingLead = (this.svc && activeConv)
@@ -798,8 +799,8 @@
       : null;
 
     const messages = activeConv
-      ? ((Array.isArray(activeConv.messages) && activeConv.messages.length > 0)
-        ? activeConv.messages
+      ? (convHasReal
+        ? (activeConv.messages || []).filter(m => m && m.id && !String(m.id).startsWith('msg_prev'))
         : (activeConv.preview ? [{ id: 'msg_prev_' + activeConv.id, text: activeConv.preview, incoming: true, time: activeConv.time || 'Recent' }] : []))
       : [];
 
@@ -1001,48 +1002,72 @@
                     <button type="button" class="btn btn-ghost btn-xs" onclick="window.app.loadOlderMessages('${esc(activeConv.id)}')" style="font-size:11px;color:var(--ds-ink-muted);background:var(--ds-canvas);border:1px solid var(--ds-border);border-radius:12px;padding:2px 10px;">⟳ Load earlier messages</button>
                   </div>
                 ` : ''}
-                <div class="msg-date-divider"><span>${esc(this._formatMessageTime(activeConv.last_message_at || activeConv.time) || 'Today')}</span></div>
-                ${messages.map(m => {
-                  if (m.incoming) {
-                    return `
-                      <div class="msg msg-in" data-msg-id="${esc(m.id || '')}">
-                        <div class="msg-in-row">
-                          <div class="msg-mini-avatar" style="background:${activeColor.bg};color:${activeColor.text};">${esc(activeInitials)}</div>
-                          <div class="msg-bubble">
-                            ${this._renderAttachmentInBubble(m, false)}
-                            ${esc(m.text || '')}
+                ${(() => {
+                  let lastDateHeader = null;
+                  return messages.map(m => {
+                    let dateDividerHtml = '';
+                    const rawDate = m.created_at || m.sentAt || m.time;
+                    if (rawDate) {
+                      const d = new Date(rawDate);
+                      if (!isNaN(d.getTime())) {
+                        const now = new Date();
+                        const isToday = d.toDateString() === now.toDateString();
+                        const isYesterday = d.toDateString() === new Date(now.getTime() - 86400000).toDateString();
+                        const headerStr = isToday ? 'Today' : (isYesterday ? 'Yesterday' : d.toLocaleDateString([], { month: 'short', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined }));
+                        if (headerStr !== lastDateHeader) {
+                          lastDateHeader = headerStr;
+                          dateDividerHtml = `<div class="msg-date-divider"><span>${esc(headerStr)}</span></div>`;
+                        }
+                      }
+                    }
+                    if (!lastDateHeader && !dateDividerHtml) {
+                      lastDateHeader = 'Recent';
+                      dateDividerHtml = `<div class="msg-date-divider"><span>${esc(this._formatMessageTime(activeConv.last_message_at || activeConv.time) || 'Today')}</span></div>`;
+                    }
+
+                    if (m.incoming) {
+                      return `
+                        ${dateDividerHtml}
+                        <div class="msg msg-in" data-msg-id="${esc(m.id || '')}">
+                          <div class="msg-in-row">
+                            <div class="msg-mini-avatar" style="background:${activeColor.bg};color:${activeColor.text};">${esc(activeInitials)}</div>
+                            <div class="msg-bubble">
+                              ${this._renderAttachmentInBubble(m, false)}
+                              ${esc(m.text || '')}
+                            </div>
                           </div>
+                          ${m.time ? `<span class="msg-time">${esc(m.time)}</span>` : ''}
+                        </div>`;
+                    }
+                    const isSending = m.status === 'sending';
+                    const isFailed = m.status === 'failed';
+                    const isUncertain = m.status === 'uncertain';
+                    const isDelivered = m.status === 'delivered';
+                    const isRead = m.status === 'read';
+                    const statusLabel = isSending
+                      ? ' · Sending…'
+                      : isUncertain
+                        ? ' · Delivery status uncertain — refresh before resending'
+                        : isFailed
+                          ? ` · Your message wasn't sent. <button type="button" class="btn-msg-retry" onclick="window.app.retryInboxMessage('${esc(m.id)}')">Try again</button>`
+                          : isRead
+                            ? ' · Read'
+                            : isDelivered
+                              ? ' · Delivered'
+                              : ' · Sent';
+                    return `
+                      ${dateDividerHtml}
+                      <div class="msg msg-out ${isSending ? 'msg-sending' : ''} ${isFailed ? 'msg-failed' : ''}" data-msg-id="${esc(m.id || '')}">
+                        <div class="msg-bubble">
+                          ${this._renderAttachmentInBubble(m, true)}
+                          ${esc(m.text || '')}
                         </div>
-                        ${m.time ? `<span class="msg-time">${esc(m.time)}</span>` : ''}
+                        <span class="msg-time">
+                          ${esc(m.time || 'Just now')}${statusLabel}
+                        </span>
                       </div>`;
-                  }
-                  const isSending = m.status === 'sending';
-                  const isFailed = m.status === 'failed';
-                  const isUncertain = m.status === 'uncertain';
-                  const isDelivered = m.status === 'delivered';
-                  const isRead = m.status === 'read';
-                  const statusLabel = isSending
-                    ? ' · Sending…'
-                    : isUncertain
-                      ? ' · Delivery status uncertain — refresh before resending'
-                      : isFailed
-                        ? ` · Your message wasn't sent. <button type="button" class="btn-msg-retry" onclick="window.app.retryInboxMessage('${esc(m.id)}')">Try again</button>`
-                        : isRead
-                          ? ' · Read'
-                          : isDelivered
-                            ? ' · Delivered'
-                            : ' · Sent';
-                  return `
-                    <div class="msg msg-out ${isSending ? 'msg-sending' : ''} ${isFailed ? 'msg-failed' : ''}" data-msg-id="${esc(m.id || '')}">
-                      <div class="msg-bubble">
-                        ${this._renderAttachmentInBubble(m, true)}
-                        ${esc(m.text || '')}
-                      </div>
-                      <span class="msg-time">
-                        ${esc(m.time || 'Just now')}${statusLabel}
-                      </span>
-                    </div>`;
-                }).join('')}
+                  }).join('');
+                })()}
               </div>
 
               <!-- Unified Single Composer Card -->

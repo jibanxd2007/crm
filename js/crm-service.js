@@ -469,12 +469,26 @@ class CRMService {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && Array.isArray(parsed)) {
-          const filtered = parsed.filter(c => !c.id?.startsWith('conv_0'));
+          const filtered = parsed.filter(c => !c.id?.startsWith('conv_0')).map(c => {
+            // Strip any legacy dummy preview messages so conversations load their real message history
+            if (Array.isArray(c.messages)) {
+              c.messages = c.messages.filter(m => m && m.id && !String(m.id).startsWith('msg_prev'));
+            } else {
+              c.messages = [];
+            }
+            c._hasRealMessages = c.messages.length > 0;
+            return c;
+          });
           if (filtered.length > 0) return filtered;
         }
       }
     } catch (e) {}
     return this.getDefaultConversations();
+  }
+
+  hasRealMessages(conv) {
+    if (!conv || !Array.isArray(conv.messages) || conv.messages.length === 0) return false;
+    return conv.messages.some(m => m && m.id && !String(m.id).startsWith('msg_prev'));
   }
 
   getDefaultConversations() {
@@ -887,7 +901,9 @@ class CRMService {
               last_message_at: c.updatedTime || new Date().toISOString(),
               unread: c.unreadCount || 0,
               unread_count: c.unreadCount || 0,
-              messages: (prev && prev.messages && prev.messages.length > 0) ? prev.messages : []
+              messages: (prev && prev.messages && prev.messages.length > 0)
+                ? prev.messages.filter(m => m && m.id && !String(m.id).startsWith('msg_prev'))
+                : []
             };
           });
 

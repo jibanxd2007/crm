@@ -4589,6 +4589,11 @@ class MetaCRMApp {
     this.renderInbox();
   }
 
+  hasRealMessages(conv) {
+    if (!conv || !Array.isArray(conv.messages) || conv.messages.length === 0) return false;
+    return conv.messages.some(m => m && m.id && !String(m.id).startsWith('msg_prev'));
+  }
+
   async selectInboxConv(convId) {
     const prevInput = document.getElementById('inbox-msg-input');
     if (prevInput && this.activeConvId) {
@@ -4615,7 +4620,7 @@ class MetaCRMApp {
 
     this.renderInbox();
 
-    if (conv && (!conv.messages || conv.messages.length === 0)) {
+    if (conv && (!this.hasRealMessages(conv) || !conv._fetchedRealMessages)) {
       await this.fetchRealConversationMessages(conv);
     }
 
@@ -5328,11 +5333,11 @@ class MetaCRMApp {
     }, 7500);
 
     const thread = document.getElementById('inbox-thread');
-    const hasMessages = Array.isArray(conv.messages) && conv.messages.length > 0;
+    const hasMessages = this.hasRealMessages(conv);
     const hasPreview = !!(conv.preview && conv.preview.trim());
 
     if (thread && this.activeConvId === conv.id) {
-      if (!hasMessages && !hasPreview) {
+      if (!hasMessages) {
         thread.innerHTML = `
           <div class="inbox-thread-loading" id="inbox-thread-loading" style="padding:60px 20px;text-align:center;color:var(--text-secondary);">
             <div class="spinner" style="display:inline-block;width:24px;height:24px;border:2.5px solid var(--border-color);border-top-color:var(--primary);border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:12px;"></div>
@@ -5356,12 +5361,12 @@ class MetaCRMApp {
       const externalId = conv.external_id || conv.id;
       let rawMsgs = [];
 
-      // 1. Fetch from Supabase via unified /api/messages with accountId and external_id
+      // 1. Fetch from Supabase via unified /api/messages with accountId and external_id (up to 100 messages)
       try {
         const authHeaders = (this.svc && typeof this.svc.getAuthHeaders === 'function')
           ? this.svc.getAuthHeaders(false)
           : { 'X-User-Id': (this.user && this.user.id) || 'admin' };
-        const dbRes = await fetch(`/api/messages?conversation_id=${encodeURIComponent(conv.id)}&accountId=${encodeURIComponent(accountId)}&external_id=${encodeURIComponent(externalId)}`, {
+        const dbRes = await fetch(`/api/messages?conversation_id=${encodeURIComponent(conv.id)}&accountId=${encodeURIComponent(accountId)}&external_id=${encodeURIComponent(externalId)}&limit=100`, {
           headers: authHeaders,
           signal: ac.signal
         });
@@ -5373,14 +5378,14 @@ class MetaCRMApp {
         if (e.name === 'AbortError') return;
       }
 
-      // 2. Direct fast fallback to Zernio endpoint if Supabase had 0 messages
+      // 2. Direct fast fallback to Zernio endpoint if Supabase had 0 messages (up to 100 messages)
       if (!rawMsgs || rawMsgs.length === 0) {
         try {
           const authHeaders = (this.svc && typeof this.svc.getAuthHeaders === 'function')
             ? this.svc.getAuthHeaders(false)
             : { 'X-User-Id': (this.user && this.user.id) || 'admin' };
           const accParam = accountId ? `&accountId=${encodeURIComponent(accountId)}` : '';
-          const res = await fetch(`/api/zernio?path=inbox-messages&conversationId=${encodeURIComponent(externalId)}${accParam}`, {
+          const res = await fetch(`/api/zernio?path=inbox-messages&conversationId=${encodeURIComponent(externalId)}${accParam}&limit=100`, {
             headers: authHeaders,
             signal: ac.signal
           });
@@ -5419,6 +5424,9 @@ class MetaCRMApp {
           };
         });
 
+        conv._hasRealMessages = true;
+        conv._fetchedRealMessages = true;
+
         // Sort messages chronologically with deterministic tie-breaking
         conv.messages.sort((a, b) => {
           const tA = new Date(a.created_at || a.time || 0).getTime();
@@ -5440,20 +5448,8 @@ class MetaCRMApp {
           else if (this.svc.saveAll) this.svc.saveAll();
         }
       } else {
-        if (!conv.messages || conv.messages.length === 0) {
-          if (conv.preview && conv.preview.trim()) {
-            conv.messages = [{
-              id: 'msg_preview_' + conv.id,
-              text: conv.preview,
-              incoming: true,
-              created_at: conv.last_message_at || new Date().toISOString(),
-              status: 'delivered',
-              time: conv.time || 'Today'
-            }];
-          } else {
-            conv.messages = [];
-          }
-        }
+        conv._fetchedRealMessages = true;
+        if (!Array.isArray(conv.messages)) conv.messages = [];
       }
 
       if (this.activeConvId === conv.id && ['inbox', 'messages', 'conversations'].includes(this.currentRoute)) {
@@ -5495,7 +5491,11 @@ class MetaCRMApp {
     if (!targetId || !this.svc) return;
     const conv = (this.svc.conversations || []).find(c => String(c.id) === String(targetId));
     if (!conv || conv._loadingOlderMsgs || conv._allHistoryLoaded) return;
-    if (!Array.isArray(conv.messages) || conv.messages.length === 0) return;
+
+    // If conversation does not have real messages yet, fetch full conversation messages directly
+    if (!this.hasRealMessages(conv)) {
+      return this.fetchRealConversationMessages(conv);
+    }
 
     conv._loadingOlderMsgs = true;
     const thread = document.getElementById('inbox-thread');
@@ -5512,7 +5512,8 @@ class MetaCRMApp {
     }
 
     try {
-      const oldestMsg = conv.messages[0];
+      const realMessages = (conv.messages || []).filter(m => m && m.id && !String(m.id).startsWith('msg_prev'));
+      const oldestMsg = realMessages[0];
       const beforeCursor = oldestMsg ? (oldestMsg.created_at || oldestMsg.sentAt) : null;
       const accountId = (this.svc && this.svc.resolveZernioAccountId(conv.accountId || conv.page_id)) || conv.accountId || conv.page_id || '';
       const externalId = conv.external_id || conv.id;
@@ -5522,7 +5523,7 @@ class MetaCRMApp {
         ? this.svc.getAuthHeaders(false)
         : { 'X-User-Id': (this.user && this.user.id) || 'admin' };
 
-      const dbUrl = `/api/messages?conversation_id=${encodeURIComponent(conv.id)}&accountId=${encodeURIComponent(accountId)}&before=${encodeURIComponent(beforeCursor || '')}&limit=30`;
+      const dbUrl = `/api/messages?conversation_id=${encodeURIComponent(conv.id)}&accountId=${encodeURIComponent(accountId)}&before=${encodeURIComponent(beforeCursor || '')}&limit=50`;
       const dbRes = await fetch(dbUrl, { headers: authHeaders }).catch(() => null);
       if (dbRes && dbRes.ok) {
         const dbData = await dbRes.json();
@@ -5530,8 +5531,8 @@ class MetaCRMApp {
       }
 
       if (!olderMsgs || olderMsgs.length === 0) {
-        const zUrl = `/api/zernio?path=inbox-messages&conversationId=${encodeURIComponent(externalId)}&accountId=${encodeURIComponent(accountId)}&before=${encodeURIComponent(beforeCursor || '')}&limit=30`;
-        const zRes = await fetch(zUrl).catch(() => null);
+        const zUrl = `/api/zernio?path=inbox-messages&conversationId=${encodeURIComponent(externalId)}&accountId=${encodeURIComponent(accountId)}&before=${encodeURIComponent(beforeCursor || '')}&limit=50`;
+        const zRes = await fetch(zUrl, { headers: authHeaders }).catch(() => null);
         if (zRes && zRes.ok) {
           const zData = await zRes.json();
           olderMsgs = Array.isArray(zData) ? zData : (zData.messages || zData.data || []);
@@ -5543,7 +5544,7 @@ class MetaCRMApp {
       if (!olderMsgs || olderMsgs.length === 0) {
         conv._allHistoryLoaded = true;
       } else {
-        const existingIds = new Set(conv.messages.map(m => String(m.id || m.meta_mid)));
+        const existingIds = new Set(realMessages.map(m => String(m.id || m.meta_mid)));
         const newOlder = [];
         olderMsgs.forEach(m => {
           const mid = String(m.id || m.meta_mid || ('msg_' + Date.now()));
@@ -5577,7 +5578,9 @@ class MetaCRMApp {
         if (newOlder.length === 0) {
           conv._allHistoryLoaded = true;
         } else {
-          conv.messages = [...newOlder, ...conv.messages];
+          conv.messages = [...newOlder, ...realMessages];
+          conv._hasRealMessages = true;
+          conv._fetchedRealMessages = true;
           conv.messages.sort((a, b) => {
             const tA = new Date(a.created_at || a.time || 0).getTime();
             const tB = new Date(b.created_at || b.time || 0).getTime();
@@ -5723,6 +5726,12 @@ class MetaCRMApp {
     this.toast('Syncing real conversations & messages…', 'info');
     try {
       await this.fetchRealInstagramConversations();
+      const active = (this.svc && this.svc.conversations) ? this.svc.conversations.find(c => String(c.id) === String(this.activeConvId)) : null;
+      if (active) {
+        active._allHistoryLoaded = false;
+        active._fetchedRealMessages = false;
+        await this.fetchRealConversationMessages(active);
+      }
       this.toast('✓ Inbox up to date!', 'success');
     } finally {
       if (btn && origHtml) {
