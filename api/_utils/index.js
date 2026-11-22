@@ -3,6 +3,16 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const {
+  CANONICAL_DEALERSHIP_ACCOUNTS,
+  CANONICAL_DEALERSHIP_PAGE_IDS,
+  PAGE_ALIAS_MAP,
+  expandPageAliases,
+  hasPageAccess,
+  loadDurableAssignments,
+  saveDurableAssignments,
+  getEffectiveUserPages
+} = require('./page-assignments.js');
 
 // Server Session Signing Secret
 const JWT_SECRET = process.env.SESSION_SECRET || process.env.META_APP_SECRET || 'crm_auth_secret_session_2026_fixed';
@@ -36,7 +46,14 @@ function getExplicitPageAssignments() {
 function setExplicitPageAssignment(identifier, pageIds) {
   if (!identifier || !Array.isArray(pageIds)) return;
   const store = getExplicitPageAssignments();
-  store.set(String(identifier).toLowerCase().trim(), pageIds);
+  const key = String(identifier).toLowerCase().trim();
+  store.set(key, pageIds);
+
+  if (global.CRM_DURABLE_ASSIGNMENTS_CACHE && global.CRM_DURABLE_ASSIGNMENTS_CACHE.data) {
+    global.CRM_DURABLE_ASSIGNMENTS_CACHE.data.set(key, pageIds);
+    global.CRM_DURABLE_ASSIGNMENTS_CACHE.timestamp = Date.now();
+  }
+
   try {
     const obj = {};
     for (const [k, v] of store.entries()) {
@@ -51,20 +68,6 @@ function setExplicitPageAssignment(identifier, pageIds) {
 // ------------------------------------------------------------------------------
 // Exactly seven unique accounts. admina@novaautos.co.nz is Joy, the sole administrator.
 // All emails normalized to lowercase.
-const CANONICAL_DEALERSHIP_PAGE_IDS = [
-  '6accd8b0d52dc43d8bf6034c', // Nova cars Samoa nz
-  '6acd4daed19284a3227d7870', // Nova auto nz
-  '6aea527fa5c031c687ccba15', // Car4u Ma’a Tonga NZ
-  '6aea5280a5c031c687ccba16', // Car4u
-  '6aea5280a5c031c687ccba17', // Zodiac Motor Company
-  '6aea5281a5c031c687ccba18', // Car4u Mo Samoa NZ
-  '1330954980099743',
-  '1342542735606057',
-  '1357368447449594',
-  '380918975300755',
-  '284138661621993',
-  '1271057346092106'
-];
 
 const INITIAL_CANONICAL_USERS = [
   {
@@ -231,7 +234,20 @@ function generateSecureToken(bytes = 32) {
 function createSessionToken(user) {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const exp = Math.floor(Date.now() / 1000) + (24 * 3600); // 24 hours
-  const userPages = user.pages || user.assignedPages || (user.role === 'admin' ? ['*'] : CANONICAL_DEALERSHIP_PAGE_IDS);
+  
+  const explicit = (global.CRM_DURABLE_ASSIGNMENTS_CACHE && global.CRM_DURABLE_ASSIGNMENTS_CACHE.data && (
+    (user.email && global.CRM_DURABLE_ASSIGNMENTS_CACHE.data.get(user.email.toLowerCase())) ||
+    (user.id && global.CRM_DURABLE_ASSIGNMENTS_CACHE.data.get(String(user.id).toLowerCase()))
+  )) ?? (global.CRM_EXPLICIT_PAGE_ASSIGNMENTS && user.email && global.CRM_EXPLICIT_PAGE_ASSIGNMENTS.get(user.email.toLowerCase()));
+
+  const userPages = (user.role === 'admin' || user.role === 'super_admin') ? ['*'] : (
+    explicit !== undefined ? explicit : (
+      Array.isArray(user.pages) ? user.pages : (
+        Array.isArray(user.assignedPages) ? user.assignedPages : []
+      )
+    )
+  );
+
   const payload = Buffer.from(JSON.stringify({
     id: user.id,
     uid: user.id,
@@ -419,11 +435,19 @@ function resolveUser(headers = {}) {
       if (decoded && decoded.email) {
         const u = getUserByEmail(decoded.email);
         if (u && u.status !== 'deactivated') {
-          const explicit = global.CRM_EXPLICIT_PAGE_ASSIGNMENTS && global.CRM_EXPLICIT_PAGE_ASSIGNMENTS.get(decoded.email.toLowerCase());
+          const durableMap = global.CRM_DURABLE_ASSIGNMENTS_CACHE && global.CRM_DURABLE_ASSIGNMENTS_CACHE.data;
+          const explicit = (durableMap && (
+            (decoded.email && durableMap.get(decoded.email.toLowerCase())) ||
+            (decoded.id && durableMap.get(String(decoded.id).toLowerCase()))
+          )) ?? (global.CRM_EXPLICIT_PAGE_ASSIGNMENTS && (
+            global.CRM_EXPLICIT_PAGE_ASSIGNMENTS.get(decoded.email.toLowerCase()) ||
+            (u.id && global.CRM_EXPLICIT_PAGE_ASSIGNMENTS.get(String(u.id).toLowerCase()))
+          ));
+
           const resolvedPages = u.role === 'admin' ? ['*'] : (
             explicit !== undefined ? explicit : (
-              (decoded.pages && Array.isArray(decoded.pages) && decoded.pages.length > 0) ? decoded.pages :
-              (Array.isArray(u.assignedPages) && u.assignedPages.length > 0 ? u.assignedPages : CANONICAL_DEALERSHIP_PAGE_IDS)
+              (decoded.pages !== undefined && Array.isArray(decoded.pages)) ? decoded.pages :
+              (Array.isArray(u.assignedPages) ? u.assignedPages : [])
             )
           );
           return {
@@ -462,11 +486,16 @@ function resolveUser(headers = {}) {
     // Direct token check (for testing / admin scripts)
     const candidate = getUserByEmail(rawToken) || getUserById(rawToken);
     if (candidate && candidate.status !== 'deactivated') {
+      const durableMap = global.CRM_DURABLE_ASSIGNMENTS_CACHE && global.CRM_DURABLE_ASSIGNMENTS_CACHE.data;
       const assignments = getExplicitPageAssignments();
-      const explicit = assignments.get(candidate.email.toLowerCase()) || (candidate.id && assignments.get(candidate.id.toLowerCase()));
+      const explicit = (durableMap && (
+        (candidate.email && durableMap.get(candidate.email.toLowerCase())) ||
+        (candidate.id && durableMap.get(String(candidate.id).toLowerCase()))
+      )) ?? (assignments.get(candidate.email.toLowerCase()) || (candidate.id && assignments.get(String(candidate.id).toLowerCase())));
+
       const resolvedPages = candidate.role === 'admin' ? ['*'] : (
         explicit !== undefined ? explicit : (
-          (Array.isArray(candidate.assignedPages) && candidate.assignedPages.length > 0) ? candidate.assignedPages : CANONICAL_DEALERSHIP_PAGE_IDS
+          Array.isArray(candidate.assignedPages) ? candidate.assignedPages : []
         )
       );
       return {
@@ -503,11 +532,16 @@ function resolveUser(headers = {}) {
     }
     const candidate = getUserByEmail(normalized) || getUserById(normalized);
     if (candidate && candidate.status !== 'deactivated') {
+      const durableMap = global.CRM_DURABLE_ASSIGNMENTS_CACHE && global.CRM_DURABLE_ASSIGNMENTS_CACHE.data;
       const assignments = getExplicitPageAssignments();
-      const explicit = assignments.get(candidate.email.toLowerCase()) || (candidate.id && assignments.get(candidate.id.toLowerCase()));
+      const explicit = (durableMap && (
+        (candidate.email && durableMap.get(candidate.email.toLowerCase())) ||
+        (candidate.id && durableMap.get(String(candidate.id).toLowerCase()))
+      )) ?? (assignments.get(candidate.email.toLowerCase()) || (candidate.id && assignments.get(String(candidate.id).toLowerCase())));
+
       const resolvedPages = candidate.role === 'admin' ? ['*'] : (
         explicit !== undefined ? explicit : (
-          (Array.isArray(candidate.assignedPages) && candidate.assignedPages.length > 0) ? candidate.assignedPages : CANONICAL_DEALERSHIP_PAGE_IDS
+          Array.isArray(candidate.assignedPages) ? candidate.assignedPages : []
         )
       );
       return {
@@ -801,7 +835,14 @@ function isDeveloperRequest(headers = {}, resolvedUser = null) {
 }
 
 module.exports = {
+  CANONICAL_DEALERSHIP_ACCOUNTS,
   CANONICAL_DEALERSHIP_PAGE_IDS,
+  PAGE_ALIAS_MAP,
+  expandPageAliases,
+  hasPageAccess,
+  loadDurableAssignments,
+  saveDurableAssignments,
+  getEffectiveUserPages,
   getExplicitPageAssignments,
   setExplicitPageAssignment,
   INITIAL_CANONICAL_USERS,

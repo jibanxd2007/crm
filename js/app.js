@@ -5376,8 +5376,12 @@ class MetaCRMApp {
       // 2. Direct fast fallback to Zernio endpoint if Supabase had 0 messages
       if (!rawMsgs || rawMsgs.length === 0) {
         try {
-          const accParam = `&accountId=${encodeURIComponent(accountId)}`;
+          const authHeaders = (this.svc && typeof this.svc.getAuthHeaders === 'function')
+            ? this.svc.getAuthHeaders(false)
+            : { 'X-User-Id': (this.user && this.user.id) || 'admin' };
+          const accParam = accountId ? `&accountId=${encodeURIComponent(accountId)}` : '';
           const res = await fetch(`/api/zernio?path=inbox-messages&conversationId=${encodeURIComponent(externalId)}${accParam}`, {
+            headers: authHeaders,
             signal: ac.signal
           });
           if (res.ok) {
@@ -7233,8 +7237,8 @@ class MetaCRMApp {
       try {
         const checkedStaffIds = Array.from(document.querySelectorAll('.page-assign-staff-cb:checked')).map(cb => cb.value);
         for (const s of staffList) {
-          let currentAssigned = (s.assignedPageIds || s.assignedPages || []).map(String);
-          if (currentAssigned.includes('*') || currentAssigned.length === 0) {
+          let currentAssigned = (Array.isArray(s.assignedPageIds) ? s.assignedPageIds : (Array.isArray(s.assignedPages) ? s.assignedPages : [])).map(String);
+          if (currentAssigned.includes('*')) {
             currentAssigned = (this.svc.pages || []).flatMap(p => [
               String(p.id || ''),
               String(p.page_id || ''),

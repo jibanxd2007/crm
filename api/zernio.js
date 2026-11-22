@@ -7,6 +7,8 @@ try {
 const { 
   createVercelHandler, 
   resolveUser, 
+  hasPageAccess,
+  expandPageAliases,
   isDeveloperRequest,
   httpsRequest, 
   toDeterministicUuid, 
@@ -729,6 +731,14 @@ async function zernioUnifiedHandler(req, res) {
       return res.status(400).json({ error: "No connected Zernio account found for this conversation." });
     }
 
+    // RBAC Authorization Check
+    const currentUser = resolveUser(req.headers);
+    if (currentUser && currentUser.role !== 'admin' && !currentUser.pages.includes('*')) {
+      if (!hasPageAccess(currentUser, accountId)) {
+        return res.status(403).json({ error: "Forbidden: Cannot access messages for unassigned page" });
+      }
+    }
+
     if (req.method === 'POST') {
       const text = (req.body && (req.body.message || req.body.text)) || '';
       const rawAtt = req.body && req.body.attachment;
@@ -875,6 +885,13 @@ async function zernioUnifiedHandler(req, res) {
   // 1.7 REAL INBOX CONVERSATIONS LIST (FULL HISTORICAL BACKFILL & HIGH-SPEED CACHE)
   if (path === 'inbox-conversations' || (path.startsWith('inbox') && !url.includes('/messages')) || (url.includes('/inbox/conversations') && !url.includes('/messages'))) {
     res.setHeader('Content-Type', 'application/json');
+    const currentUser = resolveUser(req.headers);
+    if (currentUser && currentUser.role !== 'admin' && !currentUser.pages.includes('*')) {
+      if (!currentUser.pages || currentUser.pages.length === 0) {
+        return res.status(200).json({ conversations: [], data: [], pagination: { limit: 50, count: 0, hasMore: false } });
+      }
+    }
+
     const apiKey = process.env.ZERNIO_API_KEY;
     const reqLimit = Math.min(parseInt(query.limit || '5000', 10), 10000);
     const reqOffset = Math.max(parseInt(query.offset || '0', 10), 0);
@@ -883,6 +900,13 @@ async function zernioUnifiedHandler(req, res) {
     }
 
     const rawTarget = query.accountId || query.account_id || query.pageId || query.page_id || null;
+    if (rawTarget && rawTarget !== 'all') {
+      if (currentUser && currentUser.role !== 'admin' && !currentUser.pages.includes('*')) {
+        if (!hasPageAccess(currentUser, rawTarget)) {
+          return res.status(403).json({ error: "Forbidden: Cannot access conversations for unassigned page" });
+        }
+      }
+    }
     const searchQ = (query.q || '').trim().toLowerCase();
     const forceRefresh = query.refresh === 'true' || query.nocache === 'true';
 
@@ -927,8 +951,8 @@ async function zernioUnifiedHandler(req, res) {
       });
     };
 
-    // Full account conversation fetcher across all cursor pages (up to 25 pages = up to 1,250 convs/acc)
-    const fetchAllAccountConvs = async (accId, pageName = '', maxPages = 25) => {
+    // Full account conversation fetcher across all cursor pages (interactive default: 2 pages = 100 convs/acc)
+    const fetchAllAccountConvs = async (accId, pageName = '', maxPages = 2) => {
       let allConvs = [];
       const seenIds = new Set();
       let cursor = null;
@@ -989,7 +1013,7 @@ async function zernioUnifiedHandler(req, res) {
       if (!forceRefresh && isCacheFresh && global.ZERNIO_HISTORICAL_CACHE.byAccount.has(resolvedAccId)) {
         convList = global.ZERNIO_HISTORICAL_CACHE.byAccount.get(resolvedAccId) || [];
       } else {
-        convList = await fetchAllAccountConvs(resolvedAccId, targetPageName, 25);
+        convList = await fetchAllAccountConvs(resolvedAccId, targetPageName, query.deep === 'true' ? 25 : (query.max_pages ? parseInt(query.max_pages, 10) : 1));
         global.ZERNIO_HISTORICAL_CACHE.byAccount.set(resolvedAccId, convList);
       }
 
@@ -1036,7 +1060,7 @@ async function zernioUnifiedHandler(req, res) {
           const results = await mapWithBoundedConcurrency(validAccounts, 6, async (acc) => {
             const accId = acc._id || acc.id || acc.accountId;
             const pName = acc.pageName || acc.name || '';
-            const accConvs = await fetchAllAccountConvs(accId, pName, 25);
+            const accConvs = await fetchAllAccountConvs(accId, pName, query.deep === 'true' ? 25 : (query.max_pages ? parseInt(query.max_pages, 10) : 1));
             global.ZERNIO_HISTORICAL_CACHE.byAccount.set(accId, accConvs);
             return accConvs;
           });
@@ -1068,8 +1092,11 @@ async function zernioUnifiedHandler(req, res) {
     }
 
     let filtered = merged;
+    if (currentUser && currentUser.role !== 'admin' && !currentUser.pages.includes('*')) {
+      filtered = filtered.filter(c => hasPageAccess(currentUser, c.accountId || c.page_id));
+    }
     if (searchQ) {
-      filtered = merged.filter(c => {
+      filtered = filtered.filter(c => {
         const name = (c.customerName || c.participantName || c.name || '').toLowerCase();
         const msg = (c.lastMessage || c.preview || '').toLowerCase();
         return name.includes(searchQ) || msg.includes(searchQ);
@@ -1541,6 +1568,9 @@ async function zernioUnifiedHandler(req, res) {
             });
 
             SYNC_DIAGNOSTICS.webhooksProcessed++;
+            if (global.ZERNIO_HISTORICAL_CACHE) {
+              global.ZERNIO_HISTORICAL_CACHE.timestamp = 0;
+            }
             if (payload.accountId) {
               SYNC_DIAGNOSTICS.lastSyncTimes[payload.accountId] = new Date().toISOString();
             }

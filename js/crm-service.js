@@ -241,13 +241,14 @@ class CRMService {
               const base = authorizedMap.get(email);
               const explicit = explicitMap[s.id] || (s.email && explicitMap[s.email.toLowerCase()]);
               let resolvedAssigned = explicit;
-              if (!resolvedAssigned && Array.isArray(s.assignedPageIds) && s.assignedPageIds.length > 0) {
-                resolvedAssigned = s.assignedPageIds;
-              } else if (!resolvedAssigned && Array.isArray(s.assignedPages) && s.assignedPages.length > 0) {
-                resolvedAssigned = s.assignedPages;
-              }
-              if (!resolvedAssigned) {
-                resolvedAssigned = base.assignedPageIds;
+              if (resolvedAssigned === undefined) {
+                if (Array.isArray(s.assignedPageIds)) {
+                  resolvedAssigned = s.assignedPageIds;
+                } else if (Array.isArray(s.assignedPages)) {
+                  resolvedAssigned = s.assignedPages;
+                } else {
+                  resolvedAssigned = base.assignedPageIds;
+                }
               }
               authorizedMap.set(email, {
                 ...base,
@@ -724,14 +725,16 @@ class CRMService {
               assigned = explicitMap[s.id];
             } else if (explicitMap[emailKey] && Array.isArray(explicitMap[emailKey])) {
               assigned = explicitMap[emailKey];
-            } else if (s.assignedPages && Array.isArray(s.assignedPages) && s.assignedPages.length > 0) {
+            } else if (Array.isArray(s.assignedPages)) {
               assigned = s.assignedPages;
-            } else if (s.assigned_pages && Array.isArray(s.assigned_pages) && s.assigned_pages.length > 0) {
+            } else if (Array.isArray(s.assigned_pages)) {
               assigned = s.assigned_pages;
-            } else if (existing && Array.isArray(existing.assignedPageIds) && existing.assignedPageIds.length > 0) {
+            } else if (Array.isArray(s.assignedPageIds)) {
+              assigned = s.assignedPageIds;
+            } else if (existing && Array.isArray(existing.assignedPageIds)) {
               assigned = existing.assignedPageIds;
             } else {
-              assigned = s.role === 'admin' ? ['*'] : [...canonicalPages];
+              assigned = s.role === 'admin' ? ['*'] : [];
             }
 
             return {
@@ -3739,25 +3742,25 @@ class CRMService {
     // Leads strictly scoped to user role & assigned pages
     let scopedLeads = this.getLeads().filter(lead => {
       if (isAdmin) return true;
-      return assignedPages.includes(lead.page_id || lead.pageId);
+      return this.canUserAccessLead(lead, user);
     });
 
     // Pages strictly scoped
     let scopedPages = (this.pages || []).filter(p => {
       if (isAdmin) return true;
-      return assignedPages.includes(p.id);
+      return this.canUserAccessPage(p.id, user);
     });
 
     // Campaigns strictly scoped
     let scopedCampaigns = (this.campaigns || []).filter(c => {
       if (isAdmin) return true;
-      return assignedPages.includes(c.page_id || c.pageId);
+      return this.canUserAccessPage(c.page_id || c.pageId, user);
     });
 
     // Insights strictly scoped
     let scopedInsights = (this.adInsights || []).filter(ins => {
       if (isAdmin) return true;
-      return assignedPages.includes(ins.pageId || ins.page_id);
+      return this.canUserAccessPage(ins.pageId || ins.page_id, user);
     });
 
     // If specific page filter is passed (and not 'all')

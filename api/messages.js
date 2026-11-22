@@ -2,6 +2,8 @@ const https = require('https');
 const crypto = require('crypto');
 const { 
   resolveUser, 
+  hasPageAccess,
+  expandPageAliases,
   httpsRequest, 
   createVercelHandler, 
   toDeterministicUuid,
@@ -118,17 +120,25 @@ async function messagesHandler(req, res) {
             requestedConv
           });
         }
-        if (supabase) {
+        const reqAcc = req.query?.accountId || req.query?.account_id || req.query?.page_id || req.query?.pageId;
+        if (reqAcc) {
+          if (!hasPageAccess(user, reqAcc)) {
+            return res.status(403).json({
+              error: "Forbidden: Cannot access messages for conversation on unassigned page",
+              requestedConv
+            });
+          }
+        } else if (supabase) {
           try {
             const dbConvId = toDeterministicUuid(requestedConv);
             const { data: convCheck } = await supabase
               .from('conversations')
               .select('id, page_id, account_id')
-              .or(`id.eq.${requestedConv},id.eq.${dbConvId}`)
+              .eq('id', dbConvId)
               .maybeSingle();
 
             const convPage = convCheck?.page_id || convCheck?.account_id;
-            if (!convPage || !user.pages.includes(convPage)) {
+            if (!convPage || !hasPageAccess(user, convPage)) {
               return res.status(403).json({
                 error: "Forbidden: Cannot access messages for conversation on unassigned page",
                 requestedConv
@@ -136,7 +146,7 @@ async function messagesHandler(req, res) {
             }
           } catch (chkErr) {
             return res.status(403).json({
-              error: "Forbidden: Cannot verify conversation permissions",
+              error: "Forbidden: Cannot access messages for conversation on unassigned page",
               requestedConv
             });
           }
@@ -712,6 +722,12 @@ async function messagesHandler(req, res) {
       }
 
       if (requestedConv) {
+        const cacheKey = `thread_${requestedConv}_${offset}_${limit}_${req.query?.order || 'desc'}`;
+        const cachedThread = global.CRM_THREAD_MESSAGES_CACHE && global.CRM_THREAD_MESSAGES_CACHE.get(cacheKey);
+        if (cachedThread && (Date.now() - cachedThread.ts) < 15000 && req.query?.refresh !== 'true') {
+          return res.status(200).json(cachedThread.data);
+        }
+
         const dbConvId = toDeterministicUuid(requestedConv);
 
         // Security check for staff: ensure conversation belongs to assigned page
@@ -725,7 +741,7 @@ async function messagesHandler(req, res) {
             .eq('id', dbConvId)
             .maybeSingle();
 
-          if (convCheck && convCheck.page_id && !user.pages.includes(convCheck.page_id)) {
+          if (convCheck && convCheck.page_id && !hasPageAccess(user, convCheck.page_id)) {
             return res.status(403).json({ error: "Forbidden: Cannot access conversation for unassigned page" });
           }
         }
@@ -749,7 +765,7 @@ async function messagesHandler(req, res) {
         }
 
         const { data: rawMsgs, error: threadErr } = await msgQuery.range(offset, offset + limit - 1);
-        if (!threadErr && Array.isArray(rawMsgs)) {
+        if (!threadErr && Array.isArray(rawMsgs) && rawMsgs.length > 0) {
           let threadMsgs = [...rawMsgs];
           if (threadMsgs.length > 0 && orderParam !== 'asc') {
             threadMsgs.reverse();
@@ -809,7 +825,7 @@ async function messagesHandler(req, res) {
             await Promise.all(signPromises);
           }
 
-          return res.status(200).json({
+          const resPayload = {
             status: "success",
             conversationId: requestedConv,
             messages: threadMsgs,
@@ -820,7 +836,10 @@ async function messagesHandler(req, res) {
               hasMore: threadMsgs.length >= limit,
               oldestCursor: threadMsgs.length > 0 ? threadMsgs[0].created_at : null
             }
-          });
+          };
+          global.CRM_THREAD_MESSAGES_CACHE = global.CRM_THREAD_MESSAGES_CACHE || new Map();
+          global.CRM_THREAD_MESSAGES_CACHE.set(cacheKey, { ts: Date.now(), data: resPayload });
+          return res.status(200).json(resPayload);
         }
       } else {
         // Fetch conversations with archive scoping and sort options
@@ -861,7 +880,11 @@ async function messagesHandler(req, res) {
         convQuery = convQuery.range(offset, offset + limit - 1);
 
         if (requestedPage) {
-          convQuery = convQuery.eq('page_id', requestedPage);
+          if (!hasPageAccess(user, requestedPage)) {
+            return res.status(403).json({ error: "Forbidden: Cannot access unassigned page" });
+          }
+          const expanded = expandPageAliases([requestedPage]);
+          convQuery = convQuery.in('page_id', expanded);
         } else if (user.role !== 'admin' && !user.pages.includes('*')) {
           if (!user.pages || user.pages.length === 0) {
             return res.status(200).json({
@@ -873,7 +896,8 @@ async function messagesHandler(req, res) {
               pagination: { limit, offset, total: 0, hasMore: false }
             });
           }
-          convQuery = convQuery.in('page_id', user.pages);
+          const expandedPages = expandPageAliases(user.pages);
+          convQuery = convQuery.in('page_id', expandedPages);
         }
 
         const { data: convData, count: totalCount, error: convErr } = await convQuery;
@@ -901,9 +925,39 @@ async function messagesHandler(req, res) {
 
   // Live Gateway Fallback: delegate to verified Zernio handler if DB has no stored rows yet
   try {
+    const targetAccOrPage = req.query?.accountId || req.query?.account_id || req.query?.page_id || req.query?.pageId;
+    if (requestedPage && !hasPageAccess(user, requestedPage)) {
+      return res.status(403).json({ error: "Forbidden: Cannot access unassigned page" });
+    }
+    if (targetAccOrPage && !hasPageAccess(user, targetAccOrPage)) {
+      return res.status(403).json({ error: "Forbidden: Cannot access unassigned page" });
+    }
+    if (user.role !== 'admin' && !user.pages.includes('*') && (!user.pages || user.pages.length === 0)) {
+      return res.status(200).json({
+        status: "success",
+        authorized: true,
+        userRole: user.role,
+        accessiblePages: [],
+        conversations: [],
+        messages: [],
+        pagination: { limit, offset, total: 0 }
+      });
+    }
+
     const zernioModule = require('./zernio.js');
     const zernioFn = zernioModule.zernioUnifiedHandler || zernioModule;
     if (typeof zernioFn === 'function') {
+      if (requestedConv && typeof res.json === 'function') {
+        const origJson = res.json.bind(res);
+        res.json = (data) => {
+          if (data && (data.status === 'success' || Array.isArray(data.messages))) {
+            const cacheKey = `thread_${requestedConv}_${offset}_${limit}_${req.query?.order || 'desc'}`;
+            global.CRM_THREAD_MESSAGES_CACHE = global.CRM_THREAD_MESSAGES_CACHE || new Map();
+            global.CRM_THREAD_MESSAGES_CACHE.set(cacheKey, { ts: Date.now(), data });
+          }
+          return origJson(data);
+        };
+      }
       const zReq = {
         ...req,
         method: 'GET',

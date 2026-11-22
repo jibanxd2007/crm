@@ -2,6 +2,11 @@ const {
   CANONICAL_DEALERSHIP_PAGE_IDS,
   getExplicitPageAssignments,
   setExplicitPageAssignment,
+  loadDurableAssignments,
+  saveDurableAssignments,
+  getEffectiveUserPages,
+  hasPageAccess,
+  expandPageAliases,
   getUserByEmail,
   getUserById,
   getUserBySetupToken,
@@ -152,6 +157,12 @@ async function staffHandler(req, res) {
       } catch (e) {}
     }
 
+    // Load durable page assignments
+    const durableMap = await loadDurableAssignments();
+    const durablePages = getEffectiveUserPages(user, durableMap);
+    user.assignedPages = durablePages;
+    user.pages = durablePages;
+
     // Issue signed session token
     const token = createSessionToken(user);
 
@@ -166,7 +177,8 @@ async function staffHandler(req, res) {
         name: user.name,
         displayName: user.displayName || user.name,
         role: user.role,
-        assignedPages: user.assignedPages || []
+        assignedPages: durablePages,
+        assignedPageIds: durablePages
       },
       redirectUrl: user.role === 'admin' ? '/#dashboard' : '/#dashboard'
     });
@@ -635,6 +647,10 @@ async function staffHandler(req, res) {
       updates.displayName = newName;
     }
     if (newPages !== null && Array.isArray(newPages)) {
+      await saveDurableAssignments(email, newPages, supabase);
+      if (targetUser && targetUser.id) {
+        await saveDurableAssignments(targetUser.id, newPages, supabase);
+      }
       setExplicitPageAssignment(email, newPages);
       if (targetUser && targetUser.id) {
         setExplicitPageAssignment(targetUser.id, newPages);
@@ -803,6 +819,7 @@ async function staffHandler(req, res) {
   // 12. GET: STAFF DIRECTORY LISTING
   // Sync latest persisted database attributes if Supabase is connected
   const supabase = getSupabaseAdmin();
+  const durableMap = await loadDurableAssignments();
   if (supabase) {
     try {
       const { data: dbUsers } = await supabase
@@ -814,13 +831,17 @@ async function staffHandler(req, res) {
         for (const dbu of dbUsers) {
           const u = getUserByEmail(dbu.email);
           if (u) {
-            const explicit = explicitStore.get(dbu.email.toLowerCase()) || (dbu.id && explicitStore.get(dbu.id.toLowerCase()));
+            const explicit = (durableMap && (
+              (dbu.email && durableMap.get(dbu.email.toLowerCase())) ||
+              (dbu.id && durableMap.get(String(dbu.id).toLowerCase()))
+            )) ?? (explicitStore.get(dbu.email.toLowerCase()) || (dbu.id && explicitStore.get(dbu.id.toLowerCase())));
+
             if (explicit !== undefined) {
               u.assignedPages = explicit;
-            } else if (dbu.assigned_pages && Array.isArray(dbu.assigned_pages) && dbu.assigned_pages.length > 0) {
+            } else if (dbu.assigned_pages && Array.isArray(dbu.assigned_pages)) {
               u.assignedPages = dbu.assigned_pages;
-            } else if (!u.assignedPages || u.assignedPages.length === 0) {
-              u.assignedPages = (u.role === 'admin') ? ['*'] : [...CANONICAL_DEALERSHIP_PAGE_IDS];
+            } else if (!u.assignedPages) {
+              u.assignedPages = (u.role === 'admin') ? ['*'] : [];
             }
             if (dbu.status) u.status = dbu.status;
             if (dbu.last_login_at) u.lastLoginAt = dbu.last_login_at;
@@ -836,10 +857,14 @@ async function staffHandler(req, res) {
   const explicitStore = getExplicitPageAssignments();
   const allUsers = getAllUsers(false); // sanitized
   const staffList = allUsers.map(u => {
-    const explicit = explicitStore.get(u.email.toLowerCase()) || (u.id && explicitStore.get(u.id.toLowerCase()));
+    const explicit = (durableMap && (
+      (u.email && durableMap.get(u.email.toLowerCase())) ||
+      (u.id && durableMap.get(String(u.id).toLowerCase()))
+    )) ?? (explicitStore.get(u.email.toLowerCase()) || (u.id && explicitStore.get(u.id.toLowerCase())));
+
     const pages = (u.role === 'admin') ? ['*'] : (
       explicit !== undefined ? explicit : (
-        (Array.isArray(u.assignedPages) && u.assignedPages.length > 0) ? u.assignedPages : [...CANONICAL_DEALERSHIP_PAGE_IDS]
+        Array.isArray(u.assignedPages) ? u.assignedPages : []
       )
     );
     const item = {
